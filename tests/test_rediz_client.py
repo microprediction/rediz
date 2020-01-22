@@ -1,7 +1,6 @@
-from rediz.client import Rediz, default_is_valid_name
+from rediz.client import Rediz, default_is_valid_name, default_is_valid_key
 from threezaconventions.crypto import random_key
-import json
-import os
+import json, os, uuid
 
 def dump(obj,name="obj.json"):
     json.dump(obj,open("obj.json","w"))
@@ -10,6 +9,14 @@ REDIS_TEST_CONFIG = {"decode_responses":True}  # Could supply a redis instance c
 
 def random_name():
     return random_key()+'.json'
+
+def test_default_is_valid_key():
+    s = str(uuid.uuid4())
+    assert default_is_valid_key(s), "Thought "+s+" should be valid."
+    s = "too short"
+    assert default_is_valid_key(s)==False, "Thought "+s+" should be invalid"
+
+
 
 def test_default_is_valid_name():
     s = 'dog-7214.json'
@@ -20,14 +27,16 @@ def test_default_is_valid_name():
 def test_rediz_set_small_obscure():
     rdz = Rediz(**REDIS_TEST_CONFIG)
     names = [ None, None, random_name() ]
-    write_keys = [ random_key(), None, None ]
+    write_keys = [ random_key(), None, 'too-short' ]
     values = [ json.dumps(8), "cat", json.dumps("dog")]
     result = rdz.set(names=names,write_keys=write_keys,values=values)
-    dump(result)
+    if True:
+        # rm obj.json; pip3 install -e . ; pytest ; cat obj.json
+        dump(result)
 
 def test_rediz_set_large_obscure():
     rdz = Rediz(**REDIS_TEST_CONFIG)
     names = [ None, None, random_name() ]
-    write_keys = [ random_key(), None, None ]
+    write_keys = [ random_key(), None, random_key() ]
     values = [ json.dumps([7.6 for _ in range(1000)]), "cat", json.dumps("dog")]
     result = rdz.set(names=names,write_keys=write_keys,values=values)
