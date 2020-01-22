@@ -2,7 +2,34 @@ from itertools import zip_longest
 import fakeredis, os, re, sys, uuid, math, json
 from threezaconventions.crypto import random_key
 
-
+# Implements a simple key-permissioned in-memory database intended for shared public use
+# with a mini pub/sub variant. Only the folloing commands are supported.
+#
+#   > set
+#   > delete
+#   > subscribe
+#   > unsubscribe
+#
+# There are hooks built into set() that propagate new values into a recipient subscriber's messages mailbox.
+# The mailbox is just a redis hash keyed by sender. If my-node.json subscribes to just-set-me.json then
+# a call to set(just-set-me.json) will populate prod-messages::my-node.json or similar.
+#
+# Permissioning is achieved by a hash of name->official_write_key. It is first-in-best dressed.
+#
+# All commands accept list arguments and use pipelining to minimize communication with the server.
+#
+# By default a web-friendly namespace and key conventions from threezaconventions are used, though this
+# is configurable and the only really important requirement is that users are not allowed to overwrite
+# reserved items (which all have double colons by default).
+#
+# Example:
+#
+# from rediz import Rediz
+# rdz = Rediz()
+# names = [ None, None, random_name() ]
+# write_keys = [ random_key(), None, 'too-short' ]
+# values = [ json.dumps(8), "cat", json.dumps("dog")]
+# result = rdz.set(names=names,write_keys=write_keys,values=values)
 
 # Move to config ?
 PY_REDIS_ARGS = ('host','port','db','username','password','socket_timeout','socket_keepalive','socket_keepalive_options',
