@@ -10,7 +10,7 @@ README = (HERE / "README.md").read_text()
 # This call to setup() does all the work
 setup(
     name="rediz",
-    version="0.0.1",
+    version="0.0.2",
     description="Redis usage patterns for live data in support of www.3za.org ",
     long_description=README,
     long_description_content_type="text/markdown",
@@ -27,7 +27,7 @@ setup(
     test_suite='pytest',
     tests_require=['pytest'],
     include_package_data=True,
-    install_requires=["threeza","intechinvestments","fakeredis"],
+    install_requires=["threezaconventions","fakeredis"],
     entry_points={
         "console_scripts": [
             "rediz=rediz.__main__:main",
