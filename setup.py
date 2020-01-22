@@ -11,7 +11,7 @@ README = (HERE / "README.md").read_text()
 setup(
     name="rediz",
     version="0.0.2",
-    description="Redis usage patterns for live data in support of www.3za.org ",
+    description="Redis usage patterns for live shared data (used at www.3za.org) ",
     long_description=README,
     long_description_content_type="text/markdown",
     url="https://github.com/microprediction/rediz",

@@ -12,9 +12,8 @@ PY_REDIS_ARGS = ('host','port','db','username','password','socket_timeout','sock
 FAKE_REDIS_ARGS = ('decode_responses')
 
 
-
 # Economic assumptions
-REPLICATION = 50.                                        # Subscribers
+REPLICATION = 12.                                        # Subscribers
 DOLLAR = 10000.
 COST_PER_MONTH_10MB = 1.*DOLLAR
 COST_PER_MONTH_1b   = COST_PER_MONTH_10MB/(10*1000*1000)
@@ -22,7 +21,7 @@ SECONDS_PER_DAY     = 60.*60.*24.
 SECONDS_PER_MONTH   = SECONDS_PER_DAY*30.
 FIXED_COST_bytes    = 1000                               # Overhead
 MAX_TTL_SECONDS     = SECONDS_PER_DAY*7
-MIN_NEW_TTL         = 5*60
+
 
 def cost_based_ttl(value):
     num_bytes = sys.getsizeof(value)
