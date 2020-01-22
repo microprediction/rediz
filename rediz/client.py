@@ -84,7 +84,7 @@ def grouper(iterable, n, fillvalue=None):
 # What happens when a new page is set ...
 def _new_obscure_page( pipe, name, value,write_key, name_to_key ):
     pipe, intent = _new_page( pipe=pipe, name=name, value=value, write_key=write_key, name_to_key=name_to_key )
-    intent.update{"obscure":True}
+    intent.update({"obscure":True})
     return pipe, intent
 
 def _new_page(pipe,name,value,write_key, name_to_key):
@@ -94,8 +94,8 @@ def _new_page(pipe,name,value,write_key, name_to_key):
           name_to_key  :  Name of hash holding lookup from name --> write_key
     """
     ttl, ttl_days = cost_based_ttl(value)
-    pipe.hset(name=name_to_key,key=name,value=write_key)  # Establish ownership
-    pipe, intent = _modify_page(name=name,value=value)
+    pipe.hset(name=name_to_key,key=name,value=write_key)     # Establish ownership
+    pipe, intent = _modify_page(pipe,name=name,value=value)
     intent.update({"new":True,"write_key":write_key})
     return pipe, intent
 
@@ -129,8 +129,7 @@ class Rediz(object):
     def set(self,names,values,write_keys):
         executed_obscure,  rejected_obscure,  names, values, write_keys = self._pipelined_set_obscure(names, values, write_keys)
         executed_new,      rejected_new,      names, values, write_keys = self._pipelined_set_new(names, values, write_keys)
-        #executed_existing, rejected_existing, names, values, write_keys = self._pipelined_set_existing(names, values, write_keys)
-        executed_existing, rejected_existing = list(),list()
+        executed_existing, rejected_existing, names, values, write_keys = self._pipelined_set_existing(names, values, write_keys)
         return {"executed":executed_obscure+executed_new+executed_existing,
                "rejected":rejected_obscure+rejected_new+rejected_existing,
                "ignored":names}
@@ -215,7 +214,7 @@ class Rediz(object):
         rejected     = list()
         pending      = list()
 
-        modify_pipe = redis_client.pipeline(transaction=False)
+        modify_pipe = self.client.pipeline(transaction=False)
         for name, value, write_key, official_write_key in zip( names, values, write_keys, official_write_keys ):
             if write_key==official_write_key:
                 modify_pipe, intent = _modify_page(modify_pipe,name=name,value=value)
@@ -234,7 +233,7 @@ class Rediz(object):
         return executed, rejected, pending, values, write_keys
 
     def _propagate_to_subscribers(self,names,values):
-        
+
         subscriber_pipe = self.client.pipeline(transaction=False)
         for name in names:
             subscriber_set_name = self.reserved["subscribers::"]+name
