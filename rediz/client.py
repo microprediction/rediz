@@ -1,5 +1,5 @@
 from itertools import zip_longest
-import fakeredis, os, re, sys, uuid, math, json
+import fakeredis, os, re, sys, uuid, math, json, redis
 from threezaconventions.crypto import random_key
 
 # Implements a simple key-permissioned in-memory database intended for shared public use
@@ -73,9 +73,9 @@ def make_redis_client(**kwargs):
         return fakeredis.FakeStrictRedis(**redis_kwargs)
 
 def make_reserved( branch="prod",
-                name_to_key="rediz-name_to_key::hash",
-                subscribers="rediz-subscribers::",
-                messages="rediz-messages::",
+                name_to_key="hash:rediz-name_to_key",
+                subscribers="rediz-subscribers:",
+                messages="rediz-messages:",
                 **ignored):
     return {"name_to_key":branch+"-"+name_to_key,
             "subscribers":branch+'-'+subscribers,
@@ -139,11 +139,11 @@ class Rediz(object):
     def __init__(self,**kwargs):
         self.client   = make_redis_client(**kwargs)
         self.reserved = make_reserved(**kwargs)       # Dictionary holding reserved item names and prefix conventions
-        self.is_valid_key   = kwargs.get("is_valid_key") or default_is_valid_key
-        self.is_valid_name  = kwargs.get("is_valid_name") or default_is_valid_name
+        self.is_valid_key   = kwargs.get("is_valid_key")   or default_is_valid_key
+        self.is_valid_name  = kwargs.get("is_valid_name")  or default_is_valid_name
         self.is_valid_value = kwargs.get("is_valid_value") or default_is_valid_value
-        self.random_name    = kwargs.get("random_name") or default_random_name
-        self.random_key     = kwargs.get("random_key") or default_random_key
+        self.random_name    = kwargs.get("random_name")    or default_random_name
+        self.random_key     = kwargs.get("random_key")     or default_random_key
 
     def set_from_dict(self,input):
         """ Algorithmia style calling where dict is passed in """
