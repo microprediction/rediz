@@ -23,7 +23,7 @@ setup(
         "Programming Language :: Python :: 3",
         "Programming Language :: Python :: 3.7",
     ],
-    packages=["rediz","rediz.client"],
+    packages=["rediz"],
     test_suite='pytest',
     tests_require=['pytest'],
     include_package_data=True,
