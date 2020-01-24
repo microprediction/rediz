@@ -40,15 +40,25 @@ def test_coerce_inputs():
     assert names[0] is None
     assert values[1]==8
 
+def test_coerce_outputs():
+    execution_log = {"executed":[ {"name":None,"ndx":1, "write_key":"123"},
+                    {"name":"bill2","ndx":2, "write_key":None},
+                    {"name":"sally0","ndx":0, "write_key":"12"} ]}
+    out = Rediz._coerce_outputs(execution_log)
+    dump(out)
 
 
-def test__set():
+def test_set_with_log():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
     args = {"name": "3912eb73-f5e6-4f5e-9674-1a320779b7d9.json",
            "value": 25,
            "write_key": "db81045e-eead-44e0-b0a9-ba38d1d0395e"}
     res = rdz._set(**args)
     assert res["executed"][0]["value"]==25
+
+    access = {"name": "3912eb73-f5e6-4f5e-9674-1a320779b7d9.json", "write_key": "db81045e-eead-44e0-b0a9-ba38d1d0395e", "value": 17}
+    access = rdz.set(**access)
+    assert "write_key" in access
 
 def test_set():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
@@ -62,6 +72,7 @@ def test_set_repeatedly():
     state = {"name": "3912eb73-f5e6-4f5e-9674-1a320779b7d9.json",
              "write_key": "db81045e-eead-44e0-b0a9-ba38d1d0395e"}
     state.update({"value":17})
+    dump(state)
     state = rdz.set(**state)
     assert rdz.get(**state)=="17"
 
@@ -74,7 +85,6 @@ def test_mixed():
     values     = [ json.dumps(8), "cat",   json.dumps("dog")]
     execution_log = rdz._set(names=names,write_keys=write_keys,values=values,verbose=True)
     assert len(execution_log["executed"])==2,"Expected 2 to be executed"
-    assert len(execution_log["ignored"])==0,"Expected none ignored"
     assert len(execution_log["rejected"])==1,"Expected 1 rejection"
     assert execution_log["executed"][0]["ttl_days"]>0.25,"Expected ttl>0.25 days"
     assert sum( [ int(t["obscure"]==True) for t in execution_log["executed"] ])==2,"Expected 2 obscure"

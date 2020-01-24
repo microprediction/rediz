@@ -48,7 +48,7 @@ ValueList = List[Optional[Any]]
 class Rediz(object):
 
     def __init__(self,**kwargs):
-        self.client         = self.make_redis_client(**kwargs)
+        self.client         = self.make_redis_client(**kwargs)   # Real or mock redis client
         self.reserved       = self.make_reserved(**kwargs)       # Dictionary holding reserved item names and prefix conventions
         self.is_valid_key   = kwargs.get("is_valid_key")   or default_is_valid_key
         self.is_valid_name  = kwargs.get("is_valid_name")  or default_is_valid_name
@@ -56,7 +56,7 @@ class Rediz(object):
         self.random_name    = kwargs.get("random_name")    or default_random_name
         self.random_key     = kwargs.get("random_key")     or default_random_key
 
-    def get(self,names:Optional[NameList]=None, name:Optional[str]=None, **ignored ):
+    def get(self,names:Optional[NameList]=None, name:Optional[str]=None, **nuissance ):
         """ Retrieve value(s) """
         names = names or [ name ]
         res = self._pipelined_get(names=names)
@@ -67,22 +67,20 @@ class Rediz(object):
                  write_keys:Optional[KeyList]=None,
                  name:Optional[str]=None,
                  value:Optional[Any]=None,
-                 write_key:Optional[str]=None, **ignored):
+                 write_key:Optional[str]=None, **nuissance):
         """
                   :param
                   returns:  [ {"name":name, "write_key":write_key} ]  if names is supplied,
         otherwise returns:    {"name":name, "write_key":write_key}    when used in the singular
         """
-
-        # Permit singleton or vector call
+        singular = names is None
         names, values, write_keys = self._coerce_inputs(names=names,values=values,
                                   write_keys=write_keys,name=name,value=value,write_key=write_key)
-        original_names = [ n for n in names ]
         # Execute
         execution_log = self._set( names=names,values=values, write_keys=write_keys )
         # Re-jigger results
-        succinct = self._coerce_outputs( execution_log, original_names )
-        return succinct if (name is None) else succinct[0]
+        access = self._coerce_outputs( execution_log )
+        return access[0] if singular else access
 
     @staticmethod
     def _coerce_inputs(  names:Optional[NameList]=None,
@@ -98,116 +96,111 @@ class Rediz(object):
         return names, values, write_keys
 
     @staticmethod
-    def _coerce_outputs( execution_log, names=None ):
+    def _coerce_outputs( execution_log ):
         """ Convert to list of dict, so that this style is possible:
-
               access = {"name":"whatever","write_key":"blah"}
               access = rdz.set(value=value, **access)
               rdz.get(**access)
-
         """
-        if names is not None:
-            ordered = OrderedDict(zip(names, [ None for _ in names ]))
-        for ex in execution_log["executed"]:
-            ex_name = ex["name"]
-            ex_write_key = ex["write_key"]
-            if ex_name in ordered:
-                ordered[ex_name]=ex_write_key
-        return [ {"name":nm,"write_key":wk} for nm,wk in ordered.items() ]
+        executed = sorted(execution_log["executed"], key = lambda d: d['ndx'])
+        return [ {"name":s["name"],"write_key":s["write_key"]} for s in executed ]
 
     def _set(self,names:Optional[NameList]=None,
                   values:Optional[ValueList]=None,
                   write_keys:Optional[KeyList]=None,
                   name:Optional[str]=None,
                   value:Optional[Any]=None,
-                  write_key:Optional[str]=None, **ignored):
+                  write_key:Optional[str]=None, **nuisance):
         # Returns execution log format
         names, values, write_keys = self._coerce_inputs(names,values,write_keys,name,value,write_key)
-        executed_obscure,  rejected_obscure,  names, values, write_keys = self._pipelined_set_obscure(names, values, write_keys)
-        executed_new,      rejected_new,      names, values, write_keys = self._pipelined_set_new(names, values, write_keys)
-        executed_existing, rejected_existing, names, values, write_keys = self._pipelined_set_existing(names, values, write_keys)
+        ndxs = list(range(len(names)))
+        executed_obscure,  rejected_obscure,  ndxs, names, values, write_keys = self._pipelined_set_obscure(  ndxs, names, values, write_keys)
+        executed_new,      rejected_new,      ndxs, names, values, write_keys = self._pipelined_set_new(      ndxs, names, values, write_keys)
+        executed_existing, rejected_existing                                  = self._pipelined_set_existing( ndxs, names, values, write_keys)
         return {"executed":executed_obscure+executed_new+executed_existing,
-                "rejected":rejected_obscure+rejected_new+rejected_existing,
-                "ignored" :names}
+                "rejected":rejected_obscure+rejected_new+rejected_existing}
 
     def _pipelined_get(self,names):
-        # Prepare redis pipeline
         if len(names):
             get_pipe = self.client.pipeline(transaction=True)
             for name in names:
                 get_pipe.get(name=name)
             return get_pipe.execute()
 
-    def _pipelined_set_obscure(self,names, values, write_keys):
-        # Prepare redis pipeline
-        obscure_pipe = self.client.pipeline(transaction=True)
-        executed     = list()
-        rejected     = list()
-        pending      = list()
-        for name, value, write_key in zip( names, values, write_keys):
+    def _pipelined_set_obscure(self, ndxs, names, values, write_keys):
+        # Set values only if names were None. This prompts generation of a randomly chosen obscure name.
+        obscure_pipe  = self.client.pipeline(transaction=True)
+        executed      = list()
+        rejected      = list()
+        ignored_ndxs  = list()
+        for ndx, name, value, write_key in zip( ndxs, names, values, write_keys):
             if not(self.is_valid_value(value)):
-                rejected.append({"name":name,"value":value,"error":"invalid value of type "+type(value)+" was supplied"})
+                rejected.append({"ndx":ndx, "name":name,"value":value,"error":"invalid value of type "+type(value)+" was supplied"})
             else:
                 if (name is None):
                     if write_key is None:
                         write_key = self.random_key()
                     if not(self.is_valid_key(write_key)):
-                        rejected.append({"name":name,"write_key":write_key,"errror":"invalid write_key"})
+                        rejected.append({"ndx":ndx,"name":name,"write_key":write_key,"errror":"invalid write_key"})
                     else:
                         new_name = self.random_name()
-                        obscure_pipe, intent = self._new_obscure_page(pipe=obscure_pipe,name=new_name,value=value,
+                        obscure_pipe, intent = self._new_obscure_page(pipe=obscure_pipe,ndx=ndx, name=new_name,value=value,
                                                   write_key=write_key, name_to_key=self.reserved["name_to_key"])
                         executed.append(intent)
                 elif not(self.is_valid_name(name)):
-                    rejected.append({"name":name,"error":"invalid name"})
+                    rejected.append({"ndx":ndx, "name":name,"error":"invalid name"})
                 else:
-                    pending.append(name)
+                    ignored_ndxs.append(ndx)
 
         if len(executed):
             obscure_results = Rediz.pipe_results_grouper( results=obscure_pipe.execute(), n=len(executed) )
             for intent, res in zip(executed,obscure_results):
                 intent.update({"result":res})
 
-        # Marshall residual. Return name, values and write_keys that are yet to be processed.
-        values         = [ v for v,n in zip(values, names) if n in pending ]
-        write_keys     = [ w for w,n in zip(write_keys, names) if n in pending ]
-        return executed, rejected, pending, values, write_keys
+        # Marshall residual. Return indexes, names, values and write_keys that are yet to be processed.
+        names          = [ n for n,ndx in zip(names, ndxs)       if ndx in ignored_ndxs ]
+        values         = [ v for v,ndx in zip(values, ndxs)      if ndx in ignored_ndxs ]
+        write_keys     = [ w for w,ndx in zip(write_keys, ndxs)  if ndx in ignored_ndxs ]
+        return executed, rejected, ignored_ndxs, names, values, write_keys
 
-    def _pipelined_set_new(self,names, values, write_keys):
+    def _pipelined_set_new(self,ndxs, names, values, write_keys):
 
         exists_pipe = self.client.pipeline(transaction=False)
         for name in names:
             exists_pipe.hexists(name=self.reserved["name_to_key"],key=name)
         exists = exists_pipe.execute()
 
-        executed     = list()
-        rejected     = list()
-        pending      = list()
+        executed      = list()
+        rejected      = list()
+        ignored_ndxs  = list()
+
         new_pipe     = self.client.pipeline(transaction=False)
-        for exist, name, value, write_key in zip( exists, names, values, write_keys):
+        for exist, ndx, name, value, write_key in zip( exists, ndxs, names, values, write_keys):
             if not(exist):
                 if write_key is None:
                     write_key = self.random_key()
                 if not(self.is_valid_key(write_key)):
-                    rejected.append({"name":name,"write_key":write_key,"errror":"invalid write_key"})
+                    rejected.append({"ndx":ndx,"name":name,"write_key":write_key,"errror":"invalid write_key"})
                 else:
-                    new_pipe, intent = self._new_page(new_pipe,name=name,value=value,
+                    new_pipe, intent = self._new_page(new_pipe,ndx=ndx, name=name,value=value,
                                 write_key=write_key,name_to_key=self.reserved["name_to_key"])
                     executed.append(intent)
             else:
-                pending.append(name)
+                ignored_ndxs.append(ndx)
 
         if len(executed):
             new_results = Rediz.pipe_results_grouper( results= new_pipe.execute(), n=len(executed) )
             for intent, res in zip(executed,new_results):
                 intent.update({"result":res})
 
-        values         = [ v for v,n in zip(values, names) if n in pending ]
-        write_keys     = [ w for w,n in zip(write_keys, names) if n in pending ]
-        return executed, rejected, pending, values, write_keys
+        # Yet to get to...
+        names          = [ n for n,ndx in zip(names, ndxs)       if ndx in ignored_ndxs ]
+        values         = [ v for v,ndx in zip(values, ndxs)      if ndx in ignored_ndxs ]
+        write_keys     = [ w for w,ndx in zip(write_keys, ndxs)  if ndx in ignored_ndxs ]
+        return executed, rejected, ignored_ndxs, names , values, write_keys
 
 
-    def _pipelined_set_existing(self,names,values, write_keys):
+    def _pipelined_set_existing(self,ndxs, names,values, write_keys):
 
         keys_pipe = self.client.pipeline(transaction=False)
         for name in names:
@@ -216,25 +209,23 @@ class Rediz(object):
 
         executed     = list()
         rejected     = list()
-        pending      = list()
 
         modify_pipe = self.client.pipeline(transaction=False)
-        for name, value, write_key, official_write_key in zip( names, values, write_keys, official_write_keys ):
+        for ndx,name, value, write_key, official_write_key in zip( ndxs, names, values, write_keys, official_write_keys ):
             if write_key==official_write_key:
-                modify_pipe, intent = _modify_page(modify_pipe,name=name,value=value)
+                modify_pipe, intent = self._modify_page(modify_pipe,ndx=ndx,name=name,value=value)
+                intent.update({"write_key":write_key})
                 executed.append(intent)
             else:
                 rejected.append({"name":name,"value":value,"write_key":write_key,"official_write_key_ends_in":official_write_key[-4:],
                 "error":"write_key does not match page_key on record"})
 
         if len(executed):
-            modify_results = pipe_results_grouper( results = modify_pipe.execute(), n=len(executed) )
+            modify_results = Rediz.pipe_results_grouper( results = modify_pipe.execute(), n=len(executed) )
             for intent, res in zip(executed,modify_results):
                 intent.update({"result":res})
 
-        values         = [ v for v,n in zip(values, names) if n in pending ]
-        write_keys     = [ w for w,n in zip(write_keys, names) if n in pending ]
-        return executed, rejected, pending, values, write_keys
+        return executed, rejected
 
     def _propagate_to_subscribers(self,names,values):
 
@@ -258,9 +249,7 @@ class Rediz(object):
             for intent, res in zip(executed,propagation_results):
                 intent.update({"result":res})
 
-        values         = [ v for v,n in zip(values, names) if n in pending ]
-        write_keys     = [ w for w,n in zip(write_keys, names) if n in pending ]
-        return executed, rejected, pending, values, write_keys
+        return executed
 
     @staticmethod
     def cost_based_ttl(value):
@@ -296,11 +285,11 @@ class Rediz(object):
             return fakeredis.FakeStrictRedis(**redis_kwargs)
 
     @staticmethod
-    def make_reserved(branch="prod",
-                    name_to_key="hash:rediz-name_to_key",
-                    subscribers="rediz-subscribers:",
-                    messages="rediz-messages:",
-                    **ignored):
+    def make_reserved( branch="prod",
+                       name_to_key="hash:name_to_key",
+                       subscribers="set:subscribers:",
+                       messages="hash:messages:",
+                       **ignored):
         return {"name_to_key":branch+"-"+name_to_key,
                 "subscribers":branch+'-'+subscribers,
                 "messages":branch+'-'+messages}
@@ -317,13 +306,13 @@ class Rediz(object):
 
 
     @staticmethod
-    def _new_obscure_page( pipe, name, value,write_key, name_to_key ):
-        pipe, intent = Rediz._new_page( pipe=pipe, name=name, value=value, write_key=write_key, name_to_key=name_to_key )
+    def _new_obscure_page( pipe, ndx, name, value,write_key, name_to_key ):
+        pipe, intent = Rediz._new_page( pipe=pipe, ndx=ndx, name=name, value=value, write_key=write_key, name_to_key=name_to_key )
         intent.update({"obscure":True})
         return pipe, intent
 
     @staticmethod
-    def _new_page(pipe,name,value,write_key, name_to_key):
+    def _new_page(pipe,ndx,name,value,write_key, name_to_key):
         """ Create new page
               pipe         :  Redis pipeline
               intent       :  Explanation in form of a dict
@@ -331,14 +320,14 @@ class Rediz(object):
         """
         ttl, ttl_days = Rediz.cost_based_ttl(value)
         pipe.hset(name=name_to_key,key=name,value=write_key)     # Establish ownership
-        pipe, intent = Rediz._modify_page(pipe,name=name,value=value)
+        pipe, intent = Rediz._modify_page(pipe,ndx=ndx,name=name,value=value)
         intent.update({"new":True,"write_key":write_key})
         return pipe, intent
 
     @staticmethod
-    def _modify_page(pipe,name,value,intent=dict()):
+    def _modify_page(pipe,ndx,name,value,intent=dict()):
         ttl, ttl_days = Rediz.cost_based_ttl(value)
-        intent.update({"name":name,"value":value,"ttl":ttl,"ttl_days":ttl_days,"new":False,"obscure":False})
+        intent.update({"ndx":ndx,"name":name,"value":value,"ttl_days":ttl_days,"new":False,"obscure":False})
         pipe.set(name=name,value=value,ex=ttl)
         return pipe, intent
 
