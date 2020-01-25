@@ -157,11 +157,7 @@ class Rediz(object):
 
     @staticmethod
     def _coerce_outputs( execution_log ):
-        """ Convert to list of dict, so that this style is possible:
-              access = {"name":"whatever","write_key":"blah"}
-              access = rdz.set(value=value, **access)
-              rdz.get(**access)
-        """
+        """ Convert to list of dicts containing names and write keys """
         executed = sorted(execution_log["executed"], key = lambda d: d['ndx'])
         return [ {"name":s["name"],"write_key":s["write_key"]} for s in executed ]
 
