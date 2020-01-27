@@ -1,13 +1,12 @@
-from rediz.client import Rediz, default_is_valid_name, default_is_valid_key
+from rediz.client import Rediz
 from threezaconventions.crypto import random_key
 import json, os, uuid, random, time
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 
 
 
-def dump(obj,name="garbage.json"):
-    json.dump(obj,open("garbage.json","w"))
-
+def dump(obj,name="garbage.json"): # Debugging
+    json.dump(obj,open("tmp_garbage.json","w"))
 
 
 def setup_no_subs(rdz):
@@ -31,22 +30,22 @@ def test_expire():
     access = setup_no_subs(rdz)
     name, write_key = access["name"], access["write_key"]
     assert rdz.get(**access) is None
-    assert rdz.client.sismember(name=rdz.reserved["names"],value=name)
+    assert rdz.client.sismember(name=rdz.NAMES,value=name)
     rdz._delete(names=[name])
 
-def test_run_garbage_collection():
+def test_run_admin_garbage_collection():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
-    rdz._garbage_collection()
-    report = rdz.client.scard(rdz.reserved["names"])
+    rdz.admin_garbage_collection()
+    report = rdz.client.scard(rdz.NAMES)
     if False:
         dump(report)
 
-def test_garbage_collection(num=100):
+def test_admin_garbage_collection(num=100):
     rdz = Rediz(**REDIZ_TEST_CONFIG)
-    original_num = rdz.client.scard(rdz.reserved["names"])
+    original_num = rdz.client.scard(rdz.NAMES)
     names = [ rdz.random_name() for _ in range(num) ]
     write_keys = [ rdz.random_key() for _ in range(num) ]
-    value = "this is crud created by test_garbage_collection"
+    value = "this is crud created by test_admin_garbage_collection"
     access = rdz.set(names=names,write_keys=write_keys,value=value)
     expire_pipe = rdz.client.pipeline()
     for name in names:
@@ -56,10 +55,10 @@ def test_garbage_collection(num=100):
 
     remaining = list()
     for iter_no in range(5):
-        rdz._garbage_collection(max_searches=5, survey_fraction=0.01 )
-        remaining.append( rdz.client.scard(rdz.reserved["names"]) )
+        rdz.admin_garbage_collection( fraction=0.01 )
+        remaining.append( rdz.client.scard(rdz.NAMES) )
 
-    final_num = rdz.client.scard(rdz.reserved["names"])
+    final_num = rdz.client.scard(rdz.NAMES)
 
     # Clean up scraps
     rdz._delete(*names)
@@ -68,12 +67,12 @@ def test_find_orphans_low_cardinality_test(num=20):
 
     rdz = Rediz(**REDIZ_TEST_CONFIG)
 
-    original_num = rdz.client.scard(rdz.reserved["names"])
+    original_num = rdz.client.scard(rdz.NAMES)
     if original_num<10000:
         # This test won't ultimately scale as it calls smembers
-        original_set = rdz.client.smembers(rdz.reserved["names"])
+        original_set = rdz.client.smembers(rdz.NAMES)
         for k in [5,20,400]:
-            some = rdz.client.srandmember(rdz.reserved["names"],k)
+            some = rdz.client.srandmember(rdz.NAMES,k)
             some_unique = list(set(some))
             assert all( s in original_set for s in some )
             assert len(some_unique)<=original_num
@@ -103,8 +102,8 @@ def test_find_orphans_low_cardinality_test(num=20):
         # Clean up scraps
         rdz._delete(*names)
 
-        final_num = rdz.client.scard(rdz.reserved["names"])
-        final_set = rdz.client.smembers(rdz.reserved["names"])
+        final_num = rdz.client.scard(rdz.NAMES)
+        final_set = rdz.client.smembers(rdz.NAMES)
         set_diff_1  = final_set.difference(original_set)
         set_diff_2  = original_set.difference(final_set)
 
