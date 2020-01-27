@@ -7,31 +7,32 @@ from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 def dump(obj,name="helpers.json"):
     json.dump(obj,open("tmp_helpers.json","w"))
 
-
 def random_name():
     return random_key()+'.json'
 
 def test_assert_not_in_reserved():
-    okay_examples = ["dog:prediction.json","cat:history.json"]
+    rdz = Rediz(**REDIZ_TEST_CONFIG)
+    okay_examples     = ["dog:prediction.json","cat:history.json"]
     has_bad_examples  = ["prediction::mine.json","okay.json"]
-    Rediz.assert_not_in_reserved_namespace(okay_examples)
+    rdz.assert_not_in_reserved_namespace(okay_examples)
     try:
-        Rediz.assert_not_in_reserved_namespace(has_bad_examples)
+        rdz.assert_not_in_reserved_namespace(has_bad_examples)
     except:
         return True
-    assert False==True 
+    assert False==True
 
 def test__is_valid_key():
     s = str(uuid.uuid4())
-    assert Rediz.is_valid_key(s), "Thought "+s+" should be valid."
-    s = "too short"
-    assert Rediz.is_valid_key(s)==False, "Thought "+s+" should be invalid"
+    rdz = Rediz(**REDIZ_TEST_CONFIG)
+    assert rdz.is_valid_key(s), "Thought "+s+" should be valid."
+    assert rdz.is_valid_key("too short")==False, "Thought "+s+" should be invalid"
 
 def test__is_valid_name():
     s = 'dog-7214.json'
-    assert Rediz.is_valid_name(s), "oops"
+    rdz = Rediz(**REDIZ_TEST_CONFIG)
+    assert rdz.is_valid_name(s), "oops"
     for s in ["25824ee3-d9bf-4923-9be7-19d6c2aafcee.json"]:
-        assert Rediz.is_valid_name(s),"Got it wrong for "+s
+        assert rdz.is_valid_name(s),"Got it wrong for "+s
 
 
 def test_coerce_inputs():
@@ -52,7 +53,13 @@ def test_coerce_inputs():
 
 def test_coerce_outputs():
     execution_log = {"executed":[ {"name":None,"ndx":1, "write_key":"123"},
-                    {"name":"bill2","ndx":2, "write_key":None},
-                    {"name":"sally0","ndx":0, "write_key":"12"} ]}
+                                    {"name":"bill2","ndx":2, "write_key":None},
+                                    {"name":"sally0","ndx":0, "write_key":"12"}
+                                ],
+                    "rejected":[ {"name":None,"ndx":5, "write_key":None},
+                                {"name":"bill17","ndx":6, "write_key":None},
+                                {"name":"sally23","ndx":4, "write_key":None}
+                                ]
+                    }
     out = Rediz._coerce_outputs(execution_log)
     dump(out)

@@ -66,39 +66,38 @@ def dump(obj,name="client.json"):
 class Rediz(object):
 
     def __init__(self,**kwargs):
+        # Initialize client and namespaces
         self.client         = self.make_redis_client(**kwargs)         # Real or mock redis client
+        self.SEP            = '::'
+        self.MIN_KEY_LEN    = 16
         # Reserved redis keys and prefixes
-        self._obscurity      = "09909e88-ca04-4868-a0a0-c94748df844f:::"
+        self._obscurity     = "09909e88-ca04-4868-a0a0-c94748df844f"+self.SEP
         self.OWNERSHIP      = self._obscurity+"ownership"
         self.NAMES          = self._obscurity+"names"
-        self.PROMISES       = self._obscurity+"promises:"
+        self.PROMISES       = self._obscurity+"promises"+self.SEP
         # User facing conventions
-        self.DELAYED        = "delayed::"
-        self.MESSAGES       = "messages::"
-        self.HISTORY        = "history::"
-        self.SUBSCRIBERS    = "subscribers::"
-        self.DELAY_SECONDS  = kwargs.get("delay_seconds")  or [5,10,30,60,1*60,2*60,5*60,10*60,20*60,60*60]
-        #
-        self.RESERVED       = [self.OWNERSHIP, self.NAMES, self.PROMISES, self.MESSAGES, self.HISTORY, self.SUBSCRIBERS, self.DELAY_SECONDS, self._obscurity]
+        self.DELAYED        = "delayed"+self.SEP
+        self.MESSAGES       = "messages"+self.SEP
+        self.HISTORY        = "history"+self.SEP
+        self.SUBSCRIBERS    = "subscribers"+self.SEP
+        self.DELAY_SECONDS  = kwargs.get("delay_seconds")  or [1,2,5,10,30,60,1*60,2*60,5*60,10*60,20*60,60*60]
 
-    @staticmethod
-    def is_valid_name(name:str):
+
+    def is_valid_name(self,name:str):
         name_regex = re.compile(r'^[-a-zA-Z0-9_.:]{1,200}\.[json,HTML]+$',re.IGNORECASE)
-        return (re.match(name_regex, name) is not None) and (not '::' in name)
+        return (re.match(name_regex, name) is not None) and (not self.SEP in name)
 
-    @staticmethod
-    def assert_not_in_reserved_namespace(names, *args):
+    def assert_not_in_reserved_namespace(self, names, *args):
         names = list_or_args(names,args)
-        if any( "::" in name for name in names ):
-            raise Exception("Operation attempted with a name that lies in reserved namespace (e.g. double colon).")
+        if any( self.SEP in name for name in names ):
+            raise Exception("Operation attempted with a name that uses "+ self.SEP)
 
     @staticmethod
     def is_valid_value(value):
         return sys.getsizeof(value)<100000
 
-    @staticmethod
-    def is_valid_key(key):
-        return isinstance(key,str) and len(key)==len(str(uuid.uuid4()))
+    def is_valid_key(self,key):
+        return isinstance(key,str) and len(key)>self.MIN_KEY_LEN
 
     @staticmethod
     def random_key():
@@ -147,92 +146,6 @@ class Rediz(object):
         """ Redundant but in keeping with redis naming conventions """
         return self.set(names=names, values=values, write_keys=write_keys )
 
-    def _subscribe(self, publisher, subscriber ):
-        self.client.sadd(self.SUBSCRIBERS+publisher,subscriber)
-
-    def _unsubscribe(self, publisher, subscriber ):
-        self.client.srem(self.SUBSCRIBERS+publisher,subsriber)
-
-    def delete(self, name=None, write_key=None, names:Optional[NameList]=None, write_keys:Optional[KeyList]=None ):
-        """ Permissioned delete """
-        names, write_keys = names or [ name ], write_keys or [ write_key ]
-        are_valid = self._are_valid_write_keys(names, write_keys)
-        authorized_kill_list = [ name for (name,is_valid_write_key) in zip(names,are_valid) if is_valid_write_key ]
-        self._delete(*authorized_kill_list)
-
-    def admin_garbage_collection(self, fraction=0.01 ):
-        """ Randomized search and destroy for expired data """
-        num_keys     = self.client.scard(self.NAMES)
-        num_survey   = min( 100, max( 20, int( fraction*num_keys ) ) )
-        orphans      = self._randomly_find_orphans( num=num_survey )
-        if orphans is not None:
-            self._delete(*orphans)
-            return len(orphans)
-        else:
-            return 0
-
-    def _delete(self, names, *args ):
-        """ Remove data, subscriptions, messages, ownership, history and set entry """
-        names = list_or_args(names,args)
-        self.assert_not_in_reserved_namespace(names)
-
-        subs_pipe = self.client.pipeline()
-        for name in names:
-            subs_pipe.smembers(name=self.SUBSCRIBERS+name)
-        subs_res = subs_pipe.execute()
-
-        messages_removal_pipe = self.client.pipeline(transaction=False)
-        for name, subscribers in zip(names,subs_res):
-            for subscriber in subscribers:
-                recipient_mailbox = self.MESSAGES+name
-                messages_removal_pipe.hdel(recipient_mailbox,name)
-        messages_removal_pipe.execute()
-
-        delete_pipe = self.client.pipeline()
-        delete_pipe.hdel(self.OWNERSHIP,*names)
-        delete_pipe.delete( *[self.SUBSCRIBERS+name for name in names] )
-        delete_pipe.delete( *[self.MESSAGES+name for name in names] )
-        delete_pipe.delete( *names )
-        delete_pipe.delete( *[self.HISTORY+name for name in names] )
-        delete_pipe.srem( self.NAMES, *names )
-        delete_pipe.execute()
-
-    def _randomly_find_orphans(self,num=1000):
-        NAMES = self.NAMES
-        unique_random_names = list(set(self.client.srandmember(NAMES,num)))
-        num_random = len(unique_random_names)
-        if num_random:
-            num_exists = self.client.exists(*unique_random_names)
-            if num_exists<num_random:
-                # There must be orphans, defined as those who are listed
-                # in reserved["names"] but have expired
-                exists_pipe = self.client.pipeline(transaction=True)
-                for name in unique_random_names:
-                    exists_pipe.exists(name)
-                exists  = exists_pipe.execute()
-
-                orphans = [ name for name,ex in zip(unique_random_names,exists) if not(ex) ]
-                return orphans
-
-    @staticmethod
-    def _coerce_inputs(  names:Optional[NameList]=None,
-                         values:Optional[ValueList]=None,
-                         write_keys:Optional[KeyList]=None,
-                         name:Optional[str]=None,
-                         value:Optional[Any]=None,
-                         write_key:Optional[str]=None):
-        # Convert singletons to arrays, broadcasting as necessary
-        names  = names or [ name ]
-        values = values or [ value for _ in names ]
-        write_keys = write_keys or [ write_key for _ in names ]
-        return names, values, write_keys
-
-    @staticmethod
-    def _coerce_outputs( execution_log ):
-        """ Convert to list of dicts containing names and write keys """
-        executed = sorted(execution_log["executed"], key = lambda d: d['ndx'])
-        return [ {"name":s["name"],"write_key":s["write_key"]} for s in executed ]
-
     def _set(self,names:Optional[NameList]=None,
                   values:Optional[ValueList]=None,
                   write_keys:Optional[KeyList]=None,
@@ -253,6 +166,32 @@ class Rediz(object):
         return {"executed":executed,
                 "rejected":rejected_obscure+rejected_new+rejected_existing}
 
+    def _subscribe(self, publisher, subscriber ):
+        self.client.sadd(self.SUBSCRIBERS+publisher,subscriber)
+
+    def _unsubscribe(self, publisher, subscriber ):
+        self.client.srem(self.SUBSCRIBERS+publisher,subsriber)
+
+
+    @staticmethod
+    def _coerce_inputs(  names:Optional[NameList]=None,
+                         values:Optional[ValueList]=None,
+                         write_keys:Optional[KeyList]=None,
+                         name:Optional[str]=None,
+                         value:Optional[Any]=None,
+                         write_key:Optional[str]=None):
+        # Convert singletons to arrays, broadcasting as necessary
+        names  = names or [ name ]
+        values = values or [ value for _ in names ]
+        write_keys = write_keys or [ write_key for _ in names ]
+        return names, values, write_keys
+
+    @staticmethod
+    def _coerce_outputs( execution_log ):
+        """ Convert to list of dicts containing names and write keys """
+        sorted_log = sorted(execution_log["executed"]+execution_log["rejected"], key = lambda d: d['ndx'])
+        return [ {"name":s["name"],"write_key":s["write_key"]} for s in sorted_log ]
+
     def _pipelined_get(self,names):
         if len(names):
             get_pipe = self.client.pipeline(transaction=True)
@@ -270,19 +209,19 @@ class Rediz(object):
 
             for ndx, name, value, write_key in zip( ndxs, names, values, write_keys):
                 if not(self.is_valid_value(value)):
-                    rejected.append({"ndx":ndx, "name":name,"value":value,"error":"invalid value of type "+type(value)+" was supplied"})
+                    rejected.append({"ndx":ndx, "name":name,"write_key":None,"value":value,"error":"invalid value of type "+type(value)+" was supplied"})
                 else:
                     if (name is None):
                         if write_key is None:
                             write_key = self.random_key()
                         if not(self.is_valid_key(write_key)):
-                            rejected.append({"ndx":ndx,"name":name,"write_key":write_key,"errror":"invalid write_key"})
+                            rejected.append({"ndx":ndx,"name":name,"write_key":None,"errror":"invalid write_key"})
                         else:
                             new_name = self.random_name()
                             obscure_pipe, intent = self._new_obscure_page(pipe=obscure_pipe,ndx=ndx, name=new_name,value=value, write_key=write_key)
                             executed.append(intent)
                     elif not(self.is_valid_name(name)):
-                        rejected.append({"ndx":ndx, "name":name,"error":"invalid name"})
+                        rejected.append({"ndx":ndx, "name":name,"write_key":None, "error":"invalid name"})
                     else:
                         ignored_ndxs.append(ndx)
 
@@ -315,7 +254,7 @@ class Rediz(object):
                     if write_key is None:
                         write_key = self.random_key()
                     if not(self.is_valid_key(write_key)):
-                        rejected.append({"ndx":ndx,"name":name,"write_key":write_key,"errror":"invalid write_key"})
+                        rejected.append({"ndx":ndx,"name":name,"write_key":None,"errror":"invalid write_key"})
                     else:
                         new_pipe, intent = self._new_page(new_pipe,ndx=ndx, name=name,value=value,write_key=write_key)
                         executed.append(intent)
@@ -349,10 +288,10 @@ class Rediz(object):
             for ndx,name, value, write_key, official_write_key in zip( ndxs, names, values, write_keys, official_write_keys ):
                 if write_key==official_write_key:
                     modify_pipe, intent = self._modify_page(modify_pipe,ndx=ndx,name=name,value=value)
-                    intent.update({"write_key":write_key})
+                    intent.update({"ndx":ndx,"write_key":write_key})
                     executed.append(intent)
                 else:
-                    rejected.append({"name":name,"value":value,"write_key":write_key,"official_write_key_ends_in":official_write_key[-4:],
+                    rejected.append({"ndx":ndx,"name":name,"value":value,"write_key":None,"official_write_key_ends_in":official_write_key[-4:],
                     "error":"write_key does not match page_key on record"})
 
             if len(executed):
@@ -419,7 +358,66 @@ class Rediz(object):
         else:
             return fakeredis.FakeStrictRedis(**redis_kwargs)
 
+    def delete(self, name=None, write_key=None, names:Optional[NameList]=None, write_keys:Optional[KeyList]=None ):
+        """ Permissioned delete """
+        names, write_keys = names or [ name ], write_keys or [ write_key ]
+        are_valid = self._are_valid_write_keys(names, write_keys)
+        authorized_kill_list = [ name for (name,is_valid_write_key) in zip(names,are_valid) if is_valid_write_key ]
+        self._delete(*authorized_kill_list)
 
+    def admin_garbage_collection(self, fraction=0.01 ):
+        """ Randomized search and destroy for expired data """
+        num_keys     = self.client.scard(self.NAMES)
+        num_survey   = min( 100, max( 20, int( fraction*num_keys ) ) )
+        orphans      = self._randomly_find_orphans( num=num_survey )
+        if orphans is not None:
+            self._delete(*orphans)
+            return len(orphans)
+        else:
+            return 0
+
+    def _delete(self, names, *args ):
+        """ Remove data, subscriptions, messages, ownership, history and set entry """
+        names = list_or_args(names,args)
+        self.assert_not_in_reserved_namespace(names)
+
+        subs_pipe = self.client.pipeline()
+        for name in names:
+            subs_pipe.smembers(name=self.SUBSCRIBERS+name)
+        subs_res = subs_pipe.execute()
+
+        messages_removal_pipe = self.client.pipeline(transaction=False)
+        for name, subscribers in zip(names,subs_res):
+            for subscriber in subscribers:
+                recipient_mailbox = self.MESSAGES+name
+                messages_removal_pipe.hdel(recipient_mailbox,name)
+        messages_removal_pipe.execute()
+
+        delete_pipe = self.client.pipeline()
+        delete_pipe.hdel(self.OWNERSHIP,*names)
+        delete_pipe.delete( *[self.SUBSCRIBERS+name for name in names] )
+        delete_pipe.delete( *[self.MESSAGES+name for name in names] )
+        delete_pipe.delete( *names )
+        delete_pipe.delete( *[self.HISTORY+name for name in names] )
+        delete_pipe.srem( self.NAMES, *names )
+        delete_pipe.execute()
+
+    def _randomly_find_orphans(self,num=1000):
+        NAMES = self.NAMES
+        unique_random_names = list(set(self.client.srandmember(NAMES,num)))
+        num_random = len(unique_random_names)
+        if num_random:
+            num_exists = self.client.exists(*unique_random_names)
+            if num_exists<num_random:
+                # There must be orphans, defined as those who are listed
+                # in reserved["names"] but have expired
+                exists_pipe = self.client.pipeline(transaction=True)
+                for name in unique_random_names:
+                    exists_pipe.exists(name)
+                exists  = exists_pipe.execute()
+
+                orphans = [ name for name,ex in zip(unique_random_names,exists) if not(ex) ]
+                return orphans
 
     @staticmethod
     def pipe_results_grouper(results,n):
@@ -453,7 +451,7 @@ class Rediz(object):
         ttl, ttl_days = Rediz.cost_based_ttl(value)
         pipe.set(name=name,value=value,ex=ttl)
         # Also write a duplicate to another key
-        name_of_copy   = self.random_key()+":"+name
+        name_of_copy   = self.random_key()[:-10]+"-copy-"+name[:4]
         HISTORY_TTL = min( max( 2*60*60, ttl ), 60*60*24 )
         pipe.set(name=name_of_copy,value=value,ex=HISTORY_TTL)
         try:
@@ -466,12 +464,12 @@ class Rediz(object):
         for delay_seconds in self.DELAY_SECONDS:
             PROMISE = self.PROMISES+str(utc_epoch_now+delay_seconds)
             SOURCE  = name_of_copy
-            DESTINATION = self.DELAYED+str(delay_seconds)+":"+name
+            DESTINATION = self.DELAYED+str(delay_seconds)+self.SEP+name
             pipe.sadd( PROMISE, SOURCE+'->'+DESTINATION )
-            pipe.expire( name=PROMISE, time=delay_seconds+60)
+            pipe.expire( name=PROMISE, time=delay_seconds+5)
 
         intent.update({"ndx":ndx,"name":name,"value":value,"ttl_days":ttl_days,
-                    "new":False,"obscure":False,"copy":name_of_copy})
+                       "new":False,"obscure":False,"copy":name_of_copy})
 
         return pipe, intent
 
@@ -497,7 +495,6 @@ class Rediz(object):
          sources  = list()
          destinations = list()
          for promise in individual_promises:
-             dump(individual_promises[:5])
              try:
                  source, destination = promise.split('->')
              except:
@@ -508,4 +505,5 @@ class Rediz(object):
          source_values = self.client.mget(*sources)
          mapping = dict ( zip(destinations, source_values ) )
          self.client.mset( mapping )
+         dump( [ (d,sv) for d,sv in zip(destinations,source_values) if "living in the present" in sv ] )
          return len(mapping)
