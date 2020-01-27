@@ -46,6 +46,11 @@ KeyList   = List[Optional[str]]
 NameList  = List[Optional[str]]
 ValueList = List[Optional[Any]]
 
+DEBUGGING = True
+def dump(obj,name="client.json"):
+    if DEBUGGING:
+        json.dump(obj,open("client.json","w"))
+
 class Rediz(object):
 
     def __init__(self,**kwargs):
@@ -56,6 +61,7 @@ class Rediz(object):
         self.is_valid_value = kwargs.get("is_valid_value") or default_is_valid_value
         self.random_name    = kwargs.get("random_name")    or default_random_name
         self.random_key     = kwargs.get("random_key")     or default_random_key
+        self.delays         = kwargs.get("delays")         or [1,2,5,10,30,60,1*60,2*60,5*60,10*60]
 
     def mget(self, names:NameList, *args):
         names = list_or_args(names,args)
@@ -91,7 +97,28 @@ class Rediz(object):
         execution_log = self._set( names=names,values=values, write_keys=write_keys )
         # Re-jigger results
         access = self._coerce_outputs( execution_log )
+
         return access[0] if singular else access
+
+    def _subscribe(self, publisher, subscriber ):
+        self.client.sadd(self.reserved["subscribers"]+publisher,subscriber)
+
+    def _unsubscribe(self, publisher, subscriber ):
+        self.client.srem(self.reserved["subscribers"]+publisher,subsriber)
+
+    def _garbage_collection(self, max_searches=100, survey_fraction=0.1 ):
+        """ Randomized search and destroy for expired data """
+        num_keys     = self.client.scard(self.reserved["names"])
+        num_survey   = int( max(1000, survey_fraction*num_keys ) )
+        num_searches = max( 1, int( num_survey / 1000 ) )
+        orphans = set()
+        for _ in range(num_searches):
+            orph = self._randomly_find_orphans()
+            if orph:
+                orphans.update(orph)
+        if orphans:
+            self._delete(*orphans)
+        return({"num_survey":num_survey,"num_searches":num_searches,"num_orphans":len(orphans)})
 
     def delete(self, name=None, write_key=None, names:Optional[NameList]=None, write_keys:Optional[KeyList]=None ):
         """ Permissioned delete """
@@ -100,46 +127,47 @@ class Rediz(object):
         authorized_kill_list = [ name for (name,is_valid_write_key) in zip(names,are_valid) if is_valid_write_key ]
         self._delete(*authorized_kill_list)
 
-    def _garbage_collection(self, max_searches=100, survey_fraction=0.1 ):
-        """ Randomized search and destroy for expired data """
-        num_keys     = self.client.scard(self.reserved["names"])
-        num_survey   = int( survey_fraction*num_keys )
-        num_searches = max( 1, int( num_survey / 1000 ) )
-        orphans = set()
-        for _ in range(num_searches):
-            orphans.update(self._randomly_find_orphans())
-        self._delete(*orphans)
-
     def _delete(self, names, *args ):
-        """ Remove data, subscriptions, messages, ownership and set entry """
+        """ Remove data, subscriptions, messages, ownership, history and set entry """
         names = list_or_args(names,args)
         self.assert_no_colons(names)
-        messages_removal_pipe = self.client.pipeline(transaction=False)
+
+        subs_pipe = self.client.pipeline()
         for name in names:
-            subscribers       = self.client.smembers(name=self.reserved["subscribers"]+name)
+            subs_pipe.smembers(name=self.reserved["subscribers"]+name)
+        subs_res = subs_pipe.execute()
+
+        messages_removal_pipe = self.client.pipeline(transaction=False)
+        for name, subscribers in zip(names,subs_res):
             for subscriber in subscribers:
                 recipient_mailbox = self.reserved["messages"]+name
                 messages_removal_pipe.hdel(recipient_mailbox,name)
         messages_removal_pipe.execute()
-        self.client.hdel(self.reserved["name_to_key"],*names)
-        self.client.delete( *[self.reserved["subscribers"]+name for name in names] )
-        self.client.delete( *[self.reserved["messages"]+name for name in names] )
-        self.client.delete( *names )
-        self.client.srem( self.reserved["names"], *names )
 
-    def _randomly_find_orphans(self,number=1000):
-        NAMES = name=self.reserved["names"]
-        unique_random_names = list(set(self.client.srandom(NAMES,number)))
+        delete_pipe = self.client.pipeline()
+        delete_pipe.hdel(self.reserved["name_to_key"],*names)
+        delete_pipe.delete( *[self.reserved["subscribers"]+name for name in names] )
+        delete_pipe.delete( *[self.reserved["messages"]+name for name in names] )
+        delete_pipe.delete( *names )
+        delete_pipe.delete( *[self.reserved["history"]+name for name in names] )
+        delete_pipe.srem( self.reserved["names"], *names )
+        delete_pipe.execute()
+
+    def _randomly_find_orphans(self,num=1000):
+        NAMES = self.reserved["names"]
+        unique_random_names = list(set(self.client.srandmember(NAMES,num)))
         num_random = len(unique_random_names)
         if num_random:
-            num_exists = self.client.exists(*random_names)
-            if num_exists<number:
-                # Must be orphans...
+            num_exists = self.client.exists(*unique_random_names)
+            if num_exists<num_random:
+                # There must be orphans, defined as those who are listed
+                # in reserved["names"] but have expired
                 exists_pipe = self.client.pipeline(transaction=True)
-                for name in random_names:
+                for name in unique_random_names:
                     exists_pipe.exists(name)
                 exists  = exists_pipe.execute()
-                orphans = [ name for name,ex in zip(random_names,exists) if not(exists) ]
+
+                orphans = [ name for name,ex in zip(unique_random_names,exists) if not(ex) ]
                 return orphans
 
     @staticmethod
@@ -179,7 +207,12 @@ class Rediz(object):
         executed_obscure,  rejected_obscure,  ndxs, names, values, write_keys = self._pipelined_set_obscure(  ndxs, names, values, write_keys)
         executed_new,      rejected_new,      ndxs, names, values, write_keys = self._pipelined_set_new(      ndxs, names, values, write_keys)
         executed_existing, rejected_existing                                  = self._pipelined_set_existing( ndxs, names, values, write_keys)
-        return {"executed":executed_obscure+executed_new+executed_existing,
+
+        modified_names  = [ ex["name"] for ex in executed_existing ]
+        modified_values = [ ex["value"] for ex in executed_existing ]
+        self._propagate_to_subscribers( names = modified_names, values = modified_values )
+        executed = executed_obscure+executed_new+executed_existing
+        return {"executed":executed,
                 "rejected":rejected_obscure+rejected_new+rejected_existing}
 
     def _pipelined_get(self,names):
@@ -295,7 +328,7 @@ class Rediz(object):
 
         subscriber_pipe = self.client.pipeline(transaction=False)
         for name in names:
-            subscriber_set_name = self.reserved["subscribers::"]+name
+            subscriber_set_name = self.reserved["subscribers"]+name
             subs = subscriber_pipe.smembers(name=subscriber_set_name)
         subscribers_sets = subscriber_pipe.execute()
 
@@ -309,7 +342,7 @@ class Rediz(object):
                 executed.append({"mailbox_name":mailbox_name,"sender":sender_name,"value":value})
 
         if len(executed):
-            propagation_results = pipe_results_grouper( results = propagate_pipe.execute(), n=len(executed) ) # Overkill while there is 1 op
+            propagation_results = Rediz.pipe_results_grouper( results = propagate_pipe.execute(), n=len(executed) ) # Overkill while there is 1 op
             for intent, res in zip(executed,propagation_results):
                 intent.update({"result":res})
 
@@ -318,7 +351,7 @@ class Rediz(object):
     @staticmethod
     def cost_based_ttl(value):
         # Economic assumptions
-        REPLICATION         = 12.                         # Subscribers
+        REPLICATION         = 3.                          # History, messsages
         DOLLAR              = 10000.                      # Credits per dollar
         COST_PER_MONTH_10MB = 1.*DOLLAR
         COST_PER_MONTH_1b   = COST_PER_MONTH_10MB/(10*1000*1000)
@@ -353,7 +386,10 @@ class Rediz(object):
         return {"name_to_key":branch+":name_to_key:hash", # Hold write keys
                 "names":branch+":names:set",              # Required for random garbage collection
                 "subscribers":branch+':subscribers:set:',
-                "messages":branch+':messages:hash:'}
+                "messages":branch+':messages:hash:',
+                "history":branch+':history:stream',
+                "promises":branch+':promises:set',
+                "delayed":branch+':delayed'}
 
     @staticmethod
     def pipe_results_grouper(results,n):
@@ -380,15 +416,34 @@ class Rediz(object):
         ttl, ttl_days = Rediz.cost_based_ttl(value)
         pipe.hset(name=self.reserved["name_to_key"],key=name,value=write_key)  # Establish ownership
         pipe.sadd(self.reserved["names"],name)                                # Need this for random access
-        pipe, intent = Rediz._modify_page(pipe,ndx=ndx,name=name,value=value)
+        pipe, intent = self._modify_page(pipe,ndx=ndx,name=name,value=value)
         intent.update({"new":True,"write_key":write_key})
         return pipe, intent
 
-    @staticmethod
-    def _modify_page(pipe,ndx,name,value,intent=dict()):
+    def _modify_page(self, pipe,ndx,name,value,intent=dict()):
         ttl, ttl_days = Rediz.cost_based_ttl(value)
-        intent.update({"ndx":ndx,"name":name,"value":value,"ttl_days":ttl_days,"new":False,"obscure":False})
         pipe.set(name=name,value=value,ex=ttl)
+        # Also write a duplicate to another key
+        name_of_copy   = self.random_key()+":"+name
+        HISTORY_TTL = min( max( 2*60*60, ttl ), 60*60*24 )
+        pipe.set(name=name_of_copy,value=value,ex=HISTORY_TTL)
+        try:
+            pipe.xadd(name=self.reserved["history"]+name,fields={"copy":name_of_copy})
+        except:
+            pass # Using fakeredis which doesn't yet support streams
+        # Future copy operations
+        import time
+        utc_epoch_now = time.time()
+        for delay_seconds in self.delays:
+            PROMISE = self.reserved["promises"]+str(utc_epoch_now+delay_seconds)
+            SOURCE  = name_of_copy
+            DESTINATION = self.reserved["delayed"]+str(delay_seconds)+":"+name
+            pipe.sadd( PROMISE, SOURCE+'>>'+DESTINATION )
+            pipe.expire( name=PROMISE, time=delay_seconds+60)
+
+        intent.update({"ndx":ndx,"name":name,"value":value,"ttl_days":ttl_days,
+                    "new":False,"obscure":False,"copy":name_of_copy})
+
         return pipe, intent
 
 
