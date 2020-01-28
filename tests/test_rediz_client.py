@@ -50,7 +50,7 @@ def test_mixed():
     execution_log = rdz._set_implementation(names=names,write_keys=write_keys,values=values)
     assert len(execution_log["executed"])==2,"Expected 2 to be executed"
     assert len(execution_log["rejected"])==1,"Expected 1 rejection"
-    assert execution_log["executed"][0]["ttl_days"]>0.25,"Expected ttl>0.25 days"
+    assert execution_log["executed"][0]["ttl"]>25,"Expected ttl>25 seconds"
     assert sum( [ int(t["obscure"]==True) for t in execution_log["executed"] ])==2,"Expected 2 obscure"
     assert sum( [ int(t["new"]==True) for t in execution_log["executed"] ])==2,"Expected 2 new"
     rdz._delete(names)

@@ -1,5 +1,5 @@
 from itertools import zip_longest
-import fakeredis, os, re, sys, uuid, math, json, redis, time
+import fakeredis, os, re, sys, uuid, math, json, redis, time, random
 import threezaconventions.crypto
 from collections import OrderedDict
 from typing import List, Union, Any, Optional
@@ -23,13 +23,14 @@ from redis.client import list_or_args
 #
 # Public methods
 # --------------
-#   > set, get, delete
+#   > set, get, new, delete, exists
+#   > mset, mget, mnew
 #   > subscribe, unsubscribe
 #
 # Administrative methods
 # ----------------------
 #   > admin_garbage_collection         ... should be run every fifteen minutes, say
-#   > admin_promises                   ... should be run every minute
+#   > admin_promises                   ... should be run every minute or more often
 #
 # Permissioning
 # -------------
@@ -37,14 +38,20 @@ from redis.client import list_or_args
 # be relinquished if the value expires. The time to live is determined by the memory size of the value, and is refreshed
 # every time set() is called.
 #
+# Usage note:
+# -----------
+# This library does not provide scheduling of calls to admin_promises() and admin_garbage_collection().
+#
 # Implementation notes:
 # --------------------
 # There are hooks built into set() that propagate new values to history, delay queues and subscriber mailboxes.
-# An instruction to copy a value from name to delay:5:name will sit in a set of promises until either admin_promises()
+#  -- For example, an instruction to copy a value from "name" to "delay:5:name" will sit in promises::81236428946 until either admin_promises()
 # is called or the set expires. Expiry typically occurs 65 seconds after the scheduled time of the copy.
-# Periodic calls to _garbage_collection() will stochastically remove artifacts of expired data.
-# All commands accept list arguments and use pipelining to minimize communication with the server. Over time some will
-# be moved into lua scripts to further reduce the number of calls made.
+#  -- Periodic calls to admin_garbage_collection() will stochastically remove artifacts of expired data.
+#
+# Known possible improvements
+# ---------------------------
+# # All commands accept list arguments and use pipelining to minimize communication with the server, but this can be improved using lua scripts.
 
 PY_REDIS_ARGS = ('host','port','db','username','password','socket_timeout','socket_keepalive','socket_keepalive_options',
                  'connection_pool', 'unix_socket_path','encoding', 'encoding_errors', 'charset', 'errors',
@@ -119,25 +126,25 @@ class Rediz(object):
 
     def mget(self, names:NameList, *args):
         names = list_or_args(names,args)
-        return self._get_implementation(names=names)
+        return self._get_implementation( names=names )
 
     def set( self, name:str, value, write_key:str ):
-        return self._coerce_set_coerce(name=name, value=value, write_key=write_key, return_args=None )
+        return self._coerce_set_coerce(name=name, value=value, write_key=write_key, return_args=None, budget=1 )
 
     def mset(self,names:NameList, values:ValueList, write_keys:KeyList):
-        return self._coerce_set_coerce(names=names, values=values, write_keys=write_keys, return_args=None )
+        return self._coerce_set_coerce(names=names, values=values, write_keys=write_keys, return_args=None, budget=1000 )
 
     def new( self, name=None, value=None, write_key=None ):
         """ For when you don't want to generate write_key (or value, or name)"""
         supplied = zip( ("name","value","write_key"), (name is not None, value is not None, write_key is not None) )
         return_args = [ a for a,s in supplied if not(s) ]
         dump(return_args)
-        return self._coerce_set_coerce(value=value or "", write_key=write_key, return_args=return_args)
+        return self._coerce_set_coerce(value=value or "", write_key=write_key, return_args=return_args, budget=1)
 
-    def mnew( self, names:Optional[NameList]=None, values:Optional[ValueList]=None, write_keys:Optional[KeyList]=None ):
+    def mnew( self, names:Optional[NameList]=None, values:Optional[ValueList]=None, write_keys:Optional[KeyList]=None, budget=1000 ):
         """ For when you don't want to generate write_keys (or values, or names)"""
         supplied = zip( ("name","value","write_key"), (names is not None, values is not None, write_keys is not None) )
-        return_args = [ a for a,s in supplied if s ]
+        return_args = [ a for a,s in supplied if not(s) ]
         return self._coerce_set_coerce(value=value, write_key=write_key, return_args=return_args)
 
     def delete(self, name=None, write_key=None, names:Optional[NameList]=None, write_keys:Optional[KeyList]=None ):
@@ -157,18 +164,18 @@ class Rediz(object):
         res = self._pipelined_get(names=names)
         return res if plural else res[0]
 
-    def _coerce_set_coerce(self,names:Optional[NameList]=None,
+    def _coerce_set_coerce(self,budget, names:Optional[NameList]=None,
                  values:Optional[ValueList]=None,
                  write_keys:Optional[KeyList]=None,
                  name:Optional[str]=None,
                  value:Optional[Any]=None,
                  write_key:Optional[str]=None,
-                 return_args:Optional[List[str]]=None ):
+                 return_args:Optional[List[str]]=None):
         singular = names is None
         names, values, write_keys = self._coerce_inputs(names=names,values=values,
                                   write_keys=write_keys,name=name,value=value,write_key=write_key)
         # Execute and create temporary logs
-        execution_log = self._set_implementation( names=names,values=values, write_keys=write_keys )
+        execution_log = self._set_implementation( names=names,values=values, write_keys=write_keys, budget=budget )
 
         # Re-jigger results
         if return_args is not None:
@@ -178,18 +185,22 @@ class Rediz(object):
             access = self._coerce_outputs( execution_log=execution_log, return_args=('write_key',) )
             return sum( (a["write_key"] is not None) for a in access )
 
-    def _set_implementation(self,names:Optional[NameList]=None,
+    def _set_implementation(self, names:Optional[NameList]=None,
                   values:Optional[ValueList]=None,
                   write_keys:Optional[KeyList]=None,
                   name:Optional[str]=None,
                   value:Optional[Any]=None,
-                  write_key:Optional[str]=None):
+                  write_key:Optional[str]=None,
+                  budget=1):
         # Returns execution log format
         names, values, write_keys = self._coerce_inputs(names,values,write_keys,name,value,write_key)
         ndxs = list(range(len(names)))
-        executed_obscure,  rejected_obscure,  ndxs, names, values, write_keys = self._pipelined_set_obscure(  ndxs, names, values, write_keys)
-        executed_new,      rejected_new,      ndxs, names, values, write_keys = self._pipelined_set_new(      ndxs, names, values, write_keys)
-        executed_existing, rejected_existing                                  = self._pipelined_set_existing( ndxs, names, values, write_keys)
+        multiplicity = len(names)
+
+        ttl  = self.cost_based_ttl(budget=budget,multiplicity=multiplicity,values=values)
+        executed_obscure,  rejected_obscure,  ndxs, names, values, write_keys = self._pipelined_set_obscure(  ndxs, names, values, write_keys, ttl)
+        executed_new,      rejected_new,      ndxs, names, values, write_keys = self._pipelined_set_new(      ndxs, names, values, write_keys, ttl)
+        executed_existing, rejected_existing                                  = self._pipelined_set_existing( ndxs, names, values, write_keys, ttl)
 
         # If a value was pre-existing it might have subscribers...
         modified_names  = [ ex["name"] for ex in executed_existing ]
@@ -231,7 +242,7 @@ class Rediz(object):
                 get_pipe.get(name=name)
             return get_pipe.execute()
 
-    def _pipelined_set_obscure(self, ndxs, names, values, write_keys):
+    def _pipelined_set_obscure(self, ndxs, names, values, write_keys, ttl):
         # Set values only if names were None. This prompts generation of a randomly chosen obscure name.
         executed      = list()
         rejected      = list()
@@ -250,7 +261,7 @@ class Rediz(object):
                             rejected.append({"ndx":ndx,"name":name,"write_key":None,"errror":"invalid write_key"})
                         else:
                             new_name = self.random_name()
-                            obscure_pipe, intent = self._new_obscure_page(pipe=obscure_pipe,ndx=ndx, name=new_name,value=value, write_key=write_key)
+                            obscure_pipe, intent = self._new_obscure_page(pipe=obscure_pipe,ndx=ndx, name=new_name,value=value, write_key=write_key, ttl=ttl )
                             executed.append(intent)
                     elif not(self.is_valid_name(name)):
                         rejected.append({"ndx":ndx, "name":name,"write_key":None, "error":"invalid name"})
@@ -268,7 +279,7 @@ class Rediz(object):
         write_keys     = [ w for w,ndx in zip(write_keys, ndxs)  if ndx in ignored_ndxs ]
         return executed, rejected, ignored_ndxs, names, values, write_keys
 
-    def _pipelined_set_new(self,ndxs, names, values, write_keys):
+    def _pipelined_set_new(self,ndxs, names, values, write_keys, ttl):
         # Treat cases where name does not exist yet
         executed      = list()
         rejected      = list()
@@ -288,7 +299,7 @@ class Rediz(object):
                     if not(self.is_valid_key(write_key)):
                         rejected.append({"ndx":ndx,"name":name,"write_key":None,"errror":"invalid write_key"})
                     else:
-                        new_pipe, intent = self._new_page(new_pipe,ndx=ndx, name=name,value=value,write_key=write_key)
+                        new_pipe, intent = self._new_page(new_pipe,ndx=ndx, name=name,value=value,write_key=write_key,ttl=ttl)
                         executed.append(intent)
                 else:
                     ignored_ndxs.append(ndx)
@@ -311,7 +322,7 @@ class Rediz(object):
         if names:
             return self.client.hmget(name=self.OWNERSHIP,keys=names)
 
-    def _pipelined_set_existing(self,ndxs, names,values, write_keys):
+    def _pipelined_set_existing(self,ndxs, names,values, write_keys, ttl):
         executed     = list()
         rejected     = list()
         if ndxs:
@@ -320,7 +331,7 @@ class Rediz(object):
             official_write_keys = self._write_keys(names)
             for ndx,name, value, write_key, official_write_key in zip( ndxs, names, values, write_keys, official_write_keys ):
                 if write_key==official_write_key:
-                    modify_pipe, intent = self._modify_page(modify_pipe,ndx=ndx,name=name,value=value)
+                    modify_pipe, intent = self._modify_page(modify_pipe,ndx=ndx,name=name,value=value,ttl=ttl)
                     intent.update({"ndx":ndx,"write_key":write_key})
                     executed.append(intent)
                 else:
@@ -366,8 +377,8 @@ class Rediz(object):
         return executed
 
     @staticmethod
-    def cost_based_ttl(value):
-        # Economic assumptions
+    def cost_based_ttl(values,multiplicity:int=1,budget:int=1):
+        # Assign a time to live based on random sampling of the size of values stored.
         REPLICATION         = 3.                          # History, messsages
         DOLLAR              = 10000.                      # Credits per dollar
         COST_PER_MONTH_10MB = 1.*DOLLAR
@@ -377,12 +388,19 @@ class Rediz(object):
         FIXED_COST_bytes    = 100                        # Overhead
         MAX_TTL_SECONDS     = int(SECONDS_PER_DAY*7)
 
-        num_bytes = sys.getsizeof(value)
-        credits_per_month = REPLICATION*(num_bytes+FIXED_COST_bytes)*COST_PER_MONTH_1b
-        ttl_seconds = int( math.ceil( SECONDS_PER_MONTH / credits_per_month ) )
-        ttl_seconds = min(ttl_seconds,MAX_TTL_SECONDS)
-        ttl_days = ttl_seconds / SECONDS_PER_DAY
-        return ttl_seconds, ttl_days
+        if len(values):
+            if len(values)<10:
+                value_sample = values
+            else:
+                value_sample = random.sample(values,10)
+            num_bytes = max( (sys.getsizeof(value) for value in values) )
+
+            credits_per_month = multiplicity*REPLICATION*(num_bytes+FIXED_COST_bytes)*COST_PER_MONTH_1b
+            ttl_seconds = int( math.ceil( SECONDS_PER_MONTH / credits_per_month ) )
+            ttl_seconds = budget*ttl_seconds
+            ttl_seconds = min(ttl_seconds,MAX_TTL_SECONDS)
+            return ttl_seconds
+        return 1
 
     @staticmethod
     def make_redis_client(**kwargs):
@@ -464,25 +482,24 @@ class Rediz(object):
         return list(grouper(iterable=results,n=m,fillvalue=None))
 
 
-    def _new_obscure_page( self, pipe, ndx, name, value, write_key):
-        pipe, intent = self._new_page( pipe=pipe, ndx=ndx, name=name, value=value, write_key=write_key )
+    def _new_obscure_page( self, pipe, ndx, name, value, write_key, ttl):
+        pipe, intent = self._new_page( pipe=pipe, ndx=ndx, name=name, value=value, write_key=write_key, ttl=ttl )
         intent.update({"obscure":True})
         return pipe, intent
 
-    def _new_page( self, pipe, ndx, name, value, write_key ):
+    def _new_page( self, pipe, ndx, name, value, write_key, ttl ):
         """ Create new page
               pipe         :  Redis pipeline
               intent       :  Explanation in form of a dict
+              ttl          :  Time to live in seconds
         """
-        ttl, ttl_days = Rediz.cost_based_ttl(value)
         pipe.hset(name=self.OWNERSHIP,key=name,value=write_key)  # Establish ownership
         pipe.sadd(self.NAMES,name)                                # Need this for random access
-        pipe, intent = self._modify_page(pipe,ndx=ndx,name=name,value=value)
+        pipe, intent = self._modify_page(pipe,ndx=ndx,name=name,value=value,ttl=ttl)
         intent.update({"new":True,"write_key":write_key})
         return pipe, intent
 
-    def _modify_page(self, pipe,ndx,name,value,intent=dict()):
-        ttl, ttl_days = Rediz.cost_based_ttl(value)
+    def _modify_page(self, pipe,ndx,name,value,ttl, intent=dict()):
         pipe.set(name=name,value=value,ex=ttl)
         # Also write a duplicate to another key
         name_of_copy   = self.random_key()[:-10]+"-copy-"+name[:4]
@@ -493,7 +510,6 @@ class Rediz(object):
         except:
             pass # Using fakeredis which doesn't yet support streams
         # Future copy operations
-        import time
         utc_epoch_now = int(time.time())
         for delay_seconds in self.DELAY_SECONDS:
             PROMISE = self.PROMISES+str(utc_epoch_now+delay_seconds)
@@ -502,7 +518,7 @@ class Rediz(object):
             pipe.sadd( PROMISE, SOURCE+'->'+DESTINATION )
             pipe.expire( name=PROMISE, time=delay_seconds+5)
 
-        intent.update({"ndx":ndx,"name":name,"value":value,"ttl_days":ttl_days,
+        intent.update({"ndx":ndx,"name":name,"value":value,"ttl":ttl,
                        "new":False,"obscure":False,"copy":name_of_copy})
 
         return pipe, intent
