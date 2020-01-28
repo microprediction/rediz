@@ -65,8 +65,9 @@ def dump(obj,name="client.json"):
 
 class Rediz(object):
 
+    # Initialization
+
     def __init__(self,**kwargs):
-        # Initialize client and namespaces
         self.client         = self.make_redis_client(**kwargs)         # Real or mock redis client
         self.SEP            = '::'
         self.MIN_KEY_LEN    = 16
@@ -81,7 +82,8 @@ class Rediz(object):
         self.HISTORY        = "history"+self.SEP
         self.SUBSCRIBERS    = "subscribers"+self.SEP
         self.DELAY_SECONDS  = kwargs.get("delay_seconds")  or [1,2,5,10,30,60,1*60,2*60,5*60,10*60,20*60,60*60]
-
+        self.ERROR_LOG      = "errors"+self.SEP
+        self.ERROR_TTL      = 10
 
     def is_valid_name(self,name:str):
         name_regex = re.compile(r'^[-a-zA-Z0-9_.:]{1,200}\.[json,HTML]+$',re.IGNORECASE)
@@ -107,51 +109,81 @@ class Rediz(object):
     def random_name():
         return threezaconventions.crypto.random_key()+'.json'
 
-    def get(self,name:Optional[str]=None,
-                 names:Optional[NameList]=None, **nuissance ):
-        """ Retrieve value(s). There is no permissioning on read """
-        names = names or [ name ]
-        res = self._pipelined_get(names=names)
-        return res if (name is None) else res[0]
+    # Public interface
+
+    def exists(self, *names):
+        return len( mget(names=names) )
+
+    def get(self, name:str, **ignore ):
+        return self._get_implementation( name = name )
 
     def mget(self, names:NameList, *args):
-        """ Redundant but in keeping with redis naming tradition """
         names = list_or_args(names,args)
-        return self.get(names=names)
+        return self._get_implementation(names=names)
 
-    def set(self,names:Optional[NameList]=None,
+    def set( self, name:str, value, write_key:str ):
+        return self._coerce_set_coerce(name=name, value=value, write_key=write_key, return_args=None )
+
+    def mset(self,names:NameList, values:ValueList, write_keys:KeyList):
+        return self._coerce_set_coerce(names=names, values=values, write_keys=write_keys, return_args=None )
+
+    def new( self, name=None, value=None, write_key=None ):
+        """ For when you don't want to generate write_key (or value, or name)"""
+        supplied = zip( ("name","value","write_key"), (name is not None, value is not None, write_key is not None) )
+        return_args = [ a for a,s in supplied if not(s) ]
+        dump(return_args)
+        return self._coerce_set_coerce(value=value or "", write_key=write_key, return_args=return_args)
+
+    def mnew( self, names:Optional[NameList]=None, values:Optional[ValueList]=None, write_keys:Optional[KeyList]=None ):
+        """ For when you don't want to generate write_keys (or values, or names)"""
+        supplied = zip( ("name","value","write_key"), (names is not None, values is not None, write_keys is not None) )
+        return_args = [ a for a,s in supplied if s ]
+        return self._coerce_set_coerce(value=value, write_key=write_key, return_args=return_args)
+
+    def delete(self, name=None, write_key=None, names:Optional[NameList]=None, write_keys:Optional[KeyList]=None ):
+        """ Permissioned delete """
+        names, write_keys = names or [ name ], write_keys or [ write_key ]
+        are_valid = self._are_valid_write_keys(names, write_keys)
+        authorized_kill_list = [ name for (name,is_valid_write_key) in zip(names,are_valid) if is_valid_write_key ]
+        return self._delete(*authorized_kill_list)
+
+    # Implementation
+
+    def _get_implementation(self,name:Optional[str]=None,
+                 names:Optional[NameList]=None, **nuissance ):
+        """ Retrieve value(s). There is no permissioning on read """
+        plural = names is not None
+        names = names or [ name ]
+        res = self._pipelined_get(names=names)
+        return res if plural else res[0]
+
+    def _coerce_set_coerce(self,names:Optional[NameList]=None,
                  values:Optional[ValueList]=None,
                  write_keys:Optional[KeyList]=None,
                  name:Optional[str]=None,
                  value:Optional[Any]=None,
-                 write_key:Optional[str]=None, **nuissance):
-        """
-                  :param
-                  returns:  [ {"name":name, "write_key":write_key} ]  if names is supplied,
-        otherwise returns:    {"name":name, "write_key":write_key}    when used in the singular
-        """
+                 write_key:Optional[str]=None,
+                 return_args:Optional[List[str]]=None ):
         singular = names is None
         names, values, write_keys = self._coerce_inputs(names=names,values=values,
                                   write_keys=write_keys,name=name,value=value,write_key=write_key)
-        # Execute
-        execution_log = self._set( names=names,values=values, write_keys=write_keys )
+        # Execute and create temporary logs
+        execution_log = self._set_implementation( names=names,values=values, write_keys=write_keys )
+
         # Re-jigger results
-        access = self._coerce_outputs( execution_log )
+        if return_args is not None:
+            access = self._coerce_outputs( execution_log=execution_log, return_args=return_args )
+            return access[0] if singular else access
+        else:
+            access = self._coerce_outputs( execution_log=execution_log, return_args=('write_key',) )
+            return sum( (a["write_key"] is not None) for a in access )
 
-        return access[0] if singular else access
-
-    def mset(self,names:Optional[NameList]=None,
-                  values:Optional[ValueList]=None,
-                  write_keys:Optional[KeyList]=None, **nuissance):
-        """ Redundant but in keeping with redis naming conventions """
-        return self.set(names=names, values=values, write_keys=write_keys )
-
-    def _set(self,names:Optional[NameList]=None,
+    def _set_implementation(self,names:Optional[NameList]=None,
                   values:Optional[ValueList]=None,
                   write_keys:Optional[KeyList]=None,
                   name:Optional[str]=None,
                   value:Optional[Any]=None,
-                  write_key:Optional[str]=None, **nuisance):
+                  write_key:Optional[str]=None):
         # Returns execution log format
         names, values, write_keys = self._coerce_inputs(names,values,write_keys,name,value,write_key)
         ndxs = list(range(len(names)))
@@ -159,6 +191,7 @@ class Rediz(object):
         executed_new,      rejected_new,      ndxs, names, values, write_keys = self._pipelined_set_new(      ndxs, names, values, write_keys)
         executed_existing, rejected_existing                                  = self._pipelined_set_existing( ndxs, names, values, write_keys)
 
+        # If a value was pre-existing it might have subscribers...
         modified_names  = [ ex["name"] for ex in executed_existing ]
         modified_values = [ ex["value"] for ex in executed_existing ]
         self._propagate_to_subscribers( names = modified_names, values = modified_values )
@@ -170,8 +203,7 @@ class Rediz(object):
         self.client.sadd(self.SUBSCRIBERS+publisher,subscriber)
 
     def _unsubscribe(self, publisher, subscriber ):
-        self.client.srem(self.SUBSCRIBERS+publisher,subsriber)
-
+        self.client.srem(self.SUBSCRIBERS+publisher,subscriber)
 
     @staticmethod
     def _coerce_inputs(  names:Optional[NameList]=None,
@@ -187,10 +219,10 @@ class Rediz(object):
         return names, values, write_keys
 
     @staticmethod
-    def _coerce_outputs( execution_log ):
+    def _coerce_outputs( execution_log, return_args=('name','write_key') ):
         """ Convert to list of dicts containing names and write keys """
         sorted_log = sorted(execution_log["executed"]+execution_log["rejected"], key = lambda d: d['ndx'])
-        return [ {"name":s["name"],"write_key":s["write_key"]} for s in sorted_log ]
+        return [  dict( (arg,s[arg]) for arg in return_args ) for s in sorted_log ]
 
     def _pipelined_get(self,names):
         if len(names):
@@ -237,7 +269,7 @@ class Rediz(object):
         return executed, rejected, ignored_ndxs, names, values, write_keys
 
     def _pipelined_set_new(self,ndxs, names, values, write_keys):
-
+        # Treat cases where name does not exist yet
         executed      = list()
         rejected      = list()
         ignored_ndxs  = list()
@@ -284,6 +316,7 @@ class Rediz(object):
         rejected     = list()
         if ndxs:
             modify_pipe = self.client.pipeline(transaction=False)
+            error_pipe    = self.client.pipeline(transaction=False)
             official_write_keys = self._write_keys(names)
             for ndx,name, value, write_key, official_write_key in zip( ndxs, names, values, write_keys, official_write_keys ):
                 if write_key==official_write_key:
@@ -291,13 +324,20 @@ class Rediz(object):
                     intent.update({"ndx":ndx,"write_key":write_key})
                     executed.append(intent)
                 else:
-                    rejected.append({"ndx":ndx,"name":name,"value":value,"write_key":None,"official_write_key_ends_in":official_write_key[-4:],
-                    "error":"write_key does not match page_key on record"})
+                    intent.update( {'ndx':ndx,"name":name,"value":value,"write_key":None} )
+                    rejected.append(intent)
+                    auth_message = {"ndx":ndx,"name":name,"value":value,"write_key":write_key,"official_write_key_ends_in":official_write_key[-4:],
+                    "error":"write_key does not match page_key on record"}
+                    error_pipe.append(self.ERROR_LOG+write_key,json.dumps(auth_message))
+                    error_pipe.expire(self.ERROR_LOG+write_key,self.ERROR_TTL)
 
             if len(executed):
                 modify_results = Rediz.pipe_results_grouper( results = modify_pipe.execute(), n=len(executed) )
                 for intent, res in zip(executed,modify_results):
                     intent.update({"result":res})
+
+            if len(rejected):
+                error_pipe.execute()
 
         return executed, rejected
 
@@ -358,13 +398,6 @@ class Rediz(object):
         else:
             return fakeredis.FakeStrictRedis(**redis_kwargs)
 
-    def delete(self, name=None, write_key=None, names:Optional[NameList]=None, write_keys:Optional[KeyList]=None ):
-        """ Permissioned delete """
-        names, write_keys = names or [ name ], write_keys or [ write_key ]
-        are_valid = self._are_valid_write_keys(names, write_keys)
-        authorized_kill_list = [ name for (name,is_valid_write_key) in zip(names,are_valid) if is_valid_write_key ]
-        self._delete(*authorized_kill_list)
-
     def admin_garbage_collection(self, fraction=0.01 ):
         """ Randomized search and destroy for expired data """
         num_keys     = self.client.scard(self.NAMES)
@@ -379,6 +412,7 @@ class Rediz(object):
     def _delete(self, names, *args ):
         """ Remove data, subscriptions, messages, ownership, history and set entry """
         names = list_or_args(names,args)
+        names = [ n for n in names if n is not None ]
         self.assert_not_in_reserved_namespace(names)
 
         subs_pipe = self.client.pipeline()
@@ -397,10 +431,10 @@ class Rediz(object):
         delete_pipe.hdel(self.OWNERSHIP,*names)
         delete_pipe.delete( *[self.SUBSCRIBERS+name for name in names] )
         delete_pipe.delete( *[self.MESSAGES+name for name in names] )
-        delete_pipe.delete( *names )
         delete_pipe.delete( *[self.HISTORY+name for name in names] )
         delete_pipe.srem( self.NAMES, *names )
         delete_pipe.execute()
+        return self.client.delete( *names )
 
     def _randomly_find_orphans(self,num=1000):
         NAMES = self.NAMES
@@ -505,5 +539,4 @@ class Rediz(object):
          source_values = self.client.mget(*sources)
          mapping = dict ( zip(destinations, source_values ) )
          self.client.mset( mapping )
-         dump( [ (d,sv) for d,sv in zip(destinations,source_values) if "living in the present" in sv ] )
          return len(mapping)

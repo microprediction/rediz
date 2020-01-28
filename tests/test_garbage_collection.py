@@ -8,28 +8,24 @@ from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 def dump(obj,name="garbage.json"): # Debugging
     json.dump(obj,open("tmp_garbage.json","w"))
 
-
-def setup_no_subs(rdz):
-    access = rdz.set(value="42")
-    name, write_key = access["name"], access["write_key"]
-    rdz.client.expire(name=access["name"],time=0)
-    import time
-    time.sleep(0.1)
-    return access
-
 def test_delete_simple():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
-    access = rdz.set(value="42")
-    name, write_key = access["name"], access["write_key"]
-    assert rdz.get(**access)=="42"
+    title = rdz.new(value="42")
+    dump(title)
+    name, write_key = title["name"], title["write_key"]
+    assert rdz.get(**title)=="42"
     rdz._delete(names=[name])
-    assert rdz.get(**access) is None
+    assert rdz.get(**title) is None
 
 def test_expire():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
-    access = setup_no_subs(rdz)
-    name, write_key = access["name"], access["write_key"]
-    assert rdz.get(**access) is None
+    title = rdz.new(value="42")
+    name, write_key = title["name"], title["write_key"]
+    rdz.client.expire(name=title["name"],time=0)
+    import time
+    time.sleep(0.1)
+    name, write_key = title["name"], title["write_key"]
+    assert rdz.get(**title) is None
     assert rdz.client.sismember(name=rdz.NAMES,value=name)
     rdz._delete(names=[name])
 
@@ -43,10 +39,10 @@ def test_run_admin_garbage_collection():
 def test_admin_garbage_collection(num=100):
     rdz = Rediz(**REDIZ_TEST_CONFIG)
     original_num = rdz.client.scard(rdz.NAMES)
-    names = [ rdz.random_name() for _ in range(num) ]
+    names      = [ rdz.random_name() for _ in range(num) ]
     write_keys = [ rdz.random_key() for _ in range(num) ]
-    value = "this is crud created by test_admin_garbage_collection"
-    access = rdz.set(names=names,write_keys=write_keys,value=value)
+    values = ["from test_admin_garbage_collection" for _ in write_keys ]
+    assert rdz.mset(names=names,write_keys=write_keys,values=values)==len(values)
     expire_pipe = rdz.client.pipeline()
     for name in names:
         expire_pipe.expire(name=name,time=0)
@@ -59,8 +55,6 @@ def test_admin_garbage_collection(num=100):
         remaining.append( rdz.client.scard(rdz.NAMES) )
 
     final_num = rdz.client.scard(rdz.NAMES)
-
-    # Clean up scraps
     rdz._delete(*names)
 
 def test_find_orphans_low_cardinality_test(num=20):
@@ -78,10 +72,11 @@ def test_find_orphans_low_cardinality_test(num=20):
             assert len(some_unique)<=original_num
 
         # Create some data with short ttl
-        value  = "a string to store"
         names = [ rdz.random_name() for _ in range(num) ]
         write_keys = [ rdz.random_key() for _ in range(num) ]
-        access = rdz.set(names=names,write_keys=write_keys,value=value)
+        value  = "a string to store"
+        values = [value for _ in write_keys ]
+        title = rdz.mset(names=names,write_keys=write_keys,values=values)
         assert rdz.client.exists(*names)==len(names), "Names were not created as expected."
         for name in names:
             rdz.client.expire(name=name,time=5*60)
