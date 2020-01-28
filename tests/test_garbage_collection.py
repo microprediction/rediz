@@ -13,9 +13,9 @@ def test_delete_simple():
     title = rdz.new(value="42")
     dump(title)
     name, write_key = title["name"], title["write_key"]
-    assert rdz.get(**title)=="42"
+    assert rdz.get(name)=="42"
     rdz._delete(names=[name])
-    assert rdz.get(**title) is None
+    assert rdz.get(name) is None
 
 def test_expire():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
@@ -25,20 +25,20 @@ def test_expire():
     import time
     time.sleep(0.1)
     name, write_key = title["name"], title["write_key"]
-    assert rdz.get(**title) is None
+    assert rdz.get(name) is None
     assert rdz.client.sismember(name=rdz.NAMES,value=name)
     rdz._delete(names=[name])
 
 def test_run_admin_garbage_collection():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
     rdz.admin_garbage_collection()
-    report = rdz.client.scard(rdz.NAMES)
+    report = rdz.card()
     if False:
         dump(report)
 
 def test_admin_garbage_collection(num=100):
     rdz = Rediz(**REDIZ_TEST_CONFIG)
-    original_num = rdz.client.scard(rdz.NAMES)
+    original_num = rdz.card()
     names      = [ rdz.random_name() for _ in range(num) ]
     write_keys = [ rdz.random_key() for _ in range(num) ]
     values = ["from test_admin_garbage_collection" for _ in write_keys ]
@@ -52,16 +52,16 @@ def test_admin_garbage_collection(num=100):
     remaining = list()
     for iter_no in range(5):
         rdz.admin_garbage_collection( fraction=0.01 )
-        remaining.append( rdz.client.scard(rdz.NAMES) )
+        remaining.append( rdz.card() )
 
-    final_num = rdz.client.scard(rdz.NAMES)
+    final_num = rdz.card()
     rdz._delete(*names)
 
 def test_find_orphans_low_cardinality_test(num=20):
 
     rdz = Rediz(**REDIZ_TEST_CONFIG)
 
-    original_num = rdz.client.scard(rdz.NAMES)
+    original_num = rdz.card()
     if original_num<10000:
         # This test won't ultimately scale as it calls smembers
         original_set = rdz.client.smembers(rdz.NAMES)
@@ -97,7 +97,7 @@ def test_find_orphans_low_cardinality_test(num=20):
         # Clean up scraps
         rdz._delete(*names)
 
-        final_num = rdz.client.scard(rdz.NAMES)
+        final_num = rdz.card()
         final_set = rdz.client.smembers(rdz.NAMES)
         set_diff_1  = final_set.difference(original_set)
         set_diff_2  = original_set.difference(final_set)

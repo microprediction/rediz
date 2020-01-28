@@ -61,12 +61,14 @@ FAKE_REDIS_ARGS = ('decode_responses',)
 
 KeyList   = List[Optional[str]]
 NameList  = List[Optional[str]]
-ValueList = List[Optional[Any]]
+Value     = Union[str,int]
+ValueList = List[Optional[Value]]
+DelayList = List[Optional[int]]
 
 DEBUGGING = True
-def dump(obj,name="client.json"):
+def dump(obj,name="tmp_client.json"):
     if DEBUGGING:
-        json.dump(obj,open("tmp_client.json","w"))
+        json.dump(obj,open(name,"w"))
 
 
 
@@ -77,7 +79,7 @@ class Rediz(object):
     def __init__(self,**kwargs):
         self.client         = self.make_redis_client(**kwargs)         # Real or mock redis client
         self.SEP            = '::'
-        self.MIN_KEY_LEN    = 16
+        self.MIN_KEY_LEN    = 18                                       # Want at least half len(uuid)
         # Reserved redis keys and prefixes
         self._obscurity     = "09909e88-ca04-4868-a0a0-c94748df844f"+self.SEP
         self.OWNERSHIP      = self._obscurity+"ownership"
@@ -103,7 +105,7 @@ class Rediz(object):
 
     @staticmethod
     def is_valid_value(value):
-        return sys.getsizeof(value)<100000
+        return isinstance(value,str) and sys.getsizeof(value)<100000
 
     def is_valid_key(self,key):
         return isinstance(key,str) and len(key)>self.MIN_KEY_LEN
@@ -118,44 +120,60 @@ class Rediz(object):
 
     # Public interface
 
-    def exists(self, *names):
-        return len( mget(names=names) )
+    def card(self):
+        return self.client.scard(self.NAMES)
 
-    def get(self, name:str, **ignore ):
+    def exists(self, names, *args):
+        names = list_or_args(names, args)
+        return self.client.exists(*names)
+
+    def get(self, name):
         return self._get_implementation( name = name )
 
     def mget(self, names:NameList, *args):
         names = list_or_args(names,args)
         return self._get_implementation( names=names )
 
-    def set( self, name:str, value, write_key:str ):
-        return self._coerce_set_coerce(name=name, value=value, write_key=write_key, return_args=None, budget=1 )
+    def set( self, name, value, write_key ):
+        return self._set_implementation(name=name, value=value, write_key=write_key, return_args=None, budget=1 )
 
     def mset(self,names:NameList, values:ValueList, write_keys:KeyList):
-        return self._coerce_set_coerce(names=names, values=values, write_keys=write_keys, return_args=None, budget=1000 )
+        return self._set_implementation(names=names, values=values, write_keys=write_keys, return_args=None, budget=1000 )
 
     def new( self, name=None, value=None, write_key=None ):
         """ For when you don't want to generate write_key (or value, or name)"""
         supplied = zip( ("name","value","write_key"), (name is not None, value is not None, write_key is not None) )
         return_args = [ a for a,s in supplied if not(s) ]
-        dump(return_args)
-        return self._coerce_set_coerce(value=value or "", write_key=write_key, return_args=return_args, budget=1)
+        return self._set_implementation(name=name, value=value or "", write_key=write_key, return_args=return_args, budget=1)
 
     def mnew( self, names:Optional[NameList]=None, values:Optional[ValueList]=None, write_keys:Optional[KeyList]=None, budget=1000 ):
         """ For when you don't want to generate write_keys (or values, or names)"""
         supplied = zip( ("name","value","write_key"), (names is not None, values is not None, write_keys is not None) )
         return_args = [ a for a,s in supplied if not(s) ]
-        return self._coerce_set_coerce(value=value, write_key=write_key, return_args=return_args)
+        return self._set_implementation(value=value, write_key=write_key, return_args=return_args)
 
-    def delete(self, name=None, write_key=None, names:Optional[NameList]=None, write_keys:Optional[KeyList]=None ):
-        """ Permissioned delete """
-        names, write_keys = names or [ name ], write_keys or [ write_key ]
-        are_valid = self._are_valid_write_keys(names, write_keys)
-        authorized_kill_list = [ name for (name,is_valid_write_key) in zip(names,are_valid) if is_valid_write_key ]
-        return self._delete(*authorized_kill_list)
+    def delete(self, name, write_key):
+        return self._delete_implementation( name=name, write_key=write_key )
+
+    def mdelete(self, names, write_key:Optional[str]=None, write_keys:Optional[KeyList]=None):
+        return self._delete_implementation( names=names, write_key=write_key, write_keys=write_keys )
+
+    def subscriptions(self, name, write_key):
+        """ Permissioned listing of current subscriptions """
+        return _subscriptions_implementation(name=name, write_key=write_key )
+
+    def subscribe(self, name, write_key, source, delay=0):
+        """ Permissioned subscribe """
+        return self._subscribe_implementation(name=name, write_key=write_key, source=source, delay=delay )
+
+    def msubscribe(self, name, write_key, sources, delay:int=None, delays:Optional[DelayList]=None):
+        """ Permissioned subscribe to multiple sources """
+        return self._subscribe_implementation(name=name, write_key=write_key, sources=sources, delay=delay, delays=delays )
+
+    def unsubscribe(self, name, write_key, sources, delays=None):
+        return self._unsubscribe_implementation(name=name, write_key=write_key, sources=sources, delays=delays )
 
     # Implementation
-
     def _get_implementation(self,name:Optional[str]=None,
                  names:Optional[NameList]=None, **nuissance ):
         """ Retrieve value(s). There is no permissioning on read """
@@ -164,7 +182,7 @@ class Rediz(object):
         res = self._pipelined_get(names=names)
         return res if plural else res[0]
 
-    def _coerce_set_coerce(self,budget, names:Optional[NameList]=None,
+    def _set_implementation(self,budget, names:Optional[NameList]=None,
                  values:Optional[ValueList]=None,
                  write_keys:Optional[KeyList]=None,
                  name:Optional[str]=None,
@@ -174,8 +192,12 @@ class Rediz(object):
         singular = names is None
         names, values, write_keys = self._coerce_inputs(names=names,values=values,
                                   write_keys=write_keys,name=name,value=value,write_key=write_key)
+        # Encode
+        values = [ v if isinstance(v,str) else json.dumps(v) for v in values ]
+
         # Execute and create temporary logs
-        execution_log = self._set_implementation( names=names,values=values, write_keys=write_keys, budget=budget )
+        execution_log = self._pipelined_set( names=names,values=values, write_keys=write_keys, budget=budget )
+        #dump(execution_log)
 
         # Re-jigger results
         if return_args is not None:
@@ -185,7 +207,7 @@ class Rediz(object):
             access = self._coerce_outputs( execution_log=execution_log, return_args=('write_key',) )
             return sum( (a["write_key"] is not None) for a in access )
 
-    def _set_implementation(self, names:Optional[NameList]=None,
+    def _pipelined_set(self, names:Optional[NameList]=None,
                   values:Optional[ValueList]=None,
                   write_keys:Optional[KeyList]=None,
                   name:Optional[str]=None,
@@ -210,11 +232,7 @@ class Rediz(object):
         return {"executed":executed,
                 "rejected":rejected_obscure+rejected_new+rejected_existing}
 
-    def _subscribe(self, publisher, subscriber ):
-        self.client.sadd(self.SUBSCRIBERS+publisher,subscriber)
 
-    def _unsubscribe(self, publisher, subscriber ):
-        self.client.srem(self.SUBSCRIBERS+publisher,subscriber)
 
     @staticmethod
     def _coerce_inputs(  names:Optional[NameList]=None,
@@ -252,7 +270,7 @@ class Rediz(object):
 
             for ndx, name, value, write_key in zip( ndxs, names, values, write_keys):
                 if not(self.is_valid_value(value)):
-                    rejected.append({"ndx":ndx, "name":name,"write_key":None,"value":value,"error":"invalid value of type "+type(value)+" was supplied"})
+                    rejected.append({"ndx":ndx, "name":name,"write_key":None,"value":value,"error":"invalid value of type "+str(type(value))+" was supplied"})
                 else:
                     if (name is None):
                         if write_key is None:
@@ -315,30 +333,39 @@ class Rediz(object):
         write_keys     = [ w for w,ndx in zip(write_keys, ndxs)  if ndx in ignored_ndxs ]
         return executed, rejected, ignored_ndxs, names , values, write_keys
 
-    def _are_valid_write_keys(self,names,write_keys):
-        return [ k==k1 for (k,k1) in zip( write_keys, self._write_keys(names) ) ]
+    def _authorize(self,name,write_key):
+        return write_key==self._authority(name=name)
 
-    def _write_keys(self,names):
-        if names:
-            return self.client.hmget(name=self.OWNERSHIP,keys=names)
+    def _mauthorize(self,names,write_keys):
+        authority = self._mauthority(names)
+        assert len(names)==len(write_keys)
+        comparison = [ k==k1 for (k,k1) in zip( write_keys, authority ) ]
+        #dump({"authority":authority,"names":names,"comparison":comparison,"write_keys":write_keys})
+        return comparison
+
+    def _authority(self,name):
+        return self.client.hget(self.OWNERSHIP,name)
+
+    def _mauthority(self,names, *args):
+        names = list_or_args(names,args)
+        return self.client.hmget(self.OWNERSHIP,*names)
 
     def _pipelined_set_existing(self,ndxs, names,values, write_keys, ttl):
         executed     = list()
         rejected     = list()
         if ndxs:
-            modify_pipe = self.client.pipeline(transaction=False)
-            error_pipe    = self.client.pipeline(transaction=False)
-            official_write_keys = self._write_keys(names)
+            modify_pipe         = self.client.pipeline(transaction=False)
+            error_pipe          = self.client.pipeline(transaction=False)
+            official_write_keys = self._mauthority(names)
             for ndx,name, value, write_key, official_write_key in zip( ndxs, names, values, write_keys, official_write_keys ):
                 if write_key==official_write_key:
                     modify_pipe, intent = self._modify_page(modify_pipe,ndx=ndx,name=name,value=value,ttl=ttl)
                     intent.update({"ndx":ndx,"write_key":write_key})
                     executed.append(intent)
                 else:
-                    intent.update( {'ndx':ndx,"name":name,"value":value,"write_key":None} )
-                    rejected.append(intent)
                     auth_message = {"ndx":ndx,"name":name,"value":value,"write_key":write_key,"official_write_key_ends_in":official_write_key[-4:],
                     "error":"write_key does not match page_key on record"}
+                    intent = auth_message
                     error_pipe.append(self.ERROR_LOG+write_key,json.dumps(auth_message))
                     error_pipe.expire(self.ERROR_LOG+write_key,self.ERROR_TTL)
 
@@ -427,6 +454,19 @@ class Rediz(object):
         else:
             return 0
 
+    def _delete_implementation(self, name=None, write_key=None, names:Optional[NameList]=None, write_keys:Optional[KeyList]=None ):
+        """ Permissioned delete """
+        names      = names or [ name ]
+        write_keys = write_keys or [ write_key for _ in names ]
+        are_valid  = self._mauthorize(names, write_keys)
+
+        authorized_kill_list = [ name for (name,is_valid_write_key) in zip(names,are_valid) if is_valid_write_key ]
+        if authorized_kill_list:
+            return self._delete(*authorized_kill_list)
+        else:
+            return 0
+
+
     def _delete(self, names, *args ):
         """ Remove data, subscriptions, messages, ownership, history and set entry """
         names = list_or_args(names,args)
@@ -499,16 +539,23 @@ class Rediz(object):
         intent.update({"new":True,"write_key":write_key})
         return pipe, intent
 
+    def _streams_support(self):
+        # Streams not supported on fakeredis
+        try:
+            record_of_test = {"time":str(time.time()) }
+            self.client.xadd(name='e5312d16-dc87-46d7-a2e5-f6a6225e63a5',fields=record_of_test)
+            return True
+        except:
+            return False
+
     def _modify_page(self, pipe,ndx,name,value,ttl, intent=dict()):
         pipe.set(name=name,value=value,ex=ttl)
         # Also write a duplicate to another key
         name_of_copy   = self.random_key()[:-10]+"-copy-"+name[:4]
         HISTORY_TTL = min( max( 2*60*60, ttl ), 60*60*24 )
         pipe.set(name=name_of_copy,value=value,ex=HISTORY_TTL)
-        try:
+        if self._streams_support():
             pipe.xadd(name=self.HISTORY+name,fields={"copy":name_of_copy})
-        except:
-            pass # Using fakeredis which doesn't yet support streams
         # Future copy operations
         utc_epoch_now = int(time.time())
         for delay_seconds in self.DELAY_SECONDS:
@@ -522,6 +569,59 @@ class Rediz(object):
                        "new":False,"obscure":False,"copy":name_of_copy})
 
         return pipe, intent
+
+
+    def _subscriptions_implementation(self, name, write_key):
+        """ List subscriptions """
+        if self._authorize(name=name,write_key=write_key):
+            return self._subscriptions(name=name)
+
+    def _coerce_sources(source=None, sources:Optional[NameList]=None, delay=None, delays:Optional[DelayList]=None):
+        """ Change name of soure to accomodate delay """
+        sources    = sources or [ source ]
+        delays     = delays  or [ delay ]
+        if len(sources)==1 and len(delays)>1:
+            sources = [ sources[0] for _ in delays ]
+        if len(sources)>1 and len(delays)==1:
+            delays = [ delays[0] for _ in sources ]
+        assert len(delays)==len(sources)
+        delays = [ 0 if delay is None else int(delay) for delay in delays ]
+        # Delays must be valid
+        valid  = [ d in [0]+self.DELAY_SECONDS for d in delays ]
+        valid_delays  = [ d for d,v in zip(delays,valid)  if v ]
+        valid_sources = [ s for s,v in zip(sources,valid) if v ]
+        augmented_sources = [ source if delay==0 else self.DELAYED+str(delay)+self.SEP+name for source, delay in zip(valid_sources, valid_delays) ]
+        return augmented_sources
+
+    def _subscribe_implementation(self, name, write_key,
+                                        source=None,    sources:Optional[NameList]=None,
+                                        delay:int=None, delays:Optional[DelayList]=None ):
+        """ Permissioned subscribe to one or more sources """
+        if self._authorize(name=name,write_key=write_key):
+            dump({"sources":sources})
+            augmented_sources = self._coerce_sources(source=source, sources=sources, delay=delay, delays=delays )
+            return self._subscribe( name=name, sources=augmented_sources)
+        else:
+            return 0
+
+    def _subscribe(self, name, source ):
+        return self.client.sadd(self.SUBSCRIBERS+name,source)
+
+    def _subscriptions(self, name ):
+        return self.client.smembers(self.SUBSCRIBERS+name)
+
+    def _unsubscribe_implementation(self, name, write_key,
+                                        source=None,    sources:Optional[NameList]=None,
+                                        delay:int=None, delays:Optional[DelayList]=None ):
+        """ Permissioned unsubscribe from one or more sources """
+        if self._authorize(name=name,write_key=write_key):
+            augmented_sources = self._coerce_sources(source=source, sources=sources, delay=delay, delays=delays )
+            return self._unsubscribe( name=name, sources=augmented_sources)
+        else:
+            return 0
+
+    def _unsubscribe(self, name, source ):
+        return self.client.srem(self.SUBSCRIBERS+name,source)
 
     def admin_promises(self, lookback_seconds=65):
          exists_pipe = self.client.pipeline()
