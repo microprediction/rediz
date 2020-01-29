@@ -3,7 +3,7 @@
 
 ## REDIZ
 
-Used to create a public read, write permission-based shared remote database hosting live data. Conveniences provided include history, subscription, delay and market-like mechanisms intended to facilitate collectivized short term prediction of public data. The instance at www.3za.org exposes public methods enumerated below via a combination of free and minimal cost APIs. The minimal cost APIs allow sponsors of prediction streams to pay for crowd-based prediction of public data of civic, scientific or commercial significance.  
+Used to create a public read, write permission-based shared remote database hosting live data at www.3za.org. Conveniences provided include history, subscription, delay and market-like mechanisms intended to facilitate collectivized short term prediction of public data. The instance at www.3za.org exposes public methods enumerated below via a combination of free and minimal cost APIs. The minimal cost APIs allow sponsors of prediction streams to pay for crowd-based prediction of public data of civic, scientific or commercial significance.  
 
 ### Publishing live data
 
@@ -22,10 +22,10 @@ This will fail if the name 'air-pressure-06820.json' was already taken. Possessi
 
 However, assuming continuous use, derivatives of this live data will be maintained such as:
 
-| Example                              | Intepretation               |
-|--------------------------------------|-----------------------------|
-| history::air-pressure-06820.json     | log with links to revisions |
-| delayed::15:air-pressure-06820.json  | 15 sec delayed              |
+| Example                              | Intepretation                    |
+|--------------------------------------|----------------------------------|
+| history::air-pressure-06820.json     | Log with links to data revisions |
+| delayed::15:air-pressure-06820.json  | Name holding 15 sec delayed data |
 
 In this way Rediz acts as an independent third party allowing users to advertise live data, and also advertise data streams (such as predictions) that have been independently verified as quarantined for some short period of time. Please contact us if you would like to contribute a Merkel hash or other scheme to add strength to this statement. Delayed and live data can be read with get. For example:  
 
@@ -34,15 +34,15 @@ In this way Rediz acts as an independent third party allowing users to advertise
 
 No permissions are required to read.
 
-### Future scenarios
+### Future scenarios (coming soon)
 
 Any user can contribute to Monte Carlo scenarios describing possible future values. The prefixes refer to market-like mechanisms used under the hood which provide incentive for contributors to provide
 samples which individually or collectively map the joint distribution accurately.
 
-| Example                              | Interpretation              |
-|--------------------------------------|-----------------------------|
-| nano:60:air-pressure-06820.json     | 1 minute ahead scenarios     |
-| near:15:air-pressure-06820.json     | 1 minute ahead scenarios     |
+| Example                           | Interpretation                        |
+|-----------------------------------|---------------------------------------|
+| nano:60:air-pressure-06820.json   | Listing of 1 minute ahead scenarios   |
+| near:15:air-pressure-06820.json   | Listing of 15 second ahead scenarios  |
 
 At present the choices of prefix are:
 
