@@ -48,10 +48,8 @@ At present the choices of prefix are:
 
 | Prefix | Name         | Interpretation and properties                              |
 |--------|--------------|------------------------------------------------------------|
-| nano   | Nanomutuel   | A relative compensation scheme analogous to a pari-mutuel clearing mechanism, but extending to high dimensions, nano-markets reward contributors who provide samples in previously under-sampled regions in the joint distribution. A log-wealth maximizing investor has incentive to contribute paths that reflect her unbiased assessment of the joint distribution.  |
-| near   | Nearest Squared Error     | Based on high performers in an absolute compensation scheme where the criteria is squared distance between the realized outcome and the nearest scenario. In the case where a contributor adjusts model parameters and then supplies samples from that model, it can be shown that minimizing expected squared distance to the nearest point is equivalent to Maximum Likelihood estimation of the model parameters.
-
-See https://arxiv.org/abs/1809.09087 for a proof of the statement made about Nearest Squared Error. Calculations are performed by the library threeza.py  
+| nano   | Nanomutuel   | A relative compensation scheme analogous to a pari-mutuel clearing mechanism but extending to high dimensions. Nano-markets reward contributors who provide samples in previously under-sampled regions in the joint distribution. A log-wealth maximizing investor constrained to invest all wealth has incentive to contribute paths that reflect her unbiased assessment of the joint distribution.  |
+| near   | Nearest Squared Error     | Based on high performers in an absolute compensation scheme where the criteria is squared distance between the realized outcome and the nearest scenario. In the case where a contributor adjusts model parameters and then supplies samples from that model, it can be shown that minimizing expected squared distance to the nearest point is equivalent to Maximum Likelihood estimation of the model parameters. See https://arxiv.org/abs/1809.09087 for a proof. When players are allowed to form coalitions the interpretation is more complex. 
 
 ### Point estimate predictions
 
