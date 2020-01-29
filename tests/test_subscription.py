@@ -8,7 +8,6 @@ def dump(obj,name="tmp_subscription.json"): # Debugging
     json.dump(obj,open(name,"w"))
 
 
-
 def test_subscription_singular():
     subscription_example(plural=False)
 

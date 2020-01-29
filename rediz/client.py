@@ -576,8 +576,12 @@ class Rediz(object):
         if self._authorize(name=name,write_key=write_key):
             return self._subscriptions(name=name)
 
-    def _coerce_sources(source=None, sources:Optional[NameList]=None, delay=None, delays:Optional[DelayList]=None):
-        """ Change name of soure to accomodate delay """
+    @staticmethod
+    def _delay_as_int(delay):
+        return 0 if delay is None else int(delay)
+
+    def _coerce_sources(self, source:str=None, sources:Optional[NameList]=None, delay=None, delays:Optional[DelayList]=None):
+        """ Change name of source to accomodate delay """
         sources    = sources or [ source ]
         delays     = delays  or [ delay ]
         if len(sources)==1 and len(delays)>1:
@@ -585,12 +589,12 @@ class Rediz(object):
         if len(sources)>1 and len(delays)==1:
             delays = [ delays[0] for _ in sources ]
         assert len(delays)==len(sources)
-        delays = [ 0 if delay is None else int(delay) for delay in delays ]
+        delays = [ self._delay_as_int(delay) for delay in delays ]
         # Delays must be valid
         valid  = [ d in [0]+self.DELAY_SECONDS for d in delays ]
         valid_delays  = [ d for d,v in zip(delays,valid)  if v ]
         valid_sources = [ s for s,v in zip(sources,valid) if v ]
-        augmented_sources = [ source if delay==0 else self.DELAYED+str(delay)+self.SEP+name for source, delay in zip(valid_sources, valid_delays) ]
+        augmented_sources = [ source if delay==0 else self.DELAYED+str(delay)+self.SEP+source for source, delay in zip(valid_sources, valid_delays) ]
         return augmented_sources
 
     def _subscribe_implementation(self, name, write_key,
@@ -604,8 +608,8 @@ class Rediz(object):
         else:
             return 0
 
-    def _subscribe(self, name, source ):
-        return self.client.sadd(self.SUBSCRIBERS+name,source)
+    def _subscribe(self, name, sources ):
+        return self.client.sadd(self.SUBSCRIBERS+name,sources)
 
     def _subscriptions(self, name ):
         return self.client.smembers(self.SUBSCRIBERS+name)
