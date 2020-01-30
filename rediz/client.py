@@ -71,15 +71,14 @@ def dump(obj,name="tmp_client.json"):
         json.dump(obj,open(name,"w"))
 
 
-
 class Rediz(object):
 
     # Initialization
 
     def __init__(self,**kwargs):
         self.client         = self.make_redis_client(**kwargs)         # Real or mock redis client
-        self.SEP            = '::'
-        self.MIN_KEY_LEN    = 18                                       # Want at least half len(uuid)
+        self.SEP            = kwargs.get("sep") or '::'
+        self.MIN_KEY_LEN    = int( kwargs.get("min_key_len") or 18 )           # Want at least half len(uuid)
         # Reserved redis keys and prefixes
         self._obscurity     = "09909e88-ca04-4868-a0a0-c94748df844f"+self.SEP
         self.OWNERSHIP      = self._obscurity+"ownership"
@@ -87,12 +86,14 @@ class Rediz(object):
         self.PROMISES       = self._obscurity+"promises"+self.SEP
         # User facing conventions
         self.DELAYED        = "delayed"+self.SEP
+        self.LINKS          = "links"+self.SEP
+        self.BACKLINKS      = "backlinks"+self.SEP
         self.MESSAGES       = "messages"+self.SEP
         self.HISTORY        = "history"+self.SEP
         self.SUBSCRIBERS    = "subscribers"+self.SEP
         self.DELAY_SECONDS  = kwargs.get("delay_seconds")  or [1,2,5,10,30,60,1*60,2*60,5*60,10*60,20*60,60*60]
         self.ERROR_LOG      = "errors"+self.SEP
-        self.ERROR_TTL      = 10
+        self.ERROR_TTL      = int( kwargs.get('error_ttl') or 10 )
 
     def is_valid_name(self,name:str):
         name_regex = re.compile(r'^[-a-zA-Z0-9_.:]{1,200}\.[json,HTML]+$',re.IGNORECASE)
@@ -158,9 +159,11 @@ class Rediz(object):
     def mdelete(self, names, write_key:Optional[str]=None, write_keys:Optional[KeyList]=None):
         return self._delete_implementation( names=names, write_key=write_key, write_keys=write_keys )
 
+    # Subscription
+
     def subscriptions(self, name, write_key):
         """ Permissioned listing of current subscriptions """
-        return _subscriptions_implementation(name=name, write_key=write_key )
+        return self._subscriptions_implementation(name=name, write_key=write_key )
 
     def subscribe(self, name, write_key, source, delay=0):
         """ Permissioned subscribe """
@@ -173,7 +176,35 @@ class Rediz(object):
     def unsubscribe(self, name, write_key, sources, delays=None):
         return self._unsubscribe_implementation(name=name, write_key=write_key, sources=sources, delays=delays )
 
-    # Implementation
+
+    # Linking
+
+    def link(self, name, write_key, target):
+        """ Permissioned link to a target contemporaneous name """
+        return self._link_implementation(name=name, write_key=write_key, budget=1, target=target )
+
+    def mlink(self, name, write_key, targets):
+        """ Permissioned link to multiple targets which are contemporaneous name """
+        return self._link_implementation(name=name, write_key=write_key, budget=1000, targets=targets )
+
+    def unlink(self, name, write_key, target):
+        """ Permissioned removal of link """
+        return self._unlink_implementation(name=name, write_key=write_key, source=source )
+
+    def links(self, name, write_key):
+        """ Permissioned listing of targets """
+        return self._links_implementation(name=name, write_key=write_key )
+
+    def backlinks(self, name, write_key):
+        """ Permissioned listing of backlinks coming into name """
+        return self._backlinks_implementation(name=name, write_key=write_key )
+
+
+    # --------------------------------------------------------------------------
+    #            Implementation
+    # --------------------------------------------------------------------------
+
+
     def _get_implementation(self,name:Optional[str]=None,
                  names:Optional[NameList]=None, **nuissance ):
         """ Retrieve value(s). There is no permissioning on read """
@@ -468,31 +499,52 @@ class Rediz(object):
 
 
     def _delete(self, names, *args ):
-        """ Remove data, subscriptions, messages, ownership, history and set entry """
+        """ Remove data, subscriptions, messages, ownership, history, delays, links """
+        # TODO: Combine 1+2 into one call to reduce communication
         names = list_or_args(names,args)
         names = [ n for n in names if n is not None ]
         self.assert_not_in_reserved_namespace(names)
 
+        # (1) List subscriptions so we can kill messages in flight
         subs_pipe = self.client.pipeline()
         for name in names:
             subs_pipe.smembers(name=self.SUBSCRIBERS+name)
         subs_res = subs_pipe.execute()
 
-        messages_removal_pipe = self.client.pipeline(transaction=False)
+        # (2) Collate backlinks
+        links_pipe  = self.client.pipeline()
+        delay_names = list()
+        link_names  = list()
+        for name in names:
+            for delay in self.DELAY_SECONDS:
+                delay_name = self.DELAYED+str(delay)+self.SEP+name
+                links_pipe.hgetall(self.LINKS+delay_name)
+                delay_names.append(delay_name)
+                link_names.append(self.LINKS+delay_name)
+        link_collections = links_pipe.execute()
+
+        # (3) Round up and destroy in one pipeline
+        delete_pipe = self.client.pipeline(transaction=False)
+        for name, link_collection in zip(names, link_collections):
+            for target in list(link_collection.keys()):
+                delete_pipe.hdel(name=self.BACKLINKS+target,key=name)
+
         for name, subscribers in zip(names,subs_res):
             for subscriber in subscribers:
                 recipient_mailbox = self.MESSAGES+name
-                messages_removal_pipe.hdel(recipient_mailbox,name)
-        messages_removal_pipe.execute()
+                delete_pipe.hdel(recipient_mailbox,name)
 
-        delete_pipe = self.client.pipeline()
+        delete_pipe.delete(*link_names)
+        delete_pipe.delete(*delay_names)
         delete_pipe.hdel(self.OWNERSHIP,*names)
         delete_pipe.delete( *[self.SUBSCRIBERS+name for name in names] )
         delete_pipe.delete( *[self.MESSAGES+name for name in names] )
         delete_pipe.delete( *[self.HISTORY+name for name in names] )
         delete_pipe.srem( self.NAMES, *names )
-        delete_pipe.execute()
-        return self.client.delete( *names )
+        delete_pipe.delete(*names)
+        res = delete_pipe.execute()
+        return res[-1]
+
 
     def _randomly_find_orphans(self,num=1000):
         NAMES = self.NAMES
@@ -570,12 +622,6 @@ class Rediz(object):
 
         return pipe, intent
 
-
-    def _subscriptions_implementation(self, name, write_key):
-        """ List subscriptions """
-        if self._authorize(name=name,write_key=write_key):
-            return self._subscriptions(name=name)
-
     @staticmethod
     def _delay_as_int(delay):
         return 0 if delay is None else int(delay)
@@ -602,17 +648,22 @@ class Rediz(object):
                                         delay:int=None, delays:Optional[DelayList]=None ):
         """ Permissioned subscribe to one or more sources """
         if self._authorize(name=name,write_key=write_key):
-            dump({"sources":sources})
             augmented_sources = self._coerce_sources(source=source, sources=sources, delay=delay, delays=delays )
+            #dump({"sources":augmented_sources},"tmp_sources.json")
             return self._subscribe( name=name, sources=augmented_sources)
         else:
             return 0
 
     def _subscribe(self, name, sources ):
-        return self.client.sadd(self.SUBSCRIBERS+name,sources)
+        return self.client.sadd(self.SUBSCRIBERS+name,*sources)
+
+    def _subscriptions_implementation(self, name, write_key):
+        """ List subscriptions """
+        if self._authorize(name=name,write_key=write_key):
+            return self._subscriptions(name=name)
 
     def _subscriptions(self, name ):
-        return self.client.smembers(self.SUBSCRIBERS+name)
+        return list(self.client.smembers(self.SUBSCRIBERS+name))
 
     def _unsubscribe_implementation(self, name, write_key,
                                         source=None,    sources:Optional[NameList]=None,
@@ -624,8 +675,56 @@ class Rediz(object):
         else:
             return 0
 
-    def _unsubscribe(self, name, source ):
-        return self.client.srem(self.SUBSCRIBERS+name,source)
+    def _unsubscribe(self, name, sources ):
+        return self.client.srem(self.SUBSCRIBERS+name,*sources)
+
+
+    # Linking
+
+    def _root_name(self,name):
+        return name.split(self.SEP)[-1]
+
+    def _link_implementation(self, name, write_key, budget, target=None, targets=None ):
+        " Create link to possibly non-existent target(s) "
+        if targets is None:
+            targets = [ target ]
+
+        root = self._root_name(name)
+        if self.exists(root) and "delay::" in name and not( "delay::" in target
+               ) and self._authorize(name=root,write_key=write_key):
+            link_pipe   = self.client.pipeline()
+            edge_weight = 1.0*budget / len(targets)
+            for target in targets:
+                link_pipe.hset(self.LINKS+name,key=target,value=edge_weight)
+                link_pipe.hset(self.BACKLINKS+target,key=name,value=edge_weight)
+            link_pipe.execute()
+            return budget
+        else:
+            return 0
+
+
+    def _unlink_implementation(self, name, write_key, target=None, targets=None):
+        if targets is None:
+            targets = [ target ]
+
+        if self._authorize(name=name,write_key=write_key):
+            link_pipe   = self.client.pipeline()
+            for target in targets:
+                link_pipe.hdel(self.LINKS+name,key=target,value=edge_weight)
+                link_pipe.hdel(self.BACKLINKS+target,key=name,value=edge_weight)
+            return link_pipe.execute()
+
+
+    def _links_implementation(self, name, write_key):
+        if self._authorize(name=name,write_key=write_key):
+            return self.client.hgetall(self.LINKS+name)
+
+    def _backlinks(self, name, write_key):
+        if self._authorize(name=name,write_key=write_key):
+            return self.client.hgetall(self.LINKS+name)
+
+
+    # Administrative
 
     def admin_promises(self, lookback_seconds=65):
          exists_pipe = self.client.pipeline()

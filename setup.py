@@ -10,7 +10,7 @@ README = (HERE / "README.md").read_text()
 # This call to setup() does all the work
 setup(
     name="rediz",
-    version="0.0.6",
+    version="0.0.7",
     description="Redis usage patterns for live shared data (used at www.3za.org) ",
     long_description=README,
     long_description_content_type="text/markdown",
