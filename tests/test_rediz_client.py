@@ -10,15 +10,15 @@ def dump(obj,name="tmp_rediz_client.json"):
 def random_name():
     return random_key()+'.json'
 
-def test_set_with_log():
+def test_set_integer():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
     args = {"name": "3912eb73-f5e6-4f5e-9674-1a320779b7d9.json",
-           "value": "25",
+           "value": 25,
            "write_key": "db81045e-eead-44e0-b0a9-ba38d1d0395e"}
     rdz._delete(args["name"])  # Previous run
     res = rdz._pipelined_set(**args)
     dump(res)
-    assert res["executed"][0]["value"]=="25"
+    assert res["executed"][0]["value"]==25
 
     access = {"name": "3912eb73-f5e6-4f5e-9674-1a320779b7d9.json", "write_key": "db81045e-eead-44e0-b0a9-ba38d1d0395e", "value": 17}
     assert rdz.set(**access)==1

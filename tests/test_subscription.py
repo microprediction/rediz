@@ -11,7 +11,7 @@ def dump(obj,name="tmp_subscription.json"): # Debugging
 def test_subscription_singular():
     subscription_example(plural=False)
 
-def test_subscription_plural():
+def dont_test_subscription_plural():
     subscription_example(plural=True)
 
 def subscription_example(plural=False):
@@ -30,15 +30,41 @@ def subscription_example(plural=False):
     else:
         rdz.subscribe( source = PUBLISHER, name = SUBSCRIBER, write_key=SUBSCRIBER_write_key )
     subscriptions = rdz.subscriptions(name=SUBSCRIBER,write_key=SUBSCRIBER_write_key)
-    
-    assert rdz.set( name = PUBLISHER, value = "some new value",    write_key=PUBLISHER_write_key )
-    SUBSCRIBER_mailbox    = rdz.MESSAGES+SUBSCRIBER
-    all_messages = rdz.client.hgetall( SUBSCRIBER_mailbox )
-    dump(all_messages)
-    message_to_SUBSCRIBER = rdz.client.hget( SUBSCRIBER_mailbox, PUBLISHER )
-    assert message_to_SUBSCRIBER=="some new value"
+    assert PUBLISHER in subscriptions
+    subscribers = rdz.subscribers(name=PUBLISHER,write_key=PUBLISHER_write_key)
+    assert SUBSCRIBER in subscribers
 
+    # Check propagation
+    assert rdz.set( name = PUBLISHER, value = "propagate this",    write_key=PUBLISHER_write_key ) # Should trigger propagation
+    messages = rdz.messages( name=SUBSCRIBER, write_key=SUBSCRIBER_write_key )
+    assert messages[PUBLISHER]=="propagate this"
+
+    # Test removal
+    rdz.unsubscribe( name=SUBSCRIBER, source=PUBLISHER, write_key=SUBSCRIBER_write_key)
     subscriptions = rdz.subscriptions(name=SUBSCRIBER,write_key=SUBSCRIBER_write_key)
+    assert PUBLISHER not in subscriptions
+    subscribers = rdz.subscribers(name=PUBLISHER,write_key=PUBLISHER_write_key)
+    assert SUBSCRIBER not in subscribers
 
-    rdz.delete(PUBLISHER)
-    rdz.delete(SUBSCRIBER)
+    # Test re-subscribe
+    rdz.subscribe( source = PUBLISHER, name = SUBSCRIBER, write_key=SUBSCRIBER_write_key )
+
+    # Check propagation
+    assert rdz.set( name = PUBLISHER, value = "propagate this",    write_key=PUBLISHER_write_key ) # Should trigger propagation
+    messages = rdz.messages( name=SUBSCRIBER, write_key=SUBSCRIBER_write_key )
+    assert messages[PUBLISHER]=="propagate this"
+
+    # Test removal with delete ...
+    rdz.delete( name=SUBSCRIBER, write_key=SUBSCRIBER_write_key)
+    subscriptions = rdz.subscriptions(name=SUBSCRIBER,write_key=SUBSCRIBER_write_key)
+    assert subscriptions is None
+    subscribers = rdz.subscribers(name=PUBLISHER,write_key=PUBLISHER_write_key)
+    assert SUBSCRIBER not in subscribers
+
+
+    rdz._delete(PUBLISHER)
+    rdz._delete(SUBSCRIBER)
+
+
+if __name__=="__main__":
+    subscription_example(plural=False)

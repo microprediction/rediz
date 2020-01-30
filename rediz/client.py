@@ -9,49 +9,7 @@ from redis.client import list_or_args
 # -----
 # Implements a write-permissioned (not read permissioned) shared REDIS value store with subscription, history
 # and delay mechanisms. Intended for collectivized short term (e.g. 5 seconds or 15 minutes) prediction.
-#
-# The usage pattern is a sequence of scheduled calls:
-#     my_secret_key="eae775f3-a33a-4105-ab8f-77336b0a3921"
-#     while True:
-#         time.sleep(60)
-#         measurement = measure_somehow()
-#         set(name='air-pressure-06820.json',write_key=my_secret_key,value=measurement)         [ assumes name not taken yet ]
-#
-# Then later:
-#     one_minute_forecast     = get(name='predicted:1:air-pressure-06820.json')
-#     fifteen_minute_forecast = get(name='predicted:900:air-pressure-06820.json')
-#
-# Public methods
-# --------------
-#   > set, get, new, delete, exists
-#   > mset, mget, mnew
-#   > subscribe, unsubscribe
-#
-# Administrative methods
-# ----------------------
-#   > admin_garbage_collection         ... should be run every fifteen minutes, say
-#   > admin_promises                   ... should be run every minute or more often
-#
-# Permissioning
-# -------------
-# Permissioning is achieved by a hash of name->official_write_key. It is first-in-best dressed, but ownership will
-# be relinquished if the value expires. The time to live is determined by the memory size of the value, and is refreshed
-# every time set() is called.
-#
-# Usage note:
-# -----------
-# This library does not provide scheduling of calls to admin_promises() and admin_garbage_collection().
-#
-# Implementation notes:
-# --------------------
-# There are hooks built into set() that propagate new values to history, delay queues and subscriber mailboxes.
-#  -- For example, an instruction to copy a value from "name" to "delay:5:name" will sit in promises::81236428946 until either admin_promises()
-# is called or the set expires. Expiry typically occurs 65 seconds after the scheduled time of the copy.
-#  -- Periodic calls to admin_garbage_collection() will stochastically remove artifacts of expired data.
-#
-# Known possible improvements
-# ---------------------------
-# # All commands accept list arguments and use pipelining to minimize communication with the server, but this can be improved using lua scripts.
+
 
 PY_REDIS_ARGS = ('host','port','db','username','password','socket_timeout','socket_keepalive','socket_keepalive_options',
                  'connection_pool', 'unix_socket_path','encoding', 'encoding_errors', 'charset', 'errors',
@@ -76,11 +34,11 @@ class Rediz(object):
     # Initialization
 
     def __init__(self,**kwargs):
-        self.client         = self.make_redis_client(**kwargs)         # Real or mock redis client
+        self.client         = self.make_redis_client(**kwargs)                 # Real or mock redis client
         self.SEP            = kwargs.get("sep") or '::'
-        self.MIN_KEY_LEN    = int( kwargs.get("min_key_len") or 18 )           # Want at least half len(uuid)
+        self.MIN_KEY_LEN    = int( kwargs.get("min_key_len") or 18 )           # c.f len(uuid)=36
         # Reserved redis keys and prefixes
-        self._obscurity     = "09909e88-ca04-4868-a0a0-c94748df844f"+self.SEP
+        self._obscurity     = ( kwargs.get("obscurity") or "09909e88-ca04-4868-a0a0-c94748df844f" ) + self.SEP
         self.OWNERSHIP      = self._obscurity+"ownership"
         self.NAMES          = self._obscurity+"names"
         self.PROMISES       = self._obscurity+"promises"+self.SEP
@@ -91,9 +49,12 @@ class Rediz(object):
         self.MESSAGES       = "messages"+self.SEP
         self.HISTORY        = "history"+self.SEP
         self.SUBSCRIBERS    = "subscribers"+self.SEP
+        self.SUBSCRIPTIONS  = "subscriptions"+self.SEP
         self.DELAY_SECONDS  = kwargs.get("delay_seconds")  or [1,2,5,10,30,60,1*60,2*60,5*60,10*60,20*60,60*60]
         self.ERROR_LOG      = "errors"+self.SEP
-        self.ERROR_TTL      = int( kwargs.get('error_ttl') or 10 )
+        # Config
+        self.INSTANT_RECALL = kwargs.get("instant_recall") or False  # Delete messages already sent when sender is deleted?
+        self.ERROR_TTL      = int( kwargs.get('error_ttl') or 10 )   # Number of seconds that set execution error logs are persisted
 
     def is_valid_name(self,name:str):
         name_regex = re.compile(r'^[-a-zA-Z0-9_.:]{1,200}\.[json,HTML]+$',re.IGNORECASE)
@@ -165,6 +126,10 @@ class Rediz(object):
         """ Permissioned listing of current subscriptions """
         return self._subscriptions_implementation(name=name, write_key=write_key )
 
+    def subscribers(self, name, write_key):
+        """ Permissioned listing of who is subscribing to name """
+        return self._subscribers_implementation(name=name, write_key=write_key )
+
     def subscribe(self, name, write_key, source, delay=0):
         """ Permissioned subscribe """
         return self._subscribe_implementation(name=name, write_key=write_key, source=source, delay=delay )
@@ -173,9 +138,15 @@ class Rediz(object):
         """ Permissioned subscribe to multiple sources """
         return self._subscribe_implementation(name=name, write_key=write_key, sources=sources, delay=delay, delays=delays )
 
-    def unsubscribe(self, name, write_key, sources, delays=None):
+    def unsubscribe(self, name, write_key, source, delays=None):
+        return self._unsubscribe_implementation(name=name, write_key=write_key, source=source, delays=delays )
+
+    def munsubscribe(self, name, write_key, sources, delays=None):
         return self._unsubscribe_implementation(name=name, write_key=write_key, sources=sources, delays=delays )
 
+    def messages(self, name, write_key):
+        """ Use key to open the mailbox """
+        return self._messages_implementation(name=name,write_key=write_key)
 
     # Linking
 
@@ -224,11 +195,10 @@ class Rediz(object):
         names, values, write_keys = self._coerce_inputs(names=names,values=values,
                                   write_keys=write_keys,name=name,value=value,write_key=write_key)
         # Encode
-        values = [ v if isinstance(v,str) else json.dumps(v) for v in values ]
+        values = [ v if isinstance(v,(int,float,str)) else json.dumps(v) for v in values ]
 
         # Execute and create temporary logs
         execution_log = self._pipelined_set( names=names,values=values, write_keys=write_keys, budget=budget )
-        #dump(execution_log)
 
         # Re-jigger results
         if return_args is not None:
@@ -255,11 +225,14 @@ class Rediz(object):
         executed_new,      rejected_new,      ndxs, names, values, write_keys = self._pipelined_set_new(      ndxs, names, values, write_keys, ttl)
         executed_existing, rejected_existing                                  = self._pipelined_set_existing( ndxs, names, values, write_keys, ttl)
 
-        # If a value was pre-existing it might have subscribers...
-        modified_names  = [ ex["name"] for ex in executed_existing ]
-        modified_values = [ ex["value"] for ex in executed_existing ]
-        self._propagate_to_subscribers( names = modified_names, values = modified_values )
         executed = executed_obscure+executed_new+executed_existing
+
+        dump(executed_existing,"tmp_executed_existing.json")
+        # Propagate to subscribers
+        modified_names  = [ ex["name"] for ex in executed ]
+        modified_values = [ ex["value"] for ex in executed ]
+        dump({"names":modified_names,"values":modified_values},"tmp_modified.json")
+        self._propagate_to_subscribers( names = modified_names, values = modified_values )
         return {"executed":executed,
                 "rejected":rejected_obscure+rejected_new+rejected_existing}
 
@@ -418,6 +391,8 @@ class Rediz(object):
             subs = subscriber_pipe.smembers(name=subscriber_set_name)
         subscribers_sets = subscriber_pipe.execute()
 
+        dump({"subscribers":list(subscribers_sets[0])},"tmp_subscribers.json")
+
         propagate_pipe = self.client.pipeline(transaction=False)
 
         executed = list()
@@ -505,11 +480,17 @@ class Rediz(object):
         names = [ n for n in names if n is not None ]
         self.assert_not_in_reserved_namespace(names)
 
-        # (1) List subscriptions so we can kill messages in flight
+        # (1) List  so we can kill messages in flight
         subs_pipe = self.client.pipeline()
         for name in names:
             subs_pipe.smembers(name=self.SUBSCRIBERS+name)
-        subs_res = subs_pipe.execute()
+        for name in names:
+            subs_pipe.smembers(name=self.SUBSCRIPTIONS+name)
+        res = subs_pipe.execute()
+        assert len(res)==2*len(names)
+        subscribers_res   = res[:len(names)]
+        subscriptions_res = res[len(names):]
+
 
         # (2) Collate backlinks
         links_pipe  = self.client.pipeline()
@@ -525,14 +506,24 @@ class Rediz(object):
 
         # (3) Round up and destroy in one pipeline
         delete_pipe = self.client.pipeline(transaction=False)
+
         for name, link_collection in zip(names, link_collections):
             for target in list(link_collection.keys()):
                 delete_pipe.hdel(name=self.BACKLINKS+target,key=name)
 
-        for name, subscribers in zip(names,subs_res):
+        # Remove name from children's list of subscriptions
+        for name, subscribers in zip(names,subscribers_res):
             for subscriber in subscribers:
+                delete_pipe.srem(self.SUBSCRIPTIONS+subscriber, name)
                 recipient_mailbox = self.MESSAGES+name
-                delete_pipe.hdel(recipient_mailbox,name)
+                if self.INSTANT_RECALL:
+                    delete_pipe.hdel(recipient_mailbox,name)
+
+        # Remove name from parent's list of subscribers
+        for name, subscriptions in zip(names, subscriptions_res):
+            for source in subscriptions:
+                delete_pipe.srem(self.SUBSCRIBERS+source, name)
+
 
         delete_pipe.delete(*link_names)
         delete_pipe.delete(*delay_names)
@@ -655,15 +646,21 @@ class Rediz(object):
             return 0
 
     def _subscribe(self, name, sources ):
-        return self.client.sadd(self.SUBSCRIBERS+name,*sources)
+        the_pipe = self.client.pipeline()
+        for source in sources:
+            the_pipe.sadd(self.SUBSCRIBERS+source,name)
+        the_pipe.sadd(self.SUBSCRIPTIONS+name,*sources)
+        return the_pipe.execute()
+
+    def _subscribers_implementation(self, name, write_key):
+        """ List subscribers """
+        if self._authorize(name=name,write_key=write_key):
+            return list(self.client.smembers(self.SUBSCRIBERS+name))
 
     def _subscriptions_implementation(self, name, write_key):
         """ List subscriptions """
         if self._authorize(name=name,write_key=write_key):
-            return self._subscriptions(name=name)
-
-    def _subscriptions(self, name ):
-        return list(self.client.smembers(self.SUBSCRIBERS+name))
+            return list(self.client.smembers(self.SUBSCRIPTIONS+name))
 
     def _unsubscribe_implementation(self, name, write_key,
                                         source=None,    sources:Optional[NameList]=None,
@@ -671,13 +668,21 @@ class Rediz(object):
         """ Permissioned unsubscribe from one or more sources """
         if self._authorize(name=name,write_key=write_key):
             augmented_sources = self._coerce_sources(source=source, sources=sources, delay=delay, delays=delays )
-            return self._unsubscribe( name=name, sources=augmented_sources)
+            pipe = self.client.pipeline()
+            pipe = self._unsubscribe( pipe=pipe, name=name, sources=augmented_sources)
+            return pipe.execute()
         else:
             return 0
 
-    def _unsubscribe(self, name, sources ):
-        return self.client.srem(self.SUBSCRIBERS+name,*sources)
+    def _unsubscribe(self, pipe, name, sources ):
+        for source in sources:
+            pipe.srem(self.SUBSCRIBERS+source, name)
+        pipe.srem(self.SUBSCRIPTIONS+name,*sources)
+        return pipe
 
+    def _messages_implementation(self, name, write_key):
+        if self._authorize(name=name,write_key=write_key):
+            return self.client.hgetall( self.MESSAGES+name )
 
     # Linking
 

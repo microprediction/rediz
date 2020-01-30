@@ -27,7 +27,6 @@ def do_test_link(rdz):
     assert rdz.link( name=PREDICTOR,target=TARGET,write_key=SOURCE_write_key )  # Can create this before delay exists (!)
     time.sleep(1.5)
     dump( rdz.admin_promises() )
-    dump(link_res)
     # By now delay::1 should exist
     assert rdz.exists(PREDICTOR)
     # So we should be able to make a link
