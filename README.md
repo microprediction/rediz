@@ -22,14 +22,14 @@ This will fail if the name 'air-pressure-06820.json' was already taken. Values a
 
 ### Delayed data
 
-However, assuming continuous use, derivatives of this live data will be maintained such as:
+Rediz creates derivative streams such as:
 
 | Example                              | Intepretation                    |
 |--------------------------------------|----------------------------------|
 | history::air-pressure-06820.json     | Log with links to data revisions |
 | delayed::15:air-pressure-06820.json  | Name holding 15 sec delayed data |
 
-In this way Rediz acts as an independent third party allowing users to advertise live data, and also advertise data streams (such as predictions) that have been independently verified as quarantined for some short period of time. Please contact us if you would like to contribute a Merkel hash or other scheme to add strength to this statement. Delayed and live data can be read with get. For example:  
+An instance of Rediz can thereby act as an independent third party allowing users to advertise data streams (such as predictions) that have been independently verified as quarantined for some short period of time.
 
     rdz.get("air-pressure-06820.json")
     rdz.get("delayed:15:air-pressure-06820.json")
@@ -46,34 +46,57 @@ suggests that my-wattage-prediction-019871938618326 contains samples of the five
 
 Links are similar to subscriptions but there are two important differences. First, the connection is initiated in the opposite direction. Second, the implied propagation is more complex.
 
-### Nanomarkets, scenarios and forecasts (coming soon)
+### Prediction  
 
-Using the contribute to Monte Carlo scenarios describing possible future values. The prefixes refer to market-like mechanisms used under the hood which provide incentive for contributors to provide
-samples which individually or collectively map the joint distribution accurately.
+The stream of credits provided by set() and mset() subsidizes an otherwise zero-sum game
+played between contributors of samples (scenarios, Monte Carlo paths) of the future. Every stream has an associate prediction term structure retrieved
+using time indexed names such as:
 
-| Example                           | Interpretation                        |
-|-----------------------------------|---------------------------------------|
-| nano:60:air-pressure-06820.json   | Listing of 1 minute ahead scenarios   |
-| near:15:air-pressure-06820.json   | Listing of 15 second ahead scenarios  |
+| Example                                  | Interpretation                                              |
+|------------------------------------------|-------------------------------------------------------------|
+| samples:60:air-pressure-06820.json       | List of delayed predictions made at least one minute prior  |
+| predictions:15:air-pressure-06820.json   | Listing of contemporaneous, 15 second ahead predictions     |
 
-At present the available nanomarkets and choices of prefix are:
+These database entries are sets (actually redis sorted sets) aggregating all predictions or samples from the community. The not so subtle and important distinction is that samples are used to clear the market when a set() is performed, and represent past predictions. In contrast predictions are
+a collection of recently set values which will subsequently appear in a delay:: stream.
 
-| Prefix | Name         | Interpretation and properties                              |
-|--------|--------------|------------------------------------------------------------|
-| nano   | Nanomutuel   | A relative compensation scheme analogous to a pari-mutuel clearing mechanism but extending to high dimensions. Nano-markets reward contributors who provide samples in previously under-sampled regions in the joint distribution. A log-wealth maximizing investor constrained to invest all wealth has incentive to contribute paths that reflect her unbiased assessment of the joint distribution.  |
-| near   | Nearest Squared Error     | Based on high performers in an absolute compensation scheme where the criteria is squared distance between the realized outcome and the nearest scenario. In the case where a contributor adjusts model parameters and then supplies samples from that model, it can be shown that minimizing expected squared distance to the nearest point is equivalent to Maximum Likelihood estimation of the model parameters. See https://arxiv.org/abs/1809.09087 for a proof. When players are allowed to form coalitions the interpretation is more complex.
+For predictions to appear they must be linked. Linking is the mechanism whereby users nominate a stream as an probabilistic approximation of another (that is to say, they nominate a stream holding a vector of paths and a target stream which is a single quantity). Links can only be made from system generated delay:: streams to contemporaneous streams (those with no delays).
 
-### Point estimate predictions
 
-Subject to careful statistical interpretation, point estimates can be
-directly read at name/values with the following patterns:
+### Clearing
 
-| Example                                   | Interpretation              |
-|-------------------------------------------|-----------------------------|
-| mean::nano:60:air-pressure-06820.json     | Mean 1 minute forecast      |
-| mean::near:600:air-pressure-06820.json    | Mean 10 minute forecast     |
+Clearing refers to an incremental, instantaneous adjustment of credits that are associated to write_keys. Upon arrival of a new data point with value "y", the samples are examined and a net gain or loss is assigned to all write_keys associated with all linked delays. These quantities sum to zero, though typically the net gain to the owner of the stream will be negative allowing other linked streams to gain credits on average.
 
-It is worth remarking that Dirac samples can also be thought of as point estimates, again with the usual caveats. Nanomarkets begin in this Dirac state: a single contributor automatically provided by delay::SECONDS::NAME. This default participant seeds the market in a trivial fashion: providing only one sample equal to the current value. In the absence of any other contributions this always "wins", but since the delay::SECONDS:NAME and NAME are owned by the same write_key the economics net to zero. In this sense every quantity is predicted.  
+One way to understand clearing is via an idealized mechanism:  
+
+- Weighted samples (w,z) in a neighborhood (ball) of y radius h are selected, with h increased if necessary to include approximately M samples.   
+- For entries in the ball, positive rewards R(w,z) proportional to w and a kernel K(x,y) are computed.
+- For entries outside the ball, zero reward is assigned.
+- All rewards are translated so that they sum to zero.
+
+Clearing rewards sample contributors who provide samples in previously under-sampled regions in the joint distribution.
+
+In fact clearing does not proceed exactly as described, except when data is one dimensional. Rediz' obsession with O(1) clearing mandates some modifications whose justification is somewhat technical.
+
+### Theory
+
+Through judicious choice of parameters this reward scheme includes as special cases some well known mechanisms - notably the parimutuel in the case of categorical data. The intent is ordinal data for the most part however, and another useful point of comparison is so-called implicit maximum Likelihood estimation. Some theoretical facts have informed the design of Rediz. In particular:
+- A log-wealth maximizing investor constrained to invest all wealth in a parimutuel has incentive to contribute paths that reflect her unbiased assessment of the joint distribution.
+- In the case where a contributor adjusts model parameters and then supplies samples from that model, it can be shown that minimizing expected squared distance to the nearest point is equivalent to Maximum Likelihood estimation of the model parameters.
+
+See https://arxiv.org/abs/1809.09087 for a proof of the second statement and http://finmathblog.blogspot.com/2013/11/keeping-punters-log-happy-some.html for the first. When players are allowed to form coalitions the interpretation is more complex.
+
+### Summary statistics
+
+Subject to careful statistical interpretation:
+
+| Example                                      | Interpretation                      | Done? |
+|----------------------------------------------|-------------------------------------|-------|
+| mean::predictions:60:air-pressure-06820.json | Mean 1 minute forecast              | No    |
+| mean::samples:600:air-pressure-06820.json    | Mean ex-post 10 min population std  | No    |
+| hist::samples:600:air-pressure-06820.json    | Mean ex-post 10 minute histogram    | No    |
+
+Every stream has at least one distributional estimate: the Dirac sample provided by set() or mset(). This default participant seeds the market in a trivial fashion: providing only one sample equal to the current value.
 
 ### Public methods
 
@@ -97,6 +120,7 @@ Listing of methods, whether permission in the form of a write_key is required, a
 | delayed       | No      |  0    | Shorthand for get("delayed::.."")| N     |
 | card          | No      |  0    | Count of all names               | Y     |
 | exists        | No      |  0    | Count names that exist in a list | Y     |
+| proof         | No      |  1    | Provide cryptographic delay proof| N     |
 |---------------|---------|-------|----------------------------------|-------|
 | Subscription  | Key(s)? |  Cost |  Interpretation                  | Done? |   
 |---------------|---------|-------|----------------------------------|-------|
@@ -135,8 +159,7 @@ Listing of methods, whether permission in the form of a write_key is required, a
 Rediz exploits Redis data expiry to avoid unfunded growth in the database. When a value is set a time to live is determined that is
 inversely proportional to the memory consumption. And as far as streams's are concerned, possession is nine-tenths of the law.
 Failure to regularly set() a stream's value will lead eventually to value expiry and subsequently to relinquishing of ownership of the name.
-The deletion of disused write_key's is performed by admin_garbage_collection(), which should be run periodically. This system process also deletes other relics of the disused data stream such as
-delays and messages. Garbage collection performs a stochastic sampling of ownership (write_key) to check whether the data
+The deletion of disused write_key's is performed by admin_garbage_collection(), which should be run periodically. This system process also deletes other relics of the disused data stream such as delays and messages. Garbage collection performs a stochastic sampling of ownership (write_key) to check whether the data
 has expired. Only a small fraction of all streams are checked to avoid slowing down Redis, so this should be run frequently.
 
 | Method                   | Frequency  |  Interpretation                  |    
@@ -191,6 +214,10 @@ Purely categorical data (e.g. a horse race) requires care in interpretation and 
 ### Intended future performance improvements
 
 Moving more of the logic from Python into Lua scripts.
+
+### Coming soon
+
+Cryptographic verification of delays.
 
 ### Not supported
 
