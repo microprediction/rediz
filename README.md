@@ -3,7 +3,9 @@
 
 ## REDIZ
 
-Used to create a public read, write permission-based shared remote database hosting live data at www.3za.org. Conveniences provided include history, subscription, delay and market-like mechanisms intended to facilitate collectivized short term prediction of public data. The instance at www.3za.org exposes public methods enumerated below via a combination of free and minimal cost APIs. The minimal cost APIs allow sponsors of prediction streams to pay for crowd-based prediction of public data of civic, scientific or commercial significance.  
+Rediz is a Python package that provides for a shared, specialized use of Redis in the context of open, collective live data prediction.
+
+At www.3za.org it is used to create a public read, write permission-based shared remote database that anyone can publish data streams to for a fairly nominal cost (0.0001 USD per update). An update overwrites a value keyed by a name (a name being almost synonymous with with a URL). Every such update triggers the clearing of a so-called "nano-market": an extremely lightweight reward mechanism which distributes this tiny amount of money to owners of other data streams according to how accurately delayed versions of their data forecast the newly arriving data point.
 
 ### Publishing live data
 
@@ -75,7 +77,7 @@ It is worth remarking that Dirac samples can also be thought of as point estimat
 
 ### Public methods
 
-Listing of methods, permission and candidate economic model
+Listing of methods, whether permission in the form of a write_key is required, and suggested cost model (1 unit=0.0001 USD)
 
 | Method        | Key(s)? |  Cost |  Interpretation                  | Done? |   
 |---------------|---------|-------|----------------------------------|-------|
@@ -89,20 +91,31 @@ Listing of methods, permission and candidate economic model
 | mget          | No      |  0    | Retrieve from many names         | Y     |
 | delete        | Yes     |  0    | Delete and relinquish ownership  | Y     |
 | mdelete       | Yes     |  0    | Relinquish many names            | Y     |
-| subscribe     | Yes     |  1    | Subscribe a name to a source     | Y     |
-| unsubscribe   | Yes     |  0    | Subscribe a name to many sources | Y     |
-| subscriptions | Yes     |  0    | List of a name's subscriptions   | Y     |
-| link          | Yes     |  1    | Suggest a (causal) link          | N     |                     
-| unlink        | Yes     |  0    | Delete a causal link             | N     |
-| links         | Yes     |  0    | List outgoing links              | N     |
-
-In addition the following shortcuts are provided:
-
-| Method        | Key(s)? |  Cost |  Interpretation                  | Done? |   
+| errors        | Yes     |  0    | Retrieve set execution log       | N     |
 |---------------|---------|-------|----------------------------------|-------|
+| Subscription  | Key(s)? |  Cost |  Interpretation                  | Done? |   
+|---------------|---------|-------|----------------------------------|-------|
+| subscribe     | Yes     |  1    | Subscribe a name to a source     | Y     |
+| messages      | Yes     |  0    | Dictionary of received messages  | Y     |
+| msubscribe    | Yes     |  0    | Subscribe a name to many sources | Y     |
+| unsubscribe   | Yes     |  0    | Unsubscribe a name from a source | Y     |
+| munsubscribe  | Yes     |  0    | Unsubscribe a name from sources  | Y     |
+| subscriptions | Yes     |  0    | List of a name's subscriptions   | Y     |
+| subscribers   | Yes     |  0    | List of a name's subscriptions   | Y     |
+|---------------|---------|-------|----------------------------------|-------|
+| Prediction    | Key(s)? |  Cost |  Interpretation                  | Done? |   
+|---------------|---------|-------|----------------------------------|-------|
+| link          | Yes     |  1    | Suggest a (causal) link          | Y     |                     
+| mlink         | Yes     |  1000 | Suggest many (causal) links      | Y     |                     
 | predict       | Yes     |  1    | Equivalent to set then link      | N     |                      
 | mpredict      | Yes     |  1000 | Equivalent to mset + mlink       | N     |
-
+| unlink        | Yes     |  0    | Delete a causal link             | N     |
+| links         | Yes     |  0    | List outgoing links              | N     |
+| backlinks     | Yes     |  0    | List incoming links              | N     |
+| samples       | No      |  0    | List of delayed samples          | N     |
+| predictions   | No      |  1    | List of contemporaneous samples  | N     |
+| hsamples      | No      |  0    | Histogram of samples             | N     |
+| hpredictions  | No      |  0    | Histogram of predictions         | N     |
 
 
 ### Administrative methods
@@ -113,3 +126,49 @@ The following methods must be run periodically
 |--------------------------|------------|----------------------------------|
 | admin_garbage_collection | < 15 mins   | Delete relics of expired names  |
 | admin_promises           | < 1 second  | Execute promises                |
+
+### Rediz/rediz Configuration
+
+Rediz passes through all constructor arguments to the redis instance initialization. It has
+been tested with the following means of initializing a redis client.
+
+| Parameter        | Default value | Interpretation    |
+|------------------|---------------|-------------------|
+| decode_responses | True          | Can't be modified |
+| host             |               | URI sans the port |
+| port             |               |                   |
+| password         |               |                   |
+
+Rediz can also be instantiated with no host, in which case fakeredis will be used.  
+
+### Comparison to prediction markets and related packages
+
+To our knowledge Rediz differs from existing software in the broad category of statistical aggregation with economic incentives. This
+ category includes such things as prediction markets, exchanges, data science contests and crowdsourcing. The approach taken herein differs
+ in engineering aspects as well as focus (streaming public data).
+
+- Clearing operations are O(1)  
+- There is no temporal state (CLOBs, limit orders, bets or what-have-you), only guaranteed data delays and samples. There is no separate settlement process - everything occurs instantly upon receipt of a new data point.
+- Every prediction is a distribution or joint distribution not a point estimate, and every stream is predicted.
+
+The last statement refers to the fact that every data stream predicts itself - albeit somewhat poorly as a Dirac distribution centered on the last value. This provides a subsidy, encouraging others to improve the distributional estimate. Maintainers of streams can use mset() rather than set() to increase the subsidy up to a maximum of 0.1 USD per data point.   
+
+### Data categories  
+
+Rediz supports, or will support:  
+
+- One dimensional continuous valued data (as float)
+- Two dimensional geospatial data (lat/long)
+- Low dimensional continuous valued data (e.g. R^3, R^4)
+- High dimensional continuous valued data (e.g. R^200)   
+
+In the last case, Rediz exploits recent results in nearest neighbor approximation. Furthermore:
+
+- Categorical data can use float   (with some interpretation in nascent stages)
+- Ordinal data can use float (with appropriate monotone transformations)
+
+Some conveniences
+
+### Intended future performance improvements
+
+Moving more of the logic from Python into Lua scripts.

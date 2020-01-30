@@ -151,15 +151,15 @@ class Rediz(object):
     # Linking
 
     def link(self, name, write_key, target):
-        """ Permissioned link to a target contemporaneous name """
+        """ Owner of name can link to a target from any delay:: """
         return self._link_implementation(name=name, write_key=write_key, budget=1, target=target )
 
     def mlink(self, name, write_key, targets):
-        """ Permissioned link to multiple targets which are contemporaneous name """
+        """ Permissioned link to multiple targets """
         return self._link_implementation(name=name, write_key=write_key, budget=1000, targets=targets )
 
     def unlink(self, name, write_key, target):
-        """ Permissioned removal of link """
+        """ Permissioned removal of link (either party can do this) """
         return self._unlink_implementation(name=name, write_key=write_key, source=source )
 
     def links(self, name, write_key):
@@ -167,7 +167,7 @@ class Rediz(object):
         return self._links_implementation(name=name, write_key=write_key )
 
     def backlinks(self, name, write_key):
-        """ Permissioned listing of backlinks coming into name """
+        """ Permissioned listing of backlinks (predictors) of a target """
         return self._backlinks_implementation(name=name, write_key=write_key )
 
 
@@ -708,11 +708,9 @@ class Rediz(object):
             return 0
 
 
-    def _unlink_implementation(self, name, write_key, target=None, targets=None):
-        if targets is None:
-            targets = [ target ]
-
-        if self._authorize(name=name,write_key=write_key):
+    def _unlink_implementation(self, name, write_key, target):
+        # Either party can unlink
+        if self._authorize(name=name,write_key=write_key) or self._authorize(name=target,write_key=write_key):
             link_pipe   = self.client.pipeline()
             for target in targets:
                 link_pipe.hdel(self.LINKS+name,key=target,value=edge_weight)

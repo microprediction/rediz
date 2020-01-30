@@ -25,11 +25,15 @@ def do_test_link(rdz):
     assert rdz.set(name=TARGET,write_key=TARGET_write_key,value=json.dumps({"temp":81}))   # Ensure existence
     assert rdz.set(name=SOURCE,write_key=SOURCE_write_key,value=json.dumps({"temp":77.6})) # Ensure existence
     assert rdz.link( name=PREDICTOR,target=TARGET,write_key=SOURCE_write_key )  # Can create this before delay exists (!)
+    links = rdz.links( name=PREDICTOR,write_key=SOURCE_write_key )
+    backlinks = rdz.backlinks( name=TARGET,write_key=TARGET_write_key )
+    assert TARGET in links
+    assert PREDICTOR in backlinks
+
     time.sleep(1.5)
     dump( rdz.admin_promises() )
     # By now delay::1 should exist
     assert rdz.exists(PREDICTOR)
-    # So we should be able to make a link
     rdz.set(name=SOURCE,write_key=SOURCE_write_key,value=json.dumps({"temp":79.6})) # Modify
     rdz._delete(SOURCE)
     backlinks = rdz._backlinks_implementation(TARGET)

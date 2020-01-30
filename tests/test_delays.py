@@ -3,13 +3,20 @@ from threezaconventions.crypto import random_key
 import json, os, uuid, random, time
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 
+# rm tmp*.json; pip install -e . ; python -m pytest tests/test_delays.py ; cat tmp_delays.json
 
 def dump(obj,name="delays.json"): # Debugging
     json.dump(obj,open("tmp_delays.json","w"))
 
-
-def test_delay():
+def test_delay_real():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
+    do_test_delay(rdz)
+
+def test_delay_fake():
+    rdz = Rediz(decode_responses=True)
+    do_test_delay(rdz)
+
+def do_test_delay(rdz):
     assert 1 in rdz.DELAY_SECONDS
     assert 5 in rdz.DELAY_SECONDS
     NAME      = 'test-delay-c6bd-464c-asad-fe9.json'
@@ -25,4 +32,9 @@ def test_delay():
     assert delayed_value=="living in the present"
     delayed_value = rdz.client.get( name=rdz.DELAYED+"5"+rdz.SEP+NAME )
     assert delayed_value=="living in the past"
+
+    # Test
+    
+
+
     rdz._delete(NAME)
