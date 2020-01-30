@@ -5,9 +5,9 @@
 
 Rediz is a Python package that provides for a shared, specialized use of Redis in the context of open, collective live data prediction.
 
-At www.3za.org Rediz is used to create a public read, write permission-based shared remote database that anyone can publish data streams to for a fairly nominal cost (0.0001 USD per update). An update overwrites a value in this database keyed by a name (a name being almost synonymous with with a URL) and permissioned by a write_key which the owner establishes. Every such update triggers the clearing of a so-called "nano-market": an extremely lightweight reward mechanism which distributes this tiny amount of money to owners of other data streams according to how accurately delayed versions of their data forecast the newly arriving data point.
+At www.3za.org Rediz is used to create a public read, write permission-based shared remote database that anyone can publish data streams to for a nominal cost of their choosing (as little as 0.0001 USD per update). An update overwrites a value in this database keyed by a name (string). At www.3za.org the name is synonymous with a URL. Stream ownership take the form of a write_key which is ideally set by the user and typically a UUID. Every stream update, which is to say a set() or mset(), triggers the clearing of a so-called "nano-market": an extremely lightweight reward mechanism which distributes credits to owners of other data streams according to how accurately delayed versions of their data forecast the newly arriving data point.
 
-### Publishing live data
+### Publishing live data streams
 
 The use pattern involves repeatedly publishing data to the same name:
 
@@ -18,7 +18,7 @@ The use pattern involves repeatedly publishing data to the same name:
           value = json.dumps(measure_somehow())
           assert rdz.set(name='air-pressure-06820.json',write_key=my_secret_key,value=value)        
 
-This will fail if the name 'air-pressure-06820.json' was already taken. Possession is nine tenths of the law. If publication to the steam ceases the ownership rights will eventually be relinquished - data in the form of values will also expire.
+This will fail if the name 'air-pressure-06820.json' was already taken. Values are int, float or string.
 
 ### Delayed data
 
@@ -176,17 +176,17 @@ The last statement refers to the fact that every data stream predicts itself - a
 
 Rediz supports, or will support:  
 
-- One dimensional continuous valued data (as float)
-- Two dimensional geospatial data (lat/long)
+- One dimensional continuous valued data (as float or int)
+- Two dimensional geospatial data (lat/long in geohash)
 - Low dimensional continuous valued data (e.g. R^3, R^4)
 - High dimensional continuous valued data (e.g. R^200)   
 
-In the last case, Rediz exploits recent results in nearest neighbor approximation. Furthermore:
+In the last case, Rediz exploits recent results in nearest neighbor approximation. Furthermore users can readily adapt this to:
 
-- Categorical data can use float   (with some interpretation in nascent stages)
-- Ordinal data can use float (with appropriate monotone transformations)
+- Categorical data (float, with some interpretation)
+- Ordinal data (using float, with appropriate monotone transformations as required)
 
-Some conveniences
+Purely categorical data (e.g. a horse race) requires care in interpretation and parameters, but presents no real difficulty.
 
 ### Intended future performance improvements
 
@@ -194,4 +194,4 @@ Moving more of the logic from Python into Lua scripts.
 
 ### Not supported
 
-Rediz does not support UI elements, plotting and so forth.
+Plotting and other UI elements.
