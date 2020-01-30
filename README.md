@@ -98,9 +98,10 @@ Subject to careful statistical interpretation:
 
 Every stream has at least one distributional estimate: the Dirac sample provided by set() or mset(). This default participant seeds the market in a trivial fashion: providing only one sample equal to the current value.
 
-### Public methods
+### Listing of all public methods
 
-Listing of methods, whether permission in the form of a write_key is required, and suggested cost model (1 unit=0.0001 USD)
+Keys column indicates whether permission in the form of a write_key is required. Suggested cost
+is in credits where 1 credit=0.0001 USD.
 
 | Publishing    | Key(s)? |  Cost |  Interpretation                  | Done? |   
 |---------------|---------|-------|----------------------------------|-------|
@@ -111,7 +112,8 @@ Listing of methods, whether permission in the form of a write_key is required, a
 | mnew          | No      |  1000 | Create many names w/o keys       | Y     |
 | delete        | Yes     |  0    | Delete and relinquish ownership  | Y     |
 | mdelete       | Yes     |  0    | Relinquish many names            | Y     |
-|---------------|---------|-------|----------------------------------|-------|
+
+
 | Reading       | Key(s)? |  Cost |  Interpretation                  | Done? |   
 |---------------|---------|-------|----------------------------------|-------|
 | get           | No      |  0    | Retrieve a value (one name)      | Y     |
@@ -121,7 +123,7 @@ Listing of methods, whether permission in the form of a write_key is required, a
 | card          | No      |  0    | Count of all names               | Y     |
 | exists        | No      |  0    | Count names that exist in a list | Y     |
 | proof         | No      |  1    | Provide cryptographic delay proof| N     |
-|---------------|---------|-------|----------------------------------|-------|
+
 | Subscription  | Key(s)? |  Cost |  Interpretation                  | Done? |   
 |---------------|---------|-------|----------------------------------|-------|
 | subscribe     | Yes     |  1    | Subscribe a name to a source     | Y     |
@@ -131,7 +133,8 @@ Listing of methods, whether permission in the form of a write_key is required, a
 | munsubscribe  | Yes     |  0    | Unsubscribe a name from sources  | Y     |
 | subscriptions | Yes     |  0    | List of a name's subscriptions   | Y     |
 | subscribers   | Yes     |  0    | List of a name's subscriptions   | Y     |
-|---------------|---------|-------|----------------------------------|-------|
+
+
 | Prediction    | Key(s)? |  Cost |  Interpretation                  | Done? |   
 |---------------|---------|-------|----------------------------------|-------|
 | link          | Yes     |  1    | Suggest a (causal) link          | Y     |                     
@@ -141,11 +144,19 @@ Listing of methods, whether permission in the form of a write_key is required, a
 | unlink        | Yes     |  0    | Delete a causal link             | N     |
 | links         | Yes     |  0    | List outgoing links              | N     |
 | backlinks     | Yes     |  0    | List incoming links              | N     |
+
+Some shortcuts to prefixed names:
+
+| Population    | Key(s)? |  Cost |  Interpretation                  | Done? |   
+|---------------|---------|-------|----------------------------------|-------|
 | samples       | No      |  0    | List of delayed samples          | N     |
 | predictions   | No      |  1    | List of contemporaneous samples  | N     |
 | hsamples      | No      |  0    | Histogram of samples             | N     |
 | hpredictions  | No      |  0    | Histogram of predictions         | N     |
-|---------------|---------|-------|----------------------------------|-------|
+| mean          | No      |  0    | Pop. mean of samples or preds    | N     |
+| std           | No      |  0    | Population std of                | N     |
+
+
 | Accounting    | Key(s)? |  Cost |  Interpretation                  | Done? |   
 |---------------|---------|-------|----------------------------------|-------|
 | balance       | Yes     |  0    | Net credits for write_key        | N     |
@@ -190,10 +201,11 @@ To our knowledge Rediz differs from existing software in the broad category of s
  in engineering aspects as well as focus (streaming public data).
 
 - Clearing operations are O(1)  
-- There is no temporal state (CLOBs, limit orders, bets or what-have-you), only guaranteed data delays and samples. There is no separate settlement process - everything occurs instantly upon receipt of a new data point.
-- Every prediction is a distribution or joint distribution not a point estimate, and every stream is predicted.
+- There is no temporal state (e.g. limit orders, wagers), only guaranteed data delays and samples.
+- Settlement is instantaneous.
+- Every quantity has a distributional estimate.
 
-The last statement refers to the fact that every data stream predicts itself - albeit somewhat poorly as a Dirac distribution centered on the last value. This provides a subsidy, encouraging others to improve the distributional estimate. Maintainers of streams can use mset() rather than set() to increase the subsidy up to a maximum of 0.1 USD per data point.   
+The last statement refers back to the fact that every data stream predicts itself - albeit somewhat poorly as a Dirac distribution centered on the last value. Maintainers of streams can use mset() rather than set() to increase the subsidy beyond one credit.    
 
 ### Data categories  
 
@@ -204,21 +216,20 @@ Rediz supports, or will support:
 - Low dimensional continuous valued data (e.g. R^3, R^4)
 - High dimensional continuous valued data (e.g. R^200)   
 
-In the last case, Rediz exploits recent results in nearest neighbor approximation. Furthermore users can readily adapt this to:
+Furthermore users can readily adapt this to:
 
 - Categorical data (float, with some interpretation)
 - Ordinal data (using float, with appropriate monotone transformations as required)
 
-Purely categorical data (e.g. a horse race) requires care in interpretation and parameters, but presents no real difficulty.
+As noted, purely categorical data (e.g. a parimutuel horse race) requires care in parameter choice.
 
-### Intended future performance improvements
+### Intended future improvements
 
-Moving more of the logic from Python into Lua scripts.
+Performance
+- Consolidation of multiple calls
+- Moving more of the logic from Python into Lua scripts.
 
-### Coming soon
-
-Cryptographic verification of delays.
-
-### Not supported
-
-Plotting and other UI elements.
+Features
+- Cryptographic verification of delays.
+- Exposing some time series functionality
+- Data preparation methods for commonly used plotting packages.
