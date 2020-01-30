@@ -5,7 +5,7 @@
 
 Rediz is a Python package that provides for a shared, specialized use of Redis in the context of open, collective live data prediction.
 
-At www.3za.org it is used to create a public read, write permission-based shared remote database that anyone can publish data streams to for a fairly nominal cost (0.0001 USD per update). An update overwrites a value keyed by a name (a name being almost synonymous with with a URL). Every such update triggers the clearing of a so-called "nano-market": an extremely lightweight reward mechanism which distributes this tiny amount of money to owners of other data streams according to how accurately delayed versions of their data forecast the newly arriving data point.
+At www.3za.org Rediz is used to create a public read, write permission-based shared remote database that anyone can publish data streams to for a fairly nominal cost (0.0001 USD per update). An update overwrites a value in this database keyed by a name (a name being almost synonymous with with a URL) and permissioned by a write_key which the owner establishes. Every such update triggers the clearing of a so-called "nano-market": an extremely lightweight reward mechanism which distributes this tiny amount of money to owners of other data streams according to how accurately delayed versions of their data forecast the newly arriving data point.
 
 ### Publishing live data
 
@@ -79,19 +79,24 @@ It is worth remarking that Dirac samples can also be thought of as point estimat
 
 Listing of methods, whether permission in the form of a write_key is required, and suggested cost model (1 unit=0.0001 USD)
 
-| Method        | Key(s)? |  Cost |  Interpretation                  | Done? |   
+| Publishing    | Key(s)? |  Cost |  Interpretation                  | Done? |   
 |---------------|---------|-------|----------------------------------|-------|
 | set           | Yes     |  1    | Create/modify value at one name  | Y     |
 | mset          | Yes     |  1000 | Create/modify many name/values   | Y     |
+| setlog        | Yes     |  0    | Retrieve set execution log/errors| N     |
 | new           | No      |  1    | Create a name w/o providing key  | Y     |
 | mnew          | No      |  1000 | Create many names w/o keys       | Y     |
-| card          | No      |  0    | Count of all names               | Y     |
-| exists        | No      |  0    | Count names that exist in a list | Y     |
-| get           | No      |  0    | Retrieve a value (one name)      | Y     |
-| mget          | No      |  0    | Retrieve from many names         | Y     |
 | delete        | Yes     |  0    | Delete and relinquish ownership  | Y     |
 | mdelete       | Yes     |  0    | Relinquish many names            | Y     |
-| errors        | Yes     |  0    | Retrieve set execution log       | N     |
+|---------------|---------|-------|----------------------------------|-------|
+| Reading       | Key(s)? |  Cost |  Interpretation                  | Done? |   
+|---------------|---------|-------|----------------------------------|-------|
+| get           | No      |  0    | Retrieve a value (one name)      | Y     |
+| mget          | No      |  0    | Retrieve from many names         | Y     |
+| history       | No      |  0    | Shorthand for get("history::.."")| N     |
+| delayed       | No      |  0    | Shorthand for get("delayed::.."")| N     |
+| card          | No      |  0    | Count of all names               | Y     |
+| exists        | No      |  0    | Count names that exist in a list | Y     |
 |---------------|---------|-------|----------------------------------|-------|
 | Subscription  | Key(s)? |  Cost |  Interpretation                  | Done? |   
 |---------------|---------|-------|----------------------------------|-------|
@@ -116,16 +121,30 @@ Listing of methods, whether permission in the form of a write_key is required, a
 | predictions   | No      |  1    | List of contemporaneous samples  | N     |
 | hsamples      | No      |  0    | Histogram of samples             | N     |
 | hpredictions  | No      |  0    | Histogram of predictions         | N     |
+|---------------|---------|-------|----------------------------------|-------|
+| Accounting    | Key(s)? |  Cost |  Interpretation                  | Done? |   
+|---------------|---------|-------|----------------------------------|-------|
+| balance       | Yes     |  0    | Net credits for write_key        | N     |
+| performance   | No      |  0    | Net credits for write_key/name(s)| N     |
+| hbalance      | Yes     |  0    | Wealth percentiles               | N     |
+| hperformance  | No      |  0    | Performance percentiles          | N     |
 
 
 ### Administrative methods
 
-The following methods must be run periodically
+Rediz exploits Redis data expiry to avoid unfunded growth in the database. When a value is set a time to live is determined that is
+inversely proportional to the memory consumption. And as far as streams's are concerned, possession is nine-tenths of the law.
+Failure to regularly set() a stream's value will lead eventually to value expiry and subsequently to relinquishing of ownership of the name.
+The deletion of disused write_key's is performed by admin_garbage_collection(), which should be run periodically. This system process also deletes other relics of the disused data stream such as
+delays and messages. Garbage collection performs a stochastic sampling of ownership (write_key) to check whether the data
+has expired. Only a small fraction of all streams are checked to avoid slowing down Redis, so this should be run frequently.
 
 | Method                   | Frequency  |  Interpretation                  |    
 |--------------------------|------------|----------------------------------|
 | admin_garbage_collection | < 15 mins   | Delete relics of expired names  |
 | admin_promises           | < 1 second  | Execute promises                |
+
+Promises must be run at least every second to implement delay:: streams.
 
 ### Rediz/rediz Configuration
 
@@ -172,3 +191,7 @@ Some conveniences
 ### Intended future performance improvements
 
 Moving more of the logic from Python into Lua scripts.
+
+### Not supported
+
+Rediz does not support UI elements, plotting and so forth.
