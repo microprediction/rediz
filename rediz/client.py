@@ -508,10 +508,9 @@ class Rediz(object):
 
         # Remove name from children's list of subscriptions
         for name, subscribers in zip(names,subscribers_res):
-            dump({"subscribers":list(subscribers)[:2]},'tmp_subs_.json')
             for subscriber in subscribers:
                 delete_pipe.srem(self.SUBSCRIPTIONS+subscriber, name)
-                recipient_mailbox = self.MESSAGES+name
+                recipient_mailbox = self.MESSAGES+subscriber
                 if self.INSTANT_RECALL:
                     delete_pipe.hdel(recipient_mailbox,name)
 
