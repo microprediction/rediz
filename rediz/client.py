@@ -225,17 +225,13 @@ class Rediz(object):
         ttl  = self.cost_based_ttl(budget=budget,multiplicity=multiplicity,values=values)
         executed_obscure,  rejected_obscure,  ndxs, names, values, write_keys = self._pipelined_set_obscure(  ndxs=ndxs, names=names, values=values, write_keys=write_keys, ttl=ttl)
         executed_new,      rejected_new,      ndxs, names, values, write_keys = self._pipelined_set_new(      ndxs=ndxs, names=names, values=values, write_keys=write_keys, ttl=ttl)
-        dump(list(zip(names,values))[:4],'tmp_in.json')
         executed_existing, rejected_existing                                  = self._pipelined_set_existing( ndxs=ndxs, names=names, values=values, write_keys=write_keys, ttl=ttl)
 
-        dump(executed_existing[:3],'tmp_existing.json')
         executed = executed_obscure+executed_new+executed_existing
 
         # Propagate to subscribers
-        dump(executed[:3],'tmp_exec.json')
         modified_names  = [ ex["name"] for ex in executed ]
         modified_values = [ ex["value"] for ex in executed ]
-        dump( list(zip(modified_names,modified_values)),"tmp_mods.json")
 
         self._propagate_to_subscribers( names = modified_names, values = modified_values )
         return {"executed":executed,
@@ -375,7 +371,6 @@ class Rediz(object):
                     error_pipe.append(self.ERROR_LOG+write_key,json.dumps(auth_message))
                     error_pipe.expire(self.ERROR_LOG+write_key,self.ERROR_TTL)
                     rejected.append(intent)
-            dump(executed[:3],"tmp_xc.json")
             if len(executed):
                 modify_results = Rediz.pipe_results_grouper( results = modify_pipe.execute(), n=len(executed) )
                 for intent, res in zip(executed,modify_results):
@@ -384,15 +379,9 @@ class Rediz(object):
             if len(rejected):
                 error_pipe.execute()
 
-        #dump([ex["value"] for ex in executed],"tmp_values_in.json")
-
         return executed, rejected
 
     def _propagate_to_subscribers(self,names,values):
-
-        dump({"values":values[:5]},"tmp_values.json")
-
-
         subscriber_pipe = self.client.pipeline(transaction=False)
         for name in names:
             subscriber_set_name = self.SUBSCRIBERS+name
@@ -407,7 +396,6 @@ class Rediz(object):
                 mailbox_name = self.MESSAGES+subscriber
                 propagate_pipe.hset(name=mailbox_name,key=sender_name, value=value)
                 executed.append({"mailbox_name":mailbox_name,"sender":sender_name,"value":value})
-        dump({"executed":executed[:2]},"tmp_mail.json")
 
         if len(executed):
             propagation_results = Rediz.pipe_results_grouper( results = propagate_pipe.execute(), n=len(executed) ) # Overkill while there is 1 op
