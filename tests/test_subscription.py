@@ -7,7 +7,6 @@ from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 def dump(obj,name="tmp_subscription.json"): # Debugging
     json.dump(obj,open(name,"w"))
 
-
 def test_subscription_singular():
     subscription_example(plural=False)
 
@@ -60,6 +59,46 @@ def subscription_example(plural=False):
     assert subscriptions is None
     subscribers = rdz.subscribers(name=PUBLISHER,write_key=PUBLISHER_write_key)
     assert SUBSCRIBER not in subscribers
+
+    # Multiple sources
+    publishers = dict()
+    NUM = 50
+    for k in range(NUM):
+        source           = 'PUBLISHER_plural_'+str(plural)+'-number_'+str(k)+'__3b4e944aa2b.json'
+        write_key        = 'PUBLISHER_plural_'+str(plural)+'--'+str(k)+'3b4e944aa2b_KEY'
+        publishers[source] = write_key
+    sources    = list(publishers.keys())
+    write_keys = list(publishers.values())
+    values     = list(range(NUM))
+
+    assert rdz.set( name = SUBSCRIBER,
+                   value = "I am back again",
+               write_key = SUBSCRIBER_write_key ) # Should trigger propagation
+
+    rdz.mset(names=sources,values=values, write_keys=write_keys)
+    assert rdz.mset( names = sources,  write_keys = write_keys, values=values )==NUM
+    values_back = rdz.mget( names = sources )
+    assert all( int(v1)==int(v2) for v1,v2 in zip(values, values_back))
+    assert rdz.msubscribe( name = SUBSCRIBER, sources = sources, write_key=SUBSCRIBER_write_key )
+    subscriptions = rdz.subscriptions(name=SUBSCRIBER,write_key=SUBSCRIBER_write_key)
+    assert all( source in subscriptions for source in sources )
+    for source, write_key in publishers.items():
+        subscribers = rdz.subscribers( name=source, write_key=write_key )
+        assert SUBSCRIBER in subscribers
+
+    # Propagate ...
+    changed_values  = [ int(2*v) for v in values ]
+    rdz.mset( names = sources,  write_keys = write_keys, values=changed_values )
+    messages = rdz.messages( name = SUBSCRIBER, write_key=SUBSCRIBER_write_key )
+    for source, v in zip( sources, changed_values):
+        assert messages[source]==str(v)
+
+    # One more time with feeling ....
+    changed_values  = [ int(3*v) for v in values ]
+    rdz.mset( names = sources,  write_keys = write_keys, values=changed_values )
+    messages = rdz.messages( name = SUBSCRIBER, write_key=SUBSCRIBER_write_key )
+    for source, v in zip( sources, changed_values):
+        assert messages[source]==str(v)
 
 
     rdz._delete(PUBLISHER)

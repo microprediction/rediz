@@ -55,6 +55,7 @@ class Rediz(object):
         # Config
         self.INSTANT_RECALL = kwargs.get("instant_recall") or False  # Delete messages already sent when sender is deleted?
         self.ERROR_TTL      = int( kwargs.get('error_ttl') or 10 )   # Number of seconds that set execution error logs are persisted
+        self.DELAY_GRACE    = 15       # Seconds beyond the schedule time when promise data expires
 
     def is_valid_name(self,name:str):
         name_regex = re.compile(r'^[-a-zA-Z0-9_.:]{1,200}\.[json,HTML]+$',re.IGNORECASE)
@@ -67,7 +68,7 @@ class Rediz(object):
 
     @staticmethod
     def is_valid_value(value):
-        return isinstance(value,str) and sys.getsizeof(value)<100000
+        return isinstance(value,(str,int,float)) and sys.getsizeof(value)<100000
 
     def is_valid_key(self,key):
         return isinstance(key,str) and len(key)>self.MIN_KEY_LEN
@@ -193,7 +194,7 @@ class Rediz(object):
                  return_args:Optional[List[str]]=None):
         singular = names is None
         names, values, write_keys = self._coerce_inputs(names=names,values=values,
-                                  write_keys=write_keys,name=name,value=value,write_key=write_key)
+                        write_keys=write_keys,name=name,value=value,write_key=write_key)
         # Encode
         values = [ v if isinstance(v,(int,float,str)) else json.dumps(v) for v in values ]
 
@@ -216,27 +217,29 @@ class Rediz(object):
                   write_key:Optional[str]=None,
                   budget=1):
         # Returns execution log format
-        names, values, write_keys = self._coerce_inputs(names,values,write_keys,name,value,write_key)
+        names, values, write_keys = self._coerce_inputs(names=names,values=values,write_keys=write_keys,
+                                                        name=name,value=value,write_key=write_key)
         ndxs = list(range(len(names)))
         multiplicity = len(names)
 
         ttl  = self.cost_based_ttl(budget=budget,multiplicity=multiplicity,values=values)
-        executed_obscure,  rejected_obscure,  ndxs, names, values, write_keys = self._pipelined_set_obscure(  ndxs, names, values, write_keys, ttl)
-        executed_new,      rejected_new,      ndxs, names, values, write_keys = self._pipelined_set_new(      ndxs, names, values, write_keys, ttl)
-        executed_existing, rejected_existing                                  = self._pipelined_set_existing( ndxs, names, values, write_keys, ttl)
+        executed_obscure,  rejected_obscure,  ndxs, names, values, write_keys = self._pipelined_set_obscure(  ndxs=ndxs, names=names, values=values, write_keys=write_keys, ttl=ttl)
+        executed_new,      rejected_new,      ndxs, names, values, write_keys = self._pipelined_set_new(      ndxs=ndxs, names=names, values=values, write_keys=write_keys, ttl=ttl)
+        dump(list(zip(names,values))[:4],'tmp_in.json')
+        executed_existing, rejected_existing                                  = self._pipelined_set_existing( ndxs=ndxs, names=names, values=values, write_keys=write_keys, ttl=ttl)
 
+        dump(executed_existing[:3],'tmp_existing.json')
         executed = executed_obscure+executed_new+executed_existing
 
-        dump(executed_existing,"tmp_executed_existing.json")
         # Propagate to subscribers
+        dump(executed[:3],'tmp_exec.json')
         modified_names  = [ ex["name"] for ex in executed ]
         modified_values = [ ex["value"] for ex in executed ]
-        dump({"names":modified_names,"values":modified_values},"tmp_modified.json")
+        dump( list(zip(modified_names,modified_values)),"tmp_mods.json")
+
         self._propagate_to_subscribers( names = modified_names, values = modified_values )
         return {"executed":executed,
                 "rejected":rejected_obscure+rejected_new+rejected_existing}
-
-
 
     @staticmethod
     def _coerce_inputs(  names:Optional[NameList]=None,
@@ -344,7 +347,6 @@ class Rediz(object):
         authority = self._mauthority(names)
         assert len(names)==len(write_keys)
         comparison = [ k==k1 for (k,k1) in zip( write_keys, authority ) ]
-        #dump({"authority":authority,"names":names,"comparison":comparison,"write_keys":write_keys})
         return comparison
 
     def _authority(self,name):
@@ -372,7 +374,8 @@ class Rediz(object):
                     intent = auth_message
                     error_pipe.append(self.ERROR_LOG+write_key,json.dumps(auth_message))
                     error_pipe.expire(self.ERROR_LOG+write_key,self.ERROR_TTL)
-
+                    rejected.append(intent)
+            dump(executed[:3],"tmp_xc.json")
             if len(executed):
                 modify_results = Rediz.pipe_results_grouper( results = modify_pipe.execute(), n=len(executed) )
                 for intent, res in zip(executed,modify_results):
@@ -381,17 +384,20 @@ class Rediz(object):
             if len(rejected):
                 error_pipe.execute()
 
+        #dump([ex["value"] for ex in executed],"tmp_values_in.json")
+
         return executed, rejected
 
     def _propagate_to_subscribers(self,names,values):
+
+        dump({"values":values[:5]},"tmp_values.json")
+
 
         subscriber_pipe = self.client.pipeline(transaction=False)
         for name in names:
             subscriber_set_name = self.SUBSCRIBERS+name
             subs = subscriber_pipe.smembers(name=subscriber_set_name)
         subscribers_sets = subscriber_pipe.execute()
-
-        dump({"subscribers":list(subscribers_sets[0])},"tmp_subscribers.json")
 
         propagate_pipe = self.client.pipeline(transaction=False)
 
@@ -401,6 +407,7 @@ class Rediz(object):
                 mailbox_name = self.MESSAGES+subscriber
                 propagate_pipe.hset(name=mailbox_name,key=sender_name, value=value)
                 executed.append({"mailbox_name":mailbox_name,"sender":sender_name,"value":value})
+        dump({"executed":executed[:2]},"tmp_mail.json")
 
         if len(executed):
             propagation_results = Rediz.pipe_results_grouper( results = propagate_pipe.execute(), n=len(executed) ) # Overkill while there is 1 op
@@ -578,8 +585,8 @@ class Rediz(object):
         """
         pipe.hset(name=self.OWNERSHIP,key=name,value=write_key)  # Establish ownership
         pipe.sadd(self.NAMES,name)                                # Need this for random access
-        pipe, intent = self._modify_page(pipe,ndx=ndx,name=name,value=value,ttl=ttl)
-        intent.update({"new":True,"write_key":write_key})
+        pipe, intent = self._modify_page(pipe=pipe,ndx=ndx,name=name,value=value,ttl=ttl)
+        intent.update({"new":True,"write_key":write_key,"value":value})
         return pipe, intent
 
     def _streams_support(self):
@@ -591,7 +598,7 @@ class Rediz(object):
         except:
             return False
 
-    def _modify_page(self, pipe,ndx,name,value,ttl, intent=dict()):
+    def _modify_page(self, pipe,ndx,name,value,ttl):
         pipe.set(name=name,value=value,ex=ttl)
         # Also write a duplicate to another key
         name_of_copy   = self.random_key()[:-10]+"-copy-"+name[:4]
@@ -606,11 +613,9 @@ class Rediz(object):
             SOURCE  = name_of_copy
             DESTINATION = self.DELAYED+str(delay_seconds)+self.SEP+name
             pipe.sadd( PROMISE, SOURCE+'->'+DESTINATION )
-            pipe.expire( name=PROMISE, time=delay_seconds+5)
-
-        intent.update({"ndx":ndx,"name":name,"value":value,"ttl":ttl,
-                       "new":False,"obscure":False,"copy":name_of_copy})
-
+            pipe.expire( name=PROMISE, time=delay_seconds+self.DELAY_GRACE)
+        intent = {"ndx":ndx,"name":name,"value":value,"ttl":ttl,
+                  "new":False,"obscure":False,"copy":name_of_copy}
         return pipe, intent
 
     @staticmethod
@@ -640,7 +645,6 @@ class Rediz(object):
         """ Permissioned subscribe to one or more sources """
         if self._authorize(name=name,write_key=write_key):
             augmented_sources = self._coerce_sources(source=source, sources=sources, delay=delay, delays=delays )
-            #dump({"sources":augmented_sources},"tmp_sources.json")
             return self._subscribe( name=name, sources=augmented_sources)
         else:
             return 0
