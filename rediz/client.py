@@ -508,6 +508,7 @@ class Rediz(object):
 
         # Remove name from children's list of subscriptions
         for name, subscribers in zip(names,subscribers_res):
+            dump({"subscribers":list(subscribers)[:2]},'tmp_subs_.json')
             for subscriber in subscribers:
                 delete_pipe.srem(self.SUBSCRIPTIONS+subscriber, name)
                 recipient_mailbox = self.MESSAGES+name
@@ -519,17 +520,20 @@ class Rediz(object):
             for source in subscriptions:
                 delete_pipe.srem(self.SUBSCRIBERS+source, name)
 
+        if len(names)>3:
+            dump(names[:4],'tmp_names_.json')
 
         delete_pipe.delete(*link_names)
         delete_pipe.delete(*delay_names)
         delete_pipe.hdel(self.OWNERSHIP,*names)
-        delete_pipe.delete( *[self.SUBSCRIBERS+name for name in names] )
         delete_pipe.delete( *[self.MESSAGES+name for name in names] )
         delete_pipe.delete( *[self.HISTORY+name for name in names] )
         delete_pipe.srem( self.NAMES, *names )
-        delete_pipe.delete(*names)
+        delete_pipe.delete( *names )
+        delete_pipe.delete( *[self.SUBSCRIBERS+name for name in names] )
         res = delete_pipe.execute()
-        return res[-1]
+        dump({'res':res[-1],'names':[self.SUBSCRIBERS+name for name in names[:4]]},'tmp__.json')
+        return res[-2]
 
 
     def _randomly_find_orphans(self,num=1000):

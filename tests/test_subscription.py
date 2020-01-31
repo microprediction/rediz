@@ -15,8 +15,8 @@ def dont_test_subscription_plural():
 
 def subscription_example(plural=False):
     rdz = Rediz(**REDIZ_TEST_CONFIG)
-    PUBLISHER             = 'PUBLISHER_plural_'+str(plural)+'3b4e229a-ffb4-4fc2-8370-c147944aa2b.json'
-    SUBSCRIBER            = 'SUBSCRIBER_plural_'+str(plural)+'ed2b4f6-c6bd-464c-a9e9-322e0c3147.json'
+    PUBLISHER             = 'PUBLISQHER_plural_'+str(plural)+'3b4e229a-ffb4-4fc2-8370-c147944aa2b.json'
+    SUBSCRIBER            = 'SUBSCRIIBER_plural_'+str(plural)+'ed2b4f6-c6bd-464c-a9e9-322e0c3147.json'
     PUBLISHER_write_key   = "b0b5753b-14e6-4051-b13e-132bb13ed1a9_plural="+str(plural)
     SUBSCRIBER_write_key  = "caa09e4a-3901-4cdf-8301-774184e584f3_plural="+str(plural)
     rdz._delete(PUBLISHER,SUBSCRIBER)
@@ -100,6 +100,28 @@ def subscription_example(plural=False):
     for source, v in zip( sources, changed_values):
         assert messages[source]==str(v)
 
+    # Multiple delete of sources
+    assert rdz.exists( names = sources )==NUM
+    rdz.mdelete( names=sources, write_keys=write_keys )
+    assert rdz.exists( names = sources )==0
+
+    for source, write_key in publishers.items():
+        assert rdz.subscribers(name=source, write_key=write_key) is None
+
+    subscriptions = list(rdz.client.smembers( rdz.SUBSCRIPTIONS+SUBSCRIBER ))
+    for source in sources:
+        assert source not in subscriptions
+
+    subscriptions = rdz.subscriptions( name=SUBSCRIBER, write_key=SUBSCRIBER_write_key )
+    for source in sources:
+        assert source not in subscriptions
+
+    # Messages may persist or not depending on settings
+    messages = rdz.messages( name = SUBSCRIBER, write_key=SUBSCRIBER_write_key )
+    if rdz.INSTANT_RECALL:
+        assert messages is None
+    else:
+        assert len(messages)==NUM
 
     rdz._delete(PUBLISHER)
     rdz._delete(SUBSCRIBER)
