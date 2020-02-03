@@ -1,11 +1,11 @@
 from rediz.client import Rediz
-from threezaconventions.crypto import random_key
 import json, os, uuid, random, time
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_subscription.py ; cat tmp_subscription.json
 def dump(obj,name="tmp_subscription.json"): # Debugging
-    json.dump(obj,open(name,"w"))
+    if False:
+        json.dump(obj,open(name,"w"))
 
 def don_test_subscription_singular():
     subscription_example(plural=False)

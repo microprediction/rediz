@@ -109,11 +109,11 @@ class Rediz(object):
         return_args = [ a for a,s in supplied if not(s) ]
         return self._set_implementation(name=name, value=value or "", write_key=write_key, return_args=return_args, budget=1)
 
-    def mnew( self, names:Optional[NameList]=None, values:Optional[ValueList]=None, write_keys:Optional[KeyList]=None, budget=1000 ):
+    def mnew( self, names:Optional[NameList]=None, values:Optional[ValueList]=None, write_keys:Optional[KeyList]=None):
         """ For when you don't want to generate write_keys (or values, or names)"""
-        supplied = zip( ("name","value","write_key"), (names is not None, values is not None, write_keys is not None) )
+        supplied = zip( ("names","values","write_keys"), (names is not None, values is not None, write_keys is not None) )
         return_args = [ a for a,s in supplied if not(s) ]
-        return self._set_implementation(value=value, write_key=write_key, return_args=return_args)
+        return self._set_implementation(values=values, write_keys=write_keys, return_args=return_args, budget=1000)
 
     def delete(self, name, write_key):
         return self._delete_implementation( name=name, write_key=write_key )
@@ -161,7 +161,7 @@ class Rediz(object):
 
     def unlink(self, name, write_key, target):
         """ Permissioned removal of link (either party can do this) """
-        return self._unlink_implementation(name=name, write_key=write_key, source=source )
+        return self._unlink_implementation(name=name, write_key=write_key, target=target )
 
     def links(self, name, write_key):
         """ Permissioned listing of targets """
@@ -346,7 +346,8 @@ class Rediz(object):
         return comparison
 
     def _authority(self,name):
-        return self.client.hget(self.OWNERSHIP,name)
+        root = self._root_name(name)
+        return self.client.hget(self.OWNERSHIP,root)
 
     def _mauthority(self,names, *args):
         names = list_or_args(names,args)
@@ -458,6 +459,7 @@ class Rediz(object):
     def _delete_implementation(self, name=None, write_key=None, names:Optional[NameList]=None, write_keys:Optional[KeyList]=None ):
         """ Permissioned delete """
         names      = names or [ name ]
+        self.assert_not_in_reserved_namespace(names)
         write_keys = write_keys or [ write_key for _ in names ]
         are_valid  = self._mauthorize(names, write_keys)
 
@@ -473,7 +475,6 @@ class Rediz(object):
         # TODO: Combine 1+2 into one call to reduce communication
         names = list_or_args(names,args)
         names = [ n for n in names if n is not None ]
-        self.assert_not_in_reserved_namespace(names)
 
         # (1) List  so we can kill messages in flight
         subs_pipe = self.client.pipeline()
@@ -679,7 +680,12 @@ class Rediz(object):
         if self._authorize(name=name,write_key=write_key):
             return self.client.hgetall( self.MESSAGES+name )
 
-    # Linking
+
+
+
+
+
+    # ------   Linking -----------------------------
 
     def _root_name(self,name):
         return name.split(self.SEP)[-1]
@@ -706,10 +712,9 @@ class Rediz(object):
     def _unlink_implementation(self, name, write_key, target):
         # Either party can unlink
         if self._authorize(name=name,write_key=write_key) or self._authorize(name=target,write_key=write_key):
-            link_pipe   = self.client.pipeline()
-            for target in targets:
-                link_pipe.hdel(self.LINKS+name,key=target,value=edge_weight)
-                link_pipe.hdel(self.BACKLINKS+target,key=name,value=edge_weight)
+            link_pipe   = self.client.pipeline(transaction=True)
+            link_pipe.hdel(self.LINKS+name,key=target)
+            link_pipe.hdel(self.BACKLINKS+target,key=name)
             return link_pipe.execute()
 
 
@@ -717,9 +722,9 @@ class Rediz(object):
         if self._authorize(name=name,write_key=write_key):
             return self.client.hgetall(self.LINKS+name)
 
-    def _backlinks(self, name, write_key):
+    def _backlinks_implementation(self, name, write_key):
         if self._authorize(name=name,write_key=write_key):
-            return self.client.hgetall(self.LINKS+name)
+            return self.client.hgetall(self.BACKLINKS+name)
 
     # Administrative
 
@@ -751,13 +756,6 @@ class Rediz(object):
                  source, destination = promise.split('>>')
              sources.append(source)
              destinations.append(destination)
-
-        # Propagate delays to linked markets
-        for source, destination in zip(sources, destinations):
-
-
-
-
 
 
          source_values = self.client.mget(*sources)
