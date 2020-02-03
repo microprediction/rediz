@@ -53,9 +53,9 @@ class Rediz(object):
         self.DELAY_SECONDS  = kwargs.get("delay_seconds")  or [1,2,5,10,30,60,1*60,2*60,5*60,10*60,20*60,60*60]
         self.ERROR_LOG      = "errors"+self.SEP
         # Config
-        self.INSTANT_RECALL = kwargs.get("instant_recall") or False  # Delete messages already sent when sender is deleted?
-        self.ERROR_TTL      = int( kwargs.get('error_ttl') or 10 )   # Number of seconds that set execution error logs are persisted
-        self.DELAY_GRACE    = 15       # Seconds beyond the schedule time when promise data expires
+        self.INSTANT_RECALL = kwargs.get("instant_recall") or False   # Delete messages already sent when sender is deleted?
+        self.ERROR_TTL      = int( kwargs.get('error_ttl') or 10 )    # Number of seconds that set execution error logs are persisted
+        self.DELAY_GRACE    = int( kwargs.get("delay_grace") or 15 )  # Seconds beyond the schedule time when promise data expires
 
     def is_valid_name(self,name:str):
         name_regex = re.compile(r'^[-a-zA-Z0-9_.:]{1,200}\.[json,HTML]+$',re.IGNORECASE)
@@ -155,7 +155,7 @@ class Rediz(object):
         """ Owner of name can link to a target from any delay:: """
         return self._link_implementation(name=name, write_key=write_key, budget=1, target=target )
 
-    def mlink(self, name, write_key, targets):
+    def mlink(self, name, write_key, targets, strict=False):
         """ Permissioned link to multiple targets """
         return self._link_implementation(name=name, write_key=write_key, budget=1000, targets=targets )
 
@@ -503,9 +503,9 @@ class Rediz(object):
         # (3) Round up and destroy in one pipeline
         delete_pipe = self.client.pipeline(transaction=False)
 
-        for name, link_collection in zip(names, link_collections):
+        for delay_name, link_collection in zip(delay_names, link_collections):
             for target in list(link_collection.keys()):
-                delete_pipe.hdel(name=self.BACKLINKS+target,key=name)
+                delete_pipe.hdel(self.BACKLINKS+target,delay_name)
 
         # Remove name from children's list of subscriptions
         for name, subscribers in zip(names,subscribers_res):
@@ -593,11 +593,12 @@ class Rediz(object):
     def _modify_page(self, pipe,ndx,name,value,ttl):
         pipe.set(name=name,value=value,ex=ttl)
         # Also write a duplicate to another key
-        name_of_copy   = self.random_key()[:-10]+"-copy-"+name[:4]
+        name_of_copy   = self.random_key()[:-10]+"-copy-"+name[:14]
         HISTORY_TTL = min( max( 2*60*60, ttl ), 60*60*24 )
         pipe.set(name=name_of_copy,value=value,ex=HISTORY_TTL)
         if self._streams_support():
             pipe.xadd(name=self.HISTORY+name,fields={"copy":name_of_copy})
+
         # Future copy operations
         utc_epoch_now = int(time.time())
         for delay_seconds in self.DELAY_SECONDS:
@@ -696,7 +697,7 @@ class Rediz(object):
             targets = [ target ]
 
         root = self._root_name(name)
-        if self.exists(root) and "delay::" in name and not( "delay::" in target
+        if self.exists(root) and (self.DELAYED in name) and not( self.DELAYED in target
                ) and self._authorize(name=root,write_key=write_key):
             link_pipe   = self.client.pipeline()
             edge_weight = 1.0*budget / len(targets)
@@ -746,7 +747,6 @@ class Rediz(object):
          import itertools
          individual_promises = list( itertools.chain( *collections ) )
 
-         set_pipe = self.client.pipeline()
          sources  = list()
          destinations = list()
          for promise in individual_promises:
@@ -761,4 +761,4 @@ class Rediz(object):
          source_values = self.client.mget(*sources)
          mapping = dict ( zip(destinations, source_values ) )
          self.client.mset( mapping )
-         return len(mapping)
+         return  mapping #len(mapping)
