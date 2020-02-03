@@ -22,7 +22,7 @@ This will fail if the name 'air-pressure-06820.json' was already taken. Downstre
 
 #### Value types  
 
-Rediz supports, or will support:  
+While any binary string can be set(), the valuable prediction capability of Rediz supports:
 
 - One dimensional continuous valued data (as float or int)
 - Two dimensional geospatial data (lat/long in geohash)

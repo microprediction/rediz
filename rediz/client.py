@@ -721,7 +721,6 @@ class Rediz(object):
         if self._authorize(name=name,write_key=write_key):
             return self.client.hgetall(self.LINKS+name)
 
-
     # Administrative
 
     def admin_promises(self, lookback_seconds=65):
@@ -752,6 +751,14 @@ class Rediz(object):
                  source, destination = promise.split('>>')
              sources.append(source)
              destinations.append(destination)
+
+        # Propagate delays to linked markets
+        for source, destination in zip(sources, destinations):
+
+
+
+
+
 
          source_values = self.client.mget(*sources)
          mapping = dict ( zip(destinations, source_values ) )

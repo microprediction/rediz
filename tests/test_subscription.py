@@ -22,7 +22,6 @@ def test_plural_subscription_without_recall():
 def subscription_example(plural=False,instant_recall=False):
     rdz = Rediz(instant_recall=instant_recall,**REDIZ_TEST_CONFIG)
 
-
     PUBLISHER             = 'PUBLISQHER_plural_'+str(plural)+'3b4e229a-ffb4-4fc2-8370-c147944aa2b.json'
     SUBSCRIBER            = 'SUBSCRIIBER_plural_'+str(plural)+'ed2b4f6-c6bd-464c-a9e9-322e0c3147.json'
     PUBLISHER_write_key   = "b0b5753b-14e6-4051-b13e-132bb13ed1a9_plural="+str(plural)
