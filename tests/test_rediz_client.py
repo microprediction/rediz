@@ -65,3 +65,16 @@ def test_mixed_log():
     values = [ json.dumps([7.6 for _ in range(1000)]), "cat", json.dumps("dog")]
     result = rdz._pipelined_set(names=names,write_keys=write_keys,values=values)
     rdz._delete(names)
+
+
+def test_mnew_fake():
+    fake_rdz = Rediz()
+    do_new_values_only(fake_rdz)
+
+
+def do_new_values_only(rdz):
+    rdz = Rediz()
+    access = rdz.new(value=10)
+    assert rdz.exists(access["name"]) == 1
+    rdz.delete(**access)
+    assert rdz.exists(access["name"]) == 0

@@ -1,5 +1,6 @@
 from itertools import zip_longest
 import fakeredis, os, re, sys, uuid, math, json, redis, time, random
+import numpy as np
 import threezaconventions.crypto
 from collections import OrderedDict
 from typing import List, Union, Any, Optional
@@ -39,9 +40,14 @@ class Rediz(object):
         self.MIN_KEY_LEN    = int( kwargs.get("min_key_len") or 18 )           # c.f len(uuid)=36
         # Reserved redis keys and prefixes
         self._obscurity     = ( kwargs.get("obscurity") or "09909e88-ca04-4868-a0a0-c94748df844f" ) + self.SEP
+        self.JACKPOT        = self._obscurity+"jackpot"
         self.OWNERSHIP      = self._obscurity+"ownership"
         self.NAMES          = self._obscurity+"names"
         self.PROMISES       = self._obscurity+"promises"+self.SEP
+        self.BALANCES       = "balance" + self.SEP
+        self.PREDICTIONS    = "predictions" + self.SEP
+        self.PARTICIPANTS   = "participants" + self.SEP
+        self.SAMPLES        = "samples" + self.SEP
         # User facing conventions
         self.DELAYED        = "delayed"+self.SEP
         self.LINKS          = "links"+self.SEP
@@ -53,9 +59,15 @@ class Rediz(object):
         self.DELAY_SECONDS  = kwargs.get("delay_seconds")  or [1,2,5,10,30,60,1*60,2*60,5*60,10*60,20*60,60*60]
         self.ERROR_LOG      = "errors"+self.SEP
         # Config
-        self.INSTANT_RECALL = kwargs.get("instant_recall") or False   # Delete messages already sent when sender is deleted?
-        self.ERROR_TTL      = int( kwargs.get('error_ttl') or 10 )    # Number of seconds that set execution error logs are persisted
-        self.DELAY_GRACE    = int( kwargs.get("delay_grace") or 15 )  # Seconds beyond the schedule time when promise data expires
+        self.NOISE            = 1.0e-6                                  # Tie-breaking noise added to predictions
+        self.DIRAC_NOISE      = 1.0                                     # Noise added for self-prediction
+        self.WINDOW           = 1e-2
+        self.BACKOFF          = 5 
+        self.BACKOFF_MULTIPLE = 3 
+        self.INSTANT_RECALL   = kwargs.get("instant_recall") or False   # Delete messages already sent when sender is deleted?
+        self.ERROR_TTL        = int( kwargs.get('error_ttl') or 10 )    # Number of seconds that set execution error logs are persisted
+        self.DELAY_GRACE      = int( kwargs.get("delay_grace") or 15 )  # Seconds beyond the schedule time when promise data expires
+        self.NUM_PREDICTIONS  = int( kwargs.get("num_predictions") or 1000 )  # Number of predictions
 
     def is_valid_name(self,name:str):
         name_regex = re.compile(r'^[-a-zA-Z0-9_.:]{1,200}\.[json,HTML]+$',re.IGNORECASE)
@@ -97,6 +109,21 @@ class Rediz(object):
         names = list_or_args(names,args)
         return self._get_implementation( names=names )
 
+    def jackpot(self):
+        return float( self.client.hget(self.BALANCES,self.JACKPOT) or 0 )
+
+    def get_delayed(self, name, delay):
+        name = self.DELAYED+str(delay)+self.SEP+name
+        return self._get_implementation( name=name )
+
+    def balance(self, write_key):
+        return self._balance_implementation( write_key=write_key )
+
+    def mget_delayed(self, names, delay=None, delays=None ):
+        delays = delays or [ delay for _ in names ]
+        names = [ self.DELAYED+str(delay)+self.SEP+name for name,delay in zip(names,delays) ]
+        return self._get_implementation( names=names )
+
     def set( self, name, value, write_key ):
         return self._set_implementation(name=name, value=value, write_key=write_key, return_args=None, budget=1 )
 
@@ -109,17 +136,15 @@ class Rediz(object):
         return_args = [ a for a,s in supplied if not(s) ]
         return self._set_implementation(name=name, value=value or "", write_key=write_key, return_args=return_args, budget=1)
 
-    def mnew( self, names:Optional[NameList]=None, values:Optional[ValueList]=None, write_keys:Optional[KeyList]=None):
-        """ For when you don't want to generate write_keys (or values, or names)"""
-        supplied = zip( ("names","values","write_keys"), (names is not None, values is not None, write_keys is not None) )
-        return_args = [ a for a,s in supplied if not(s) ]
-        return self._set_implementation(values=values, write_keys=write_keys, return_args=return_args, budget=1000)
-
     def delete(self, name, write_key):
         return self._delete_implementation( name=name, write_key=write_key )
 
     def mdelete(self, names, write_key:Optional[str]=None, write_keys:Optional[KeyList]=None):
         return self._delete_implementation( names=names, write_key=write_key, write_keys=write_keys )
+
+    def predict(self, name, values, write_key ):
+        return self._predict_implementation( name, values, write_key )
+
 
     # Subscription
 
@@ -151,7 +176,7 @@ class Rediz(object):
 
     # Linking
 
-    def link(self, name, write_key, target):
+    def link(self, name, write_key, target ):
         """ Owner of name can link to a target from any delay:: """
         return self._link_implementation(name=name, write_key=write_key, budget=1, target=target )
 
@@ -192,7 +217,7 @@ class Rediz(object):
                  value:Optional[Any]=None,
                  write_key:Optional[str]=None,
                  return_args:Optional[List[str]]=None):
-        singular = names is None
+        singular = (names is None) and (values is None) and (write_keys) is None
         names, values, write_keys = self._coerce_inputs(names=names,values=values,
                         write_keys=write_keys,name=name,value=value,write_key=write_key)
         # Encode
@@ -200,6 +225,11 @@ class Rediz(object):
 
         # Execute and create temporary logs
         execution_log = self._pipelined_set( names=names,values=values, write_keys=write_keys, budget=budget )
+
+        if len(values)==1 and isinstance( values[0], (int,float) ):
+            # Seed the nano-markets and settle the existing ones.
+            self._dirac(  name=name, value=values[0], write_key=write_keys[0] )
+            self._settle( name=name, value=values[0] )
 
         # Re-jigger results
         if return_args is not None:
@@ -216,7 +246,7 @@ class Rediz(object):
                   value:Optional[Any]=None,
                   write_key:Optional[str]=None,
                   budget=1):
-        # Returns execution log format
+        # Returns execution log format   FIXME: Why twice?? Fix old tests and get rid of this
         names, values, write_keys = self._coerce_inputs(names=names,values=values,write_keys=write_keys,
                                                         name=name,value=value,write_key=write_key)
         ndxs = list(range(len(names)))
@@ -248,11 +278,15 @@ class Rediz(object):
         names  = names or [ name ]
         values = values or [ value for _ in names ]
         write_keys = write_keys or [ write_key for _ in names ]
+
+
         return names, values, write_keys
 
     @staticmethod
-    def _coerce_outputs( execution_log, return_args=('name','write_key') ):
+    def _coerce_outputs( execution_log, return_args=None ):
         """ Convert to list of dicts containing names and write keys """
+        if return_args is None:
+            return_args = ('name','write_key')
         sorted_log = sorted(execution_log["executed"]+execution_log["rejected"], key = lambda d: d['ndx'])
         return [  dict( (arg,s[arg]) for arg in return_args ) for s in sorted_log ]
 
@@ -488,13 +522,17 @@ class Rediz(object):
         subscriptions_res = res[len(names):]
 
 
-        # (2) Collate backlinks
+        # (2) Collate backlinks/delays etc
         links_pipe  = self.client.pipeline()
         delay_names = list()
         link_names  = list()
+        sample_names = list()
+        prediction_names = list()
         for name in names:
             for delay in self.DELAY_SECONDS:
                 delay_name = self.DELAYED+str(delay)+self.SEP+name
+                prediction_names.append(self.PREDICTIONS+str(delay)+self.SEP+name)
+                sample_names.append(self.SAMPLES + str(delay) + self.SEP + name)
                 links_pipe.hgetall(self.LINKS+delay_name)
                 delay_names.append(delay_name)
                 link_names.append(self.LINKS+delay_name)
@@ -525,6 +563,8 @@ class Rediz(object):
 
         delete_pipe.delete(*link_names)
         delete_pipe.delete(*delay_names)
+        delete_pipe.delete(*prediction_names)
+        delete_pipe.delete(*sample_names)
         delete_pipe.hdel(self.OWNERSHIP,*names)
         delete_pipe.delete( *[self.MESSAGES+name for name in names] )
         delete_pipe.delete( *[self.HISTORY+name for name in names] )
@@ -599,17 +639,19 @@ class Rediz(object):
         if self._streams_support():
             pipe.xadd(name=self.HISTORY+name,fields={"copy":name_of_copy})
 
-        # Future copy operations
+        # Construct delay promises
         utc_epoch_now = int(time.time())
         for delay_seconds in self.DELAY_SECONDS:
             PROMISE = self.PROMISES+str(utc_epoch_now+delay_seconds)
             SOURCE  = name_of_copy
             DESTINATION = self.DELAYED+str(delay_seconds)+self.SEP+name
-            pipe.sadd( PROMISE, SOURCE+'->'+DESTINATION )
+            pipe.sadd( PROMISE, SOURCE+self.SEP+'copy'+self.SEP+DESTINATION )
             pipe.expire( name=PROMISE, time=delay_seconds+self.DELAY_GRACE)
         intent = {"ndx":ndx,"name":name,"value":value,"ttl":ttl,
                   "new":False,"obscure":False,"copy":name_of_copy}
+
         return pipe, intent
+
 
     @staticmethod
     def _delay_as_int(delay):
@@ -686,7 +728,7 @@ class Rediz(object):
 
 
 
-    # ------   Linking -----------------------------
+    # ------   Linking ------  DO WE NEED THIS ???   -----------------------
 
     def _root_name(self,name):
         return name.split(self.SEP)[-1]
@@ -729,10 +771,13 @@ class Rediz(object):
 
     # Administrative
 
-    def admin_promises(self, lookback_seconds=65):
+
+    def admin_promises(self, lookback_seconds=5):
+         """ FIXME: Better handling of early versus stale requests """
          exists_pipe = self.client.pipeline()
          utc_epoch_now = int(time.time())
-         candidates =  [ self.PROMISES+str(utc_epoch_now-seconds) for seconds in range(lookback_seconds) ]
+         candidates =  [ self.PROMISES+str(utc_epoch_now-seconds) for seconds in range(lookback_seconds,-1,-1) ]
+
          for candidate in candidates:
              exists_pipe.exists(candidate)
          exists = exists_pipe.execute()
@@ -747,18 +792,159 @@ class Rediz(object):
          import itertools
          individual_promises = list( itertools.chain( *collections ) )
 
-         sources  = list()
-         destinations = list()
+         # Sort through promises in reverse time precedence
+         # When we set delays, we allow more recent instructions to override less recent ones
+         # as there is no point setting the value more than once
+         dest_source = dict()
+         dest_method = dict()
+         copy_sep    = self.SEP + 'copy' + self.SEP
+         ticket_sep  = self.SEP + 'ticket' + self.SEP
          for promise in individual_promises:
-             try:
-                 source, destination = promise.split('->')
-             except:
-                 source, destination = promise.split('>>')
-             sources.append(source)
-             destinations.append(destination)
+             if copy_sep in promise:
+                 source, destination = promise.split(copy_sep)
+                 dest_source[destination] = source
+                 dest_method[destination] = 'copy'
+             elif ticket_sep in promise:
+                 source, destination = promise.split(ticket_sep)
+                 dest_source[destination] = source
+                 dest_method[destination] = 'ticket'
+         sources      = list(dest_source.values())
+         destinations = list(dest_source.keys())
+         methods      = list(dest_method.values())
+
+         # Get the data
+         retrieve_pipe = self.client.pipeline()
+         for source, destination, method in zip(sources, destinations, methods):
+             if method == 'copy':
+                 retrieve_pipe.get(source)
+             elif method == 'ticket':
+                 retrieve_pipe.zrange(name=source,start=0,end=-1,withscores=True)
+
+         source_values = retrieve_pipe.execute()
+
+         # Copy or insert
+         move_pipe = self.client.pipeline()
+         for value, destination, method in zip(source_values, destinations, methods):
+             if method == 'copy':
+                 move_pipe.set(name=destination,value=value)
+             elif method == 'ticket':
+                 if len(value):
+                     value_as_dict = dict(value)
+                     move_pipe.zadd(name=destination,mapping=value_as_dict)
+                     owners  = [ self._ticket_owner(ticket) for ticket in value_as_dict.keys() ]
+                     unique_owners = list(set(owners))
+                     move_pipe.sadd("owners"+self.SEP+destination,*unique_owners)
+         execut = move_pipe.execute()
+         return sum(execut)
 
 
-         source_values = self.client.mget(*sources)
-         mapping = dict ( zip(destinations, source_values ) )
-         self.client.mset( mapping )
-         return  mapping #len(mapping)
+    def _dirac(self, name, value, write_key):
+        x_noise = list(np.random.randn(self.NUM_PREDICTIONS))
+        values  = [ value+x for x in x_noise ]
+        return self._predict_implementation( name=name, values=values, write_key=write_key )
+
+
+    def _ticket(self, write_key, k ):
+        return str(k).zfill(8)+ self.SEP + write_key
+
+    def _ticket_owner(self, ticket):
+        return ticket.split(self.SEP)[1]
+
+    def _predict_implementation(self, name, values, write_key, delay=None, delays=None):
+        """ Set a sorted set """
+        import numpy as np
+        if delays is None and delays is None:
+            delays = self.DELAY_SECONDS
+        elif delays is None:
+            delays = [ delay ]
+        if self.exists(name) and len(values)==self.NUM_PREDICTIONS and self.is_valid_key(write_key
+                ) and all( [ isinstance(v,(int,float) ) for v in values] ) and all (delay in self.DELAY_SECONDS for delay in delays):
+            # We set a temporary item that only needs to survive long enough to be inserted into the nano-market
+            # after a set period of quarantine. Probabilistic predictions are ephemeral, though they live on in
+            # the ordered set of all predictions at a given horizon.
+            noise =  np.random.randn(self.NUM_PREDICTIONS).tolist()
+            jiggered_values = [v + n*self.NOISE for v, n in zip(values, noise)]
+            predictions = dict([(self._ticket(write_key=write_key,k=k), v) for k,v in enumerate(jiggered_values)])
+            predictions_name = self.PREDICTIONS+write_key+self.SEP+name
+            set_and_expire_pipe = self.client.pipeline()
+            set_and_expire_pipe.zadd( name=predictions_name, mapping=predictions )
+            set_and_expire_pipe.expire( name=predictions_name, time = max(self.DELAY_SECONDS)+self.DELAY_GRACE )
+            for delay_seconds in delays:
+                set_and_expire_pipe.zadd(name=self.PREDICTIONS+str(delay_seconds)+self.SEP+name, mapping=predictions)
+
+            utc_epoch_now = int(time.time())
+            for delay_seconds in delays:
+                promise_queue = self.PROMISES + str(utc_epoch_now + delay_seconds)
+                DESTINATION = self.SAMPLES + str(delay_seconds) + self.SEP + name
+                set_and_expire_pipe.sadd(promise_queue, predictions_name + self.SEP + 'ticket' + self.SEP + DESTINATION)
+                set_and_expire_pipe.expire(name=promise_queue, time=delay_seconds + self.DELAY_GRACE)
+            return sum(set_and_expire_pipe.execute())
+        else:
+            return 0
+
+
+
+
+    def _settle(self, name, value, h=1e-2 ):
+        from collections import Counter
+        retrieve_pipe = self.client.pipeline()
+        for delay_seconds in self.DELAY_SECONDS:
+            samples_name = self.SAMPLES + str(delay_seconds) + self.SEP + name
+            retrieve_pipe.zcard(samples_name)                             # (1) Total number of entries
+            retrieve_pipe.smembers(name="owners"+self.SEP+samples_name)   # (2) List of owners
+            h = self.WINDOW 
+            retrieve_pipe.zrangebyscore( name=samples_name, min=value-h,      max=value+h,      withscores=False )
+                                                                          # (3->) Tickets
+            for _ in range(self.BACKOFF):
+                h = h*self.BACKOFF_MULTIPLE  # Widen the winners neighbourhood
+                retrieve_pipe.zrangebyscore( name=samples_name, min=value-5*h,  max=value+5*h,    withscores=False)
+
+        # Execute pipeline and re-arrange results
+        K = 3 + self.BACKOFF
+        retrieved = retrieve_pipe.execute()
+        participant_sets = retrieved[1::K]
+        pools            = retrieved[0::K]
+        selections = list()
+        for k in range(K+1):
+            selections.append( retrieved[2+k::K] )
+
+        # Collate payments, starting with entry fees
+        payments = Counter( {self.JACKPOT:0} )
+
+        # Select winners in neighbourhood, trying hard for at least one
+        if any(pools):
+            for pool, selections, participant_set in zip( pools, selections, participant_sets ):
+                if pool:
+                    entry_fees = Counter( dict( (p,-1.0) for p in participant_set ) )
+
+                    winning_tickets = selections[0]
+                    for backoff in range(1,self.BACKOFF):
+                        if len(winning_tickets)==0:
+                            winning_tickets = selections[backoff]
+
+                    if len(winning_tickets) == 0:
+                        payments[self.JACKPOT] = payments[self.JACKPOT]+pool
+                    else:
+                        winners  = [ self._ticket_owner(ticket) for ticket in winning_tickets ]
+                        reward   = ( 1.0*pool/self.NUM_PREDICTIONS ) / len(winners)   # Could augment this to use kernel or whatever
+                        payouts  = Counter( dict( [(w,reward*c) for w,c in Counter(winners).items() ]) )
+
+                        net = payouts+entry_fees
+                        net_total = sum( net.values() )
+                        if abs(net_total)>0.1:
+                            raise Exception("urgh")
+                        else:
+                            payments = payments + net
+
+            if len(payments):
+                pay_pipe = self.client.pipeline()
+                for (recipient, amount) in payments.items():
+                    pay_pipe.hincrbyfloat( name=self.BALANCES,key=recipient,amount=float(amount) )
+                return pay_pipe.execute()
+        return 0
+
+    def _balance_implementation(self, write_key=None, write_keys=None):
+        write_keys = write_keys or [ write_key ]
+        balances   = self.client.hmget( self.BALANCES, *write_keys )
+        fixed_balances = [ b or "0" for b in balances ]
+        return np.nansum([ float(b) for b in fixed_balances ])

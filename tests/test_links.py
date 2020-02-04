@@ -7,18 +7,18 @@ from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 def dump(obj,name="tmp_links.json"):
     json.dump(obj,open(name,"w"))
 
-
 def test_fake():
     rdz_fake = Rediz(delay_grace=60, delay_seconds=[1,5])
     do_test_link(rdz_fake)
 
-def dont_test_real():
+def test_real():
     rdz_real = Rediz(delay_grace=900,**REDIZ_TEST_CONFIG)
     do_test_link(rdz_real)
 
 def do_test_link(rdz):
     SOURCE          = "source-153f88.json"
     DELAY           = rdz.DELAYED+"1"+rdz.SEP+SOURCE
+    assert 1 in rdz.DELAY_SECONDS
     assert 5 in rdz.DELAY_SECONDS
     TARGET              = "target-db77f1c0d75f.json"
     SOURCE_write_key    = "source-key-01f339453-e057-4e98-9e26-eec6abee711f"
@@ -40,17 +40,18 @@ def do_test_link(rdz):
     assert DELAY in backlinks
 
     time.sleep(1.5)
-    mapping = rdz.admin_promises()
-    assert DELAY in mapping
+    assert rdz.admin_promises()
+
     # By now delay::1 should exist
     _exists = rdz.client.exists(DELAY)
     assert rdz.exists(DELAY)
     rdz.set(name=SOURCE,write_key=SOURCE_write_key,value=json.dumps({"temp":79.6})) # Modify
 
-    # Deleting the source should remove the backlink from target
+    # Deleting the source should remove the backlink from target->delay::n::source for all delays
     rdz.delete(name=SOURCE,write_key=SOURCE_write_key)
     backlinks = rdz.backlinks(name=TARGET,write_key=TARGET_write_key)
     assert DELAY not in backlinks
 
     rdz._delete(TARGET)
     assert not( rdz.exists(DELAY) ), "delete failed to clean up delay::"
+

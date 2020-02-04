@@ -1,5 +1,4 @@
 from rediz.client import Rediz
-from threezaconventions.crypto import random_key
 import json, os, uuid, random, time
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 
@@ -13,7 +12,7 @@ def test_delay_real():
     do_test_delay(rdz)
 
 def test_delay_fake():
-    rdz = Rediz(decode_responses=True)
+    rdz = Rediz()
     do_test_delay(rdz)
 
 def do_test_delay(rdz):
@@ -26,14 +25,15 @@ def do_test_delay(rdz):
     assert rdz.set( name = NAME,  value = "living in the past",  write_key=WRITE_KEY )==1
     time.sleep(4)
     assert rdz.set( name = NAME,  value = "living in the present",  write_key=WRITE_KEY )==1
-    time.sleep(2)
+    time.sleep(3)
     assert rdz.admin_promises()>0
-    delayed_value = rdz.client.get( name=rdz.DELAYED+"1"+rdz.SEP+NAME )
+    delayed_value = rdz.get_delayed(name=NAME,delay=1 )
     assert delayed_value=="living in the present"
     delayed_value = rdz.client.get( name=rdz.DELAYED+"5"+rdz.SEP+NAME )
     assert delayed_value=="living in the past"
 
-    # Test
+    # Test market
+
     
 
 
