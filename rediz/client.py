@@ -1,16 +1,15 @@
 from itertools import zip_longest
-import fakeredis, os, re, sys, uuid, math, json, redis, time, random
+import fakeredis, sys, math, json, redis, time, random, itertools
 import numpy as np
-import threezaconventions.crypto
-from collections import OrderedDict
+from collections import Counter
 from typing import List, Union, Any, Optional
 from redis.client import list_or_args
+from .conventions import RedizConventions, KeyList, NameList, Value, ValueList, DelayList
 
 # REDIZ
 # -----
-# Implements a write-permissioned (not read permissioned) shared REDIS value store with subscription, history
+# Implements a write-permissioned shared REDIS value store with subscription, history, prediction, clearing
 # and delay mechanisms. Intended for collectivized short term (e.g. 5 seconds or 15 minutes) prediction.
-
 
 PY_REDIS_ARGS = ('host','port','db','username','password','socket_timeout','socket_keepalive','socket_keepalive_options',
                  'connection_pool', 'unix_socket_path','encoding', 'encoding_errors', 'charset', 'errors',
@@ -18,82 +17,62 @@ PY_REDIS_ARGS = ('host','port','db','username','password','socket_timeout','sock
                  'ssl_check_hostname', 'max_connections', 'single_connection_client','health_check_interval', 'client_name')
 FAKE_REDIS_ARGS = ('decode_responses',)
 
-KeyList   = List[Optional[str]]
-NameList  = List[Optional[str]]
-Value     = Union[str,int]
-ValueList = List[Optional[Value]]
-DelayList = List[Optional[int]]
-
 DEBUGGING = True
 def dump(obj,name="tmp_client.json"):
     if DEBUGGING:
         json.dump(obj,open(name,"w"))
 
-
-class Rediz(object):
+class Rediz(RedizConventions):
 
     # Initialization
 
     def __init__(self,**kwargs):
+        super(RedizConventions, self).__init__()
+        self.SEP = RedizConventions.sep()
+
+        # Rediz instance. Expects host, password, port   If not supplied it may use fakeredis
         self.client         = self.make_redis_client(**kwargs)                 # Real or mock redis client
-        self.SEP            = kwargs.get("sep") or '::'
-        self.MIN_KEY_LEN    = int( kwargs.get("min_key_len") or 18 )           # c.f len(uuid)=36
-        # Reserved redis keys and prefixes
-        self._obscurity     = ( kwargs.get("obscurity") or "09909e88-ca04-4868-a0a0-c94748df844f" ) + self.SEP
-        self.JACKPOT        = self._obscurity+"jackpot"
-        self.OWNERSHIP      = self._obscurity+"ownership"
-        self.NAMES          = self._obscurity+"names"
-        self.PROMISES       = self._obscurity+"promises"+self.SEP
-        self.BALANCES       = "balance" + self.SEP
-        self.PREDICTIONS    = "predictions" + self.SEP
-        self.PARTICIPANTS   = "participants" + self.SEP
-        self.SAMPLES        = "samples" + self.SEP
-        # User facing conventions
+
+        # Implementation details: private reserved redis keys and prefixes
+        self._obscurity     = ( kwargs.get("obscurity") or "09909-OBSCURE-c94748" ) + self.SEP
+        self.JACKPOT        = self._obscurity+"jackpot"                     # Rarely used
+        self.OWNERSHIP      = self._obscurity+"ownership"                   # Official map from name to write_key
+        self.NAMES          = self._obscurity+"names"                       # Redundant set of all names (needed for random sampling when collecting garbage)
+        self.PROMISES       = self._obscurity+"promises"+self.SEP           # Prefixes queues of operations that are indexed by epoch second
+        self.POINTER        = self._obscurity+"pointer"                     # A convention used in history stream
+        self.BALANCES       = self._obscurity+"balance" + self.SEP          # Hash of all balances attributed to write_keys
+        self.PREDICTIONS    = self._obscurity+"predictions" + self.SEP      # Prefix to a listing of contemporaneous predictions by horizon. Must be private as this contains write_keys !
+        self.OWNERS         = "owners" + self.SEP           # Prefix to a redundant listing of contemporaneous prediction owners by horizon. Must be private as this contains write_keys !
+        self.SAMPLES        = self._obscurity+"samples" + self.SEP          # Prefix to delayed predictions by horizon. Contain write_keys !
+        self.ERRORS         = "errors" + self.SEP
+        self.PROMISED       = "promised" + self.SEP                         # Prefixes temporary values referenced by the promise queue
+
+        # User facing conventions: transparent use of prefixing
         self.DELAYED        = "delayed"+self.SEP
         self.LINKS          = "links"+self.SEP
         self.BACKLINKS      = "backlinks"+self.SEP
         self.MESSAGES       = "messages"+self.SEP
         self.HISTORY        = "history"+self.SEP
+        self.HISTORY_LEN    = int( kwargs.get("history_len") or 1000 )
+        self.LAGGED         = "lagged"+self.SEP
+        self.LAGGED_TIME    = "times"+self.SEP + "lagged" + self.SEP
+        self.LAGGED_LEN     = int( kwargs.get("lagged_len") or 10000 )
         self.SUBSCRIBERS    = "subscribers"+self.SEP
         self.SUBSCRIPTIONS  = "subscriptions"+self.SEP
-        self.DELAY_SECONDS  = kwargs.get("delay_seconds")  or [1,2,5,10,30,60,1*60,2*60,5*60,10*60,20*60,60*60]
-        self.ERROR_LOG      = "errors"+self.SEP
+
         # Config
+        self.DELAY_SECONDS    = kwargs.get("delay_seconds")  or [1,2,5,10,30,60,1*60,2*60,5*60,10*60,20*60,60*60]
         self.NOISE            = 1.0e-6                                  # Tie-breaking noise added to predictions
         self.DIRAC_NOISE      = 1.0                                     # Noise added for self-prediction
-        self.WINDOW           = 1e-2
-        self.BACKOFF          = 5 
-        self.BACKOFF_MULTIPLE = 3 
+        self.WINDOWS          = [1e-3,1e-2,1.0,100.]                    # Sizes of neighbourhoods around truth
         self.INSTANT_RECALL   = kwargs.get("instant_recall") or False   # Delete messages already sent when sender is deleted?
-        self.ERROR_TTL        = int( kwargs.get('error_ttl') or 10 )    # Number of seconds that set execution error logs are persisted
-        self.DELAY_GRACE      = int( kwargs.get("delay_grace") or 15 )  # Seconds beyond the schedule time when promise data expires
-        self.NUM_PREDICTIONS  = int( kwargs.get("num_predictions") or 1000 )  # Number of predictions
+        self.ERROR_TTL        = int( kwargs.get('error_ttl') or 60*5 )  # Number of seconds that set execution error logs are persisted
+        self.DELAY_GRACE      = int( kwargs.get("delay_grace") or 60 )  # Seconds beyond the schedule time when promise data expires
+        self.NUM_PREDICTIONS  = int( kwargs.get("num_predictions") or 1000 )  # Number of scenerios in a prediction batch
 
-    def is_valid_name(self,name:str):
-        name_regex = re.compile(r'^[-a-zA-Z0-9_.:]{1,200}\.[json,HTML]+$',re.IGNORECASE)
-        return (re.match(name_regex, name) is not None) and (not self.SEP in name)
 
-    def assert_not_in_reserved_namespace(self, names, *args):
-        names = list_or_args(names,args)
-        if any( self.SEP in name for name in names ):
-            raise Exception("Operation attempted with a name that uses "+ self.SEP)
 
-    @staticmethod
-    def is_valid_value(value):
-        return isinstance(value,(str,int,float)) and sys.getsizeof(value)<100000
-
-    def is_valid_key(self,key):
-        return isinstance(key,str) and len(key)>self.MIN_KEY_LEN
-
-    @staticmethod
-    def random_key():
-        return threezaconventions.crypto.random_key()
-
-    @staticmethod
-    def random_name():
-        return threezaconventions.crypto.random_key()+'.json'
-
-    # Public interface
+    # Public interface: Reading without authorization
 
     def card(self):
         return self.client.scard(self.NAMES)
@@ -109,20 +88,28 @@ class Rediz(object):
         names = list_or_args(names,args)
         return self._get_implementation( names=names )
 
-    def jackpot(self):
+    def get_samples(self, name, delay=None, delays=None):
+        return self._get_samples_implementation(name=name, delay=delay, delays=delays )
+
+    def get_jackpot(self):
         return float( self.client.hget(self.BALANCES,self.JACKPOT) or 0 )
 
-    def get_delayed(self, name, delay):
-        name = self.DELAYED+str(delay)+self.SEP+name
-        return self._get_implementation( name=name )
+    def get_delayed(self, names, delay=None, delays=None, to_float=True):
+        return self._get_delayed_implementation( names=names, delay=delay, delays=delays, to_float=to_float)
 
-    def balance(self, write_key):
-        return self._balance_implementation( write_key=write_key )
+    def get_lagged(self, name, start=0, end=None, count=None, with_times=False, to_float=True ):
+        return self._get_lagged_implementation(name=name, start=start, end=end, count=count, with_times=with_times, to_float=True)
 
-    def mget_delayed(self, names, delay=None, delays=None ):
-        delays = delays or [ delay for _ in names ]
-        names = [ self.DELAYED+str(delay)+self.SEP+name for name,delay in zip(names,delays) ]
-        return self._get_implementation( names=names )
+    def get_balance(self, write_key ):
+        return self._get_balance_implementation(write_key=write_key)
+
+    def mget_balance(self, write_keys, aggregate=True):
+        return self._get_balance_implementation(write_keys=write_keys, aggregate=aggregate)
+
+    def get_history(self, name, max='+', min='-', count=None, populate=True, drop_expired=True ):
+        return self._get_history_implementation( name=name, max=max, min=min, count=None, populate=True, drop_expired=True )
+
+    # Public interface: Streaming and predicting
 
     def set( self, name, value, write_key ):
         return self._set_implementation(name=name, value=value, write_key=write_key, return_args=None, budget=1 )
@@ -146,7 +133,7 @@ class Rediz(object):
         return self._predict_implementation( name, values, write_key )
 
 
-    # Subscription
+    # Public interface: Subscription
 
     def subscriptions(self, name, write_key):
         """ Permissioned listing of current subscriptions """
@@ -174,7 +161,7 @@ class Rediz(object):
         """ Use key to open the mailbox """
         return self._messages_implementation(name=name,write_key=write_key)
 
-    # Linking
+    # Public interface: Linking
 
     def link(self, name, write_key, target ):
         """ Owner of name can link to a target from any delay:: """
@@ -198,17 +185,8 @@ class Rediz(object):
 
 
     # --------------------------------------------------------------------------
-    #            Implementation
+    #            Implementation  (set)
     # --------------------------------------------------------------------------
-
-
-    def _get_implementation(self,name:Optional[str]=None,
-                 names:Optional[NameList]=None, **nuissance ):
-        """ Retrieve value(s). There is no permissioning on read """
-        plural = names is not None
-        names = names or [ name ]
-        res = self._pipelined_get(names=names)
-        return res if plural else res[0]
 
     def _set_implementation(self,budget, names:Optional[NameList]=None,
                  values:Optional[ValueList]=None,
@@ -309,7 +287,7 @@ class Rediz(object):
                 if not(self.is_valid_value(value)):
                     rejected.append({"ndx":ndx, "name":name,"write_key":None,"value":value,"error":"invalid value of type "+str(type(value))+" was supplied"})
                 else:
-                    if (name is None):
+                    if name is None:
                         if write_key is None:
                             write_key = self.random_key()
                         if not(self.is_valid_key(write_key)):
@@ -403,8 +381,8 @@ class Rediz(object):
                     auth_message = {"ndx":ndx,"name":name,"value":value,"write_key":write_key,"official_write_key_ends_in":official_write_key[-4:],
                     "error":"write_key does not match page_key on record"}
                     intent = auth_message
-                    error_pipe.append(self.ERROR_LOG+write_key,json.dumps(auth_message))
-                    error_pipe.expire(self.ERROR_LOG+write_key,self.ERROR_TTL)
+                    error_pipe.append(self.ERRORS + write_key, json.dumps(auth_message))
+                    error_pipe.expire(self.ERRORS + write_key, self.ERROR_TTL)
                     rejected.append(intent)
             if len(executed):
                 modify_results = Rediz.pipe_results_grouper( results = modify_pipe.execute(), n=len(executed) )
@@ -439,10 +417,13 @@ class Rediz(object):
 
         return executed
 
+
     @staticmethod
     def cost_based_ttl(values,multiplicity:int=1,budget:int=1):
         # Assign a time to live based on random sampling of the size of values stored.
-        REPLICATION         = 3.                          # History, messsages
+        # A vector of 100 floats lasts a week.
+        # A vector of 1000 floats lasts a day.
+        REPLICATION         = 3.                          # History, Buffer
         DOLLAR              = 10000.                      # Credits per dollar
         COST_PER_MONTH_10MB = 1.*DOLLAR
         COST_PER_MONTH_1b   = COST_PER_MONTH_10MB/(10*1000*1000)
@@ -467,7 +448,7 @@ class Rediz(object):
 
     @staticmethod
     def make_redis_client(**kwargs):
-        kwargs["decode_responses"] = True   # Strong rediz convention
+        kwargs["decode_responses"] = True   # Strong Rediz convention
         is_real = "host" in kwargs          # May want to be explicit here
         KWARGS = PY_REDIS_ARGS if is_real else FAKE_REDIS_ARGS
         redis_kwargs = dict()
@@ -490,90 +471,6 @@ class Rediz(object):
         else:
             return 0
 
-    def _delete_implementation(self, name=None, write_key=None, names:Optional[NameList]=None, write_keys:Optional[KeyList]=None ):
-        """ Permissioned delete """
-        names      = names or [ name ]
-        self.assert_not_in_reserved_namespace(names)
-        write_keys = write_keys or [ write_key for _ in names ]
-        are_valid  = self._mauthorize(names, write_keys)
-
-        authorized_kill_list = [ name for (name,is_valid_write_key) in zip(names,are_valid) if is_valid_write_key ]
-        if authorized_kill_list:
-            return self._delete(*authorized_kill_list)
-        else:
-            return 0
-
-
-    def _delete(self, names, *args ):
-        """ Remove data, subscriptions, messages, ownership, history, delays, links """
-        # TODO: Combine 1+2 into one call to reduce communication
-        names = list_or_args(names,args)
-        names = [ n for n in names if n is not None ]
-
-        # (1) List  so we can kill messages in flight
-        subs_pipe = self.client.pipeline()
-        for name in names:
-            subs_pipe.smembers(name=self.SUBSCRIBERS+name)
-        for name in names:
-            subs_pipe.smembers(name=self.SUBSCRIPTIONS+name)
-        res = subs_pipe.execute()
-        assert len(res)==2*len(names)
-        subscribers_res   = res[:len(names)]
-        subscriptions_res = res[len(names):]
-
-
-        # (2) Collate backlinks/delays etc
-        links_pipe  = self.client.pipeline()
-        delay_names = list()
-        link_names  = list()
-        sample_names = list()
-        prediction_names = list()
-        for name in names:
-            for delay in self.DELAY_SECONDS:
-                delay_name = self.DELAYED+str(delay)+self.SEP+name
-                prediction_names.append(self.PREDICTIONS+str(delay)+self.SEP+name)
-                sample_names.append(self.SAMPLES + str(delay) + self.SEP + name)
-                links_pipe.hgetall(self.LINKS+delay_name)
-                delay_names.append(delay_name)
-                link_names.append(self.LINKS+delay_name)
-        link_collections = links_pipe.execute()
-
-        # (3) Round up and destroy in one pipeline
-        delete_pipe = self.client.pipeline(transaction=False)
-
-        for delay_name, link_collection in zip(delay_names, link_collections):
-            for target in list(link_collection.keys()):
-                delete_pipe.hdel(self.BACKLINKS+target,delay_name)
-
-        # Remove name from children's list of subscriptions
-        for name, subscribers in zip(names,subscribers_res):
-            for subscriber in subscribers:
-                delete_pipe.srem(self.SUBSCRIPTIONS+subscriber, name)
-                recipient_mailbox = self.MESSAGES+subscriber
-                if self.INSTANT_RECALL:
-                    delete_pipe.hdel(recipient_mailbox,name)
-
-        # Remove name from parent's list of subscribers
-        for name, subscriptions in zip(names, subscriptions_res):
-            for source in subscriptions:
-                delete_pipe.srem(self.SUBSCRIBERS+source, name)
-
-        if len(names)>3:
-            dump(names[:4],'tmp_names_.json')
-
-        delete_pipe.delete(*link_names)
-        delete_pipe.delete(*delay_names)
-        delete_pipe.delete(*prediction_names)
-        delete_pipe.delete(*sample_names)
-        delete_pipe.hdel(self.OWNERSHIP,*names)
-        delete_pipe.delete( *[self.MESSAGES+name for name in names] )
-        delete_pipe.delete( *[self.HISTORY+name for name in names] )
-        delete_pipe.srem( self.NAMES, *names )
-        delete_pipe.delete( *names )
-        delete_pipe.delete( *[self.SUBSCRIBERS+name for name in names] )
-        res = delete_pipe.execute()
-        dump({'res':res[-1],'names':[self.SUBSCRIBERS+name for name in names[:4]]},'tmp__.json')
-        return res[-2]
 
 
     def _randomly_find_orphans(self,num=1000):
@@ -630,28 +527,60 @@ class Rediz(object):
         except:
             return False
 
-    def _modify_page(self, pipe,ndx,name,value,ttl):
-        pipe.set(name=name,value=value,ex=ttl)
-        # Also write a duplicate to another key
-        name_of_copy   = self.random_key()[:-10]+"-copy-"+name[:14]
-        HISTORY_TTL = min( max( 2*60*60, ttl ), 60*60*24 )
-        pipe.set(name=name_of_copy,value=value,ex=HISTORY_TTL)
-        if self._streams_support():
-            pipe.xadd(name=self.HISTORY+name,fields={"copy":name_of_copy})
 
-        # Construct delay promises
+
+    def _promised_name(self, name):
+        return self.PROMISED + self.random_key()[:8] + self.SEP + name[:14]
+
+    def _modify_page(self, pipe,ndx,name,value,ttl):
+        """ Create pipelined operations for save, buffer, history etc """
+
+        # (1) Set the actual value ... which will soon be overwritten ... and a randomly generated copy
+        pipe.set(name=name,value=value,ex=ttl)
+        name_of_copy = self._promised_name(name)
+        HISTORY_TTL = min(max(2 * 60 * 60, ttl), 60 * 60 * 24)
+        pipe.set(name=name_of_copy, value=value, ex=HISTORY_TTL)
+
+        # (2) Write history log stream and buffers which may or may not include value field(s)
+        if self._streams_support():
+            if self.is_small_value():
+                fields = RedizConventions.to_record(value)
+            else:
+                fields = {self.POINTER: name_of_copy}
+            pipe.xadd(name=self.HISTORY + name, fields=fields)
+            pipe.xtrim(name=self.HISTORY + name, maxlen=self.HISTORY_LEN)
+
+        # (3) For scalar and vector only, write to simple buffer lists
+        if self.is_scalar_value(value) or self.is_vector_value(value) and self.is_small_value(value):
+            t = time.time()
+            pipe.lpush(self.LAGGED+name,value)
+            pipe.lpush(self.LAGGED_TIME+name, t)
+            pipe.ltrim(name=self.LAGGED+name,start=0,end=self.LAGGED_LEN)
+
+        # (4) Construct delay promises
         utc_epoch_now = int(time.time())
-        for delay_seconds in self.DELAY_SECONDS:
-            PROMISE = self.PROMISES+str(utc_epoch_now+delay_seconds)
-            SOURCE  = name_of_copy
-            DESTINATION = self.DELAYED+str(delay_seconds)+self.SEP+name
-            pipe.sadd( PROMISE, SOURCE+self.SEP+'copy'+self.SEP+DESTINATION )
-            pipe.expire( name=PROMISE, time=delay_seconds+self.DELAY_GRACE)
+        for delay in self.DELAY_SECONDS:
+            queue       = self._promise_queue_name( utc_epoch_now+delay )            # self.PROMISES+str(utc_epoch_now+delay)
+            destination = self._delayed_name( name=name, delay=delay )               # self.DELAYED+str(delay_seconds)+self.SEP+name
+            promise     = self._copy_promise(source=name_of_copy, destination=destination)
+            pipe.sadd( queue, promise )
+            pipe.expire( name=queue, time=delay+self.DELAY_GRACE)
+
+        # (5) Execution log
         intent = {"ndx":ndx,"name":name,"value":value,"ttl":ttl,
                   "new":False,"obscure":False,"copy":name_of_copy}
 
         return pipe, intent
 
+    def _copy_promise(self, source, destination ):
+        return source+self.SEP+'copy'+self.SEP+destination
+
+    def _delayed_name(self, name, delay ):
+        return self.DELAYED+str(delay)+self.SEP+name
+
+    def _promise_queue_name(self, epoch_seconds ):
+        return self.PROMISES + str(int(epoch_seconds))
+        
 
     @staticmethod
     def _delay_as_int(delay):
@@ -673,6 +602,106 @@ class Rediz(object):
         valid_sources = [ s for s,v in zip(sources,valid) if v ]
         augmented_sources = [ source if delay==0 else self.DELAYED+str(delay)+self.SEP+source for source, delay in zip(valid_sources, valid_delays) ]
         return augmented_sources
+
+# --------------------------------------------------------------------------
+#            Implementation  (delete)
+# --------------------------------------------------------------------------
+
+    def _delete_implementation(self, name=None, write_key=None, names: Optional[NameList] = None,
+                               write_keys: Optional[KeyList] = None):
+        """ Permissioned delete """
+        names = names or [name]
+        self.assert_not_in_reserved_namespace(names)
+        write_keys = write_keys or [write_key for _ in names]
+        are_valid = self._mauthorize(names, write_keys)
+
+        authorized_kill_list = [name for (name, is_valid_write_key) in zip(names, are_valid) if is_valid_write_key]
+        if authorized_kill_list:
+            return self._delete(*authorized_kill_list)
+        else:
+            return 0
+
+    def _sample_owners_name(self, delay):
+        return self.OWNERS + self.SAMPLES + str(delay) + self.SEP
+
+    def _delete(self, names, *args):
+        """ Remove data, subscriptions, messages, ownership, history, delays, links """
+        # TODO: Combine 1+2 into one call to reduce communication
+        names = list_or_args(names, args)
+        names = [n for n in names if n is not None]
+
+        # (1) List  so we can kill messages in flight
+        subs_pipe = self.client.pipeline()
+        for name in names:
+            subs_pipe.smembers(name=self.SUBSCRIBERS + name)
+        for name in names:
+            subs_pipe.smembers(name=self.SUBSCRIPTIONS + name)
+        res = subs_pipe.execute()
+        assert len(res) == 2 * len(names)
+        subscribers_res = res[:len(names)]
+        subscriptions_res = res[len(names):]
+
+        # (2) Collate backlinks/delays etc
+        links_pipe = self.client.pipeline()
+        delay_names = list()
+        link_names = list()
+        sample_names = list()
+        prediction_names = list()
+        sample_owners_names = list()
+        for name in names:
+            for delay in self.DELAY_SECONDS:
+                delay_name = self.DELAYED + str(delay) + self.SEP + name
+                prediction_names.append(self.PREDICTIONS + str(delay) + self.SEP + name)
+                sample_names.append(self._samples_name(name=name,delay=delay))
+                links_pipe.hgetall(self.LINKS + delay_name)
+                delay_names.append(delay_name)
+                link_names.append(self.LINKS + delay_name)
+                sample_owners_names.append(self._sample_owners_name(delay=delay))
+
+        link_collections = links_pipe.execute()
+
+        # (3) Round up and destroy in one pipeline
+        delete_pipe = self.client.pipeline(transaction=False)
+
+        for delay_name, link_collection in zip(delay_names, link_collections):
+            for target in list(link_collection.keys()):
+                delete_pipe.hdel(self.BACKLINKS + target, delay_name)
+
+        # Remove name from children's list of subscriptions
+        for name, subscribers in zip(names, subscribers_res):
+            for subscriber in subscribers:
+                delete_pipe.srem(self.SUBSCRIPTIONS + subscriber, name)
+                recipient_mailbox = self.MESSAGES + subscriber
+                if self.INSTANT_RECALL:
+                    delete_pipe.hdel(recipient_mailbox, name)
+
+        # Remove name from parent's list of subscribers
+        for name, subscriptions in zip(names, subscriptions_res):
+            for source in subscriptions:
+                delete_pipe.srem(self.SUBSCRIBERS + source, name)
+
+        if len(names) > 3:
+            dump(names[:4], 'tmp_names_.json')
+
+        delete_pipe.delete(*link_names)
+        delete_pipe.delete(*delay_names)
+        delete_pipe.delete(*prediction_names)
+        delete_pipe.delete(*sample_names)
+        delete_pipe.hdel(self.OWNERSHIP, *names)
+        delete_pipe.delete(*[self.MESSAGES + name for name in names])
+        delete_pipe.delete(*[self.HISTORY + name for name in names])
+        delete_pipe.srem(self.NAMES, *names)
+        delete_pipe.delete(*names)
+        delete_pipe.delete(*[self.SUBSCRIBERS + name for name in names])
+        res = delete_pipe.execute()
+        dump({'res': res[-1], 'names': [self.SUBSCRIBERS + name for name in names[:4]]}, 'tmp__.json')
+        return res[-2]
+
+
+     # --------------------------------------------------------------------------
+     #            Implementation  (subscribe)
+     # --------------------------------------------------------------------------
+
 
     def _subscribe_implementation(self, name, write_key,
                                         source=None,    sources:Optional[NameList]=None,
@@ -726,9 +755,10 @@ class Rediz(object):
 
 
 
+     # --------------------------------------------------------------------------
+     #            Implementation  (linking)
+     # --------------------------------------------------------------------------
 
-
-    # ------   Linking ------  DO WE NEED THIS ???   -----------------------
 
     def _root_name(self,name):
         return name.split(self.SEP)[-1]
@@ -769,11 +799,13 @@ class Rediz(object):
         if self._authorize(name=name,write_key=write_key):
             return self.client.hgetall(self.BACKLINKS+name)
 
-    # Administrative
 
+    # --------------------------------------------------------------------------
+    #            Implementation  (Administrative)
+    # --------------------------------------------------------------------------
 
     def admin_promises(self, lookback_seconds=5):
-         """ FIXME: Better handling of early versus stale requests """
+         """ Iterate through task queues populating delays and samples """
          exists_pipe = self.client.pipeline()
          utc_epoch_now = int(time.time())
          candidates =  [ self.PROMISES+str(utc_epoch_now-seconds) for seconds in range(lookback_seconds,-1,-1) ]
@@ -789,7 +821,6 @@ class Rediz(object):
          collections = get_pipe.execute()
          self.client.delete( *promise_collection_names )  # Immediately delete task list so it isn't done twice ... not that that would
                                                           # be the end of the world
-         import itertools
          individual_promises = list( itertools.chain( *collections ) )
 
          # Sort through promises in reverse time precedence
@@ -823,7 +854,7 @@ class Rediz(object):
          source_values = retrieve_pipe.execute()
 
          # Copy or insert
-         move_pipe = self.client.pipeline()
+         move_pipe = self.client.pipeline(transaction=True)
          for value, destination, method in zip(source_values, destinations, methods):
              if method == 'copy':
                  move_pipe.set(name=destination,value=value)
@@ -833,10 +864,13 @@ class Rediz(object):
                      move_pipe.zadd(name=destination,mapping=value_as_dict)
                      owners  = [ self._ticket_owner(ticket) for ticket in value_as_dict.keys() ]
                      unique_owners = list(set(owners))
-                     move_pipe.sadd("owners"+self.SEP+destination,*unique_owners)
+                     move_pipe.sadd(self.OWNERS + destination, *unique_owners)
          execut = move_pipe.execute()
          return sum(execut)
 
+    # --------------------------------------------------------------------------
+    #            Implementation  (prediction and settlement)
+    # --------------------------------------------------------------------------
 
     def _dirac(self, name, value, write_key):
         x_noise = list(np.random.randn(self.NUM_PREDICTIONS))
@@ -865,76 +899,81 @@ class Rediz(object):
             noise =  np.random.randn(self.NUM_PREDICTIONS).tolist()
             jiggered_values = [v + n*self.NOISE for v, n in zip(values, noise)]
             predictions = dict([(self._ticket(write_key=write_key,k=k), v) for k,v in enumerate(jiggered_values)])
-            predictions_name = self.PREDICTIONS+write_key+self.SEP+name
             set_and_expire_pipe = self.client.pipeline()
-            set_and_expire_pipe.zadd( name=predictions_name, mapping=predictions )
-            set_and_expire_pipe.expire( name=predictions_name, time = max(self.DELAY_SECONDS)+self.DELAY_GRACE )
-            for delay_seconds in delays:
-                set_and_expire_pipe.zadd(name=self.PREDICTIONS+str(delay_seconds)+self.SEP+name, mapping=predictions)
 
+            # Add to collective contemporaneous predictions
+            collective_predictions_name = self.PREDICTIONS+write_key+self.SEP+name
+            set_and_expire_pipe.zadd(   name=collective_predictions_name, mapping=predictions )  # (0)
+
+            # Create obscure predictions and promise to insert them later, at different times, into different samples
             utc_epoch_now = int(time.time())
+            individual_predictions_name = self._promised_name(name)
+            set_and_expire_pipe.zadd(name=individual_predictions_name, mapping=predictions)  # (1)
+            set_and_expire_pipe.expire(name=individual_predictions_name, time=max(self.DELAY_SECONDS)+self.DELAY_GRACE)   # (2)
             for delay_seconds in delays:
                 promise_queue = self.PROMISES + str(utc_epoch_now + delay_seconds)
-                DESTINATION = self.SAMPLES + str(delay_seconds) + self.SEP + name
-                set_and_expire_pipe.sadd(promise_queue, predictions_name + self.SEP + 'ticket' + self.SEP + DESTINATION)
-                set_and_expire_pipe.expire(name=promise_queue, time=delay_seconds + self.DELAY_GRACE)
-            return sum(set_and_expire_pipe.execute())
+                promise       = self._ticket_promise(target=name, delay=delay_seconds, predictions_name=individual_predictions_name)
+                set_and_expire_pipe.sadd(promise_queue, promise )    # (3::3)
+                set_and_expire_pipe.expire(name=promise_queue, time=delay_seconds + self.DELAY_GRACE)  # (4::3)
+                set_and_expire_pipe.expire(name=individual_predictions_name, time=delay_seconds + self.DELAY_GRACE)  # (5::3)
+
+            execut = set_and_expire_pipe.execute()
+            # Check on executions
+            anticipated = [ self.NUM_PREDICTIONS, self.NUM_PREDICTIONS, True ] + [ 1, True, self.NUM_PREDICTIONS ]*len(delays)
+            success = all( actual==anticipate for actual, anticipate in zip(execut, anticipated) )
+            return success
         else:
             return 0
 
+    def _ticket_promise(self, target, delay, predictions_name):
+        return predictions_name + self.SEP + 'ticket' + self.SEP+ self._samples_name(name=target,delay=delay)
 
-
-
-    def _settle(self, name, value, h=1e-2 ):
-        from collections import Counter
+    def _settle(self, name, value ):
         retrieve_pipe = self.client.pipeline()
-        for delay_seconds in self.DELAY_SECONDS:
-            samples_name = self.SAMPLES + str(delay_seconds) + self.SEP + name
-            retrieve_pipe.zcard(samples_name)                             # (1) Total number of entries
-            retrieve_pipe.smembers(name="owners"+self.SEP+samples_name)   # (2) List of owners
-            h = self.WINDOW 
-            retrieve_pipe.zrangebyscore( name=samples_name, min=value-h,      max=value+h,      withscores=False )
-                                                                          # (3->) Tickets
-            for _ in range(self.BACKOFF):
-                h = h*self.BACKOFF_MULTIPLE  # Widen the winners neighbourhood
-                retrieve_pipe.zrangebyscore( name=samples_name, min=value-5*h,  max=value+5*h,    withscores=False)
+        for delay in self.DELAY_SECONDS:
+            samples_name = self._samples_name(name=name, delay=delay)        # self.SAMPLES + str(delay) + self.SEP + name
+            retrieve_pipe.zcard(samples_name)                                # (0) Total number of entries
+            retrieve_pipe.smembers( self._sample_owners_name(delay) )        # (1) List of owners
+            for window in self.WINDOWS:                                      # (2,3,...) Tickets inside window
+                retrieve_pipe.zrangebyscore( name=samples_name, min=value-window,  max=value+window,  withscores=False)
 
         # Execute pipeline and re-arrange results
-        K = 3 + self.BACKOFF
+        K = 2 + len(self.WINDOWS)
         retrieved = retrieve_pipe.execute()
-        participant_sets = retrieved[1::K]
         pools            = retrieved[0::K]
+        assert all( ( isinstance(p, (int,float)) for p in pools ))
+        participant_sets = retrieved[1::K]
+        assert all( isinstance(s,set) for s in participant_sets )
         selections = list()
-        for k in range(K+1):
+        for k in range(len(self.WINDOWS)):
             selections.append( retrieved[2+k::K] )
-
-        # Collate payments, starting with entry fees
-        payments = Counter( {self.JACKPOT:0} )
+        assert all( isinstance(s,list) for s in selections )
 
         # Select winners in neighbourhood, trying hard for at least one
         if any(pools):
+            payments = Counter()
             for pool, selections, participant_set in zip( pools, selections, participant_sets ):
-                if pool:
-                    entry_fees = Counter( dict( (p,-1.0) for p in participant_set ) )
+                if pool and len(participant_set)>1:
+                    # We have a game !
+                    game_payments = Counter( dict( (p,-1.0) for p in participant_set ) )
 
+                    # Enlarge window until we have winner ... probably
                     winning_tickets = selections[0]
-                    for backoff in range(1,self.BACKOFF):
+                    for select in selections[1:]:
                         if len(winning_tickets)==0:
-                            winning_tickets = selections[backoff]
+                            winning_tickets = select
 
                     if len(winning_tickets) == 0:
-                        payments[self.JACKPOT] = payments[self.JACKPOT]+pool
+                        carryover = Counter({self.JACKPOT:1.0*pool/self.NUM_PREDICTIONS})
+                        game_payments.update(carryover)
                     else:
                         winners  = [ self._ticket_owner(ticket) for ticket in winning_tickets ]
                         reward   = ( 1.0*pool/self.NUM_PREDICTIONS ) / len(winners)   # Could augment this to use kernel or whatever
                         payouts  = Counter( dict( [(w,reward*c) for w,c in Counter(winners).items() ]) )
 
-                        net = payouts+entry_fees
-                        net_total = sum( net.values() )
-                        if abs(net_total)>0.1:
-                            raise Exception("urgh")
-                        else:
-                            payments = payments + net
+                        game_payments.update(payouts)
+                    assert abs(sum( game_payments.values() ))<0.1, "Leakage in zero sum game"
+                    payments.update(game_payments)
 
             if len(payments):
                 pay_pipe = self.client.pipeline()
@@ -943,8 +982,91 @@ class Rediz(object):
                 return pay_pipe.execute()
         return 0
 
-    def _balance_implementation(self, write_key=None, write_keys=None):
+    # --------------------------------------------------------------------------
+    #            Implementation  (getters)
+    # --------------------------------------------------------------------------
+
+    def _get_balance_implementation(self, write_key=None, write_keys=None, aggregate=True):
         write_keys = write_keys or [ write_key ]
         balances   = self.client.hmget( self.BALANCES, *write_keys )
-        fixed_balances = [ b or "0" for b in balances ]
-        return np.nansum([ float(b) for b in fixed_balances ])
+        fixed_balances = [ float( b or "0") for b in balances ]
+        return np.nansum( fixed_balances ) if aggregate else fixed_balances
+
+    def _get_lagged_implementation(self, name, start=0, end=None, count=100, with_times=False, to_float=True):
+        count = count or self.LAGGED_LEN
+        end = end or start + count
+        get_pipe = self.client.pipeline()
+        get_pipe.lrange(name=self.LAGGED + name, start=start, end=end)
+        if with_times:
+            get_pipe.lrange(name=self.LAGGED_TIMES + name, start=start, end=end)
+        res = get_pipe.execute()
+        values = RedizConventions.to_float(res[0]) if to_float else res[0]
+        if with_times:
+            times = RedizConventions.to_float(res[1] if to_float else res[1])
+        return zip(times, values) if with_times else values
+
+    def _get_delayed_implementation(self, names, delay=None, delays=None, to_float=True):
+        """ Get delayed values from one or more names """
+        singular = delays is None
+        delays = delays or [delay for _ in names]
+        names = [self.DELAYED + str(delay) + self.SEP + name for name, delay in zip(names, delays)]
+        delayed = self._get_implementation(names=names)
+        if to_float:
+            delayed = RedizConventions.to_float( delayed )
+        return delayed[0] if singular else delayed
+
+    def _get_implementation(self, name: Optional[str] = None,
+                            names: Optional[NameList] = None, cast=None, **nuissance):
+        """ Retrieve value(s). No permission required. """
+        plural = names is not None
+        names = names or [name]
+        res = self._pipelined_get(names=names)
+        return res if plural else res[0]
+
+    def _get_history_implementation(self, name, min, max, count, populate, drop_expired ):
+        """ Retrieve history, optionally replacing pointers with actual values  """
+        history = self.client.xrevrange(name=self.HISTORY+name, min=min, max=max, count=count )
+        if populate:
+            has_pointers = any( self.POINTER in record for record in history )
+            if has_pointers and populate:
+                pointers = dict()
+                for k, record in enumerate(history):
+                    if self.POINTER in record:
+                        pointer = record[self.POINTER]
+                        pointers[k] = record[self.POINTER]
+
+                values  = self.client.mget( pointers )
+                expired = list()
+                for k, record in enumerate(history):
+                    if k in pointers:
+                        if values is not None:
+                            fields = RedizConventions.to_record(values[k])
+                            record.update(fields)
+                            expired.append(k)
+
+                if drop_expired:
+                    history = [ h for j,h in enumerate(history) if not j in expired ]
+        return history
+
+    def _obscure_ticket(self, ticket):
+        parts = ticket.split(self.SEP)
+        return parts[0]+self.SEP+self.hash(parts[1])
+
+    def _samples_name(self, name, delay):
+        return self.SAMPLES + str(delay) + self.SEP + name
+
+    def _get_samples_implementation(self, name, delay=None, delays=None):
+        """ Get all tickets but hash the write_keys """
+        singular = delays is None
+        delays   = delays or [delay]
+        samples  = [self._samples_name(name=name,delay=delay) for delay in delays ]
+        pipe = self.client.pipeline()
+        for sample in samples:
+            pipe.zrange(name=sample, start=0, end=-1, withscores=True )
+        private_samples = pipe.execute()
+        obscured = list()
+        for sample in private_samples:
+            obscure = dict( [ (self._obscure_ticket(ticket),v) for (ticket,v) in sample ] )
+            obscured.append(obscure)
+        return obscured[0] if singular else obscured
+
