@@ -61,7 +61,7 @@ class Rediz(RedizConventions):
         self.SUBSCRIPTIONS  = "subscriptions"+self.SEP
 
         # Config
-        self.DELAY_SECONDS    = kwargs.get("delay_seconds")  or [1,2,5,10,30,60,1*60,2*60,5*60,10*60,20*60,60*60]
+        self.DELAY_SECONDS    = kwargs.get("delay_seconds")  or [1,2,5,10,30,60,2*60,5*60,10*60,15*60, 20*60,30*60, 60*60]
         self.NOISE            = 1.0e-6                                  # Tie-breaking noise added to predictions
         self.DIRAC_NOISE      = 1.0                                     # Noise added for self-prediction
         self.WINDOWS          = [1e-3,1e-2,1.0,100.]                    # Sizes of neighbourhoods around truth
@@ -919,8 +919,8 @@ class Rediz(RedizConventions):
 
             execut = set_and_expire_pipe.execute()
             # Check on executions
-            anticipated = [ self.NUM_PREDICTIONS, self.NUM_PREDICTIONS, True ] + [ 1, True, self.NUM_PREDICTIONS ]*len(delays)
-            success = all( actual==anticipate for actual, anticipate in zip(execut, anticipated) )
+            anticipated_execut = [ self.NUM_PREDICTIONS, self.NUM_PREDICTIONS, True ] + [ 1, True, True ]*len(delays)
+            success = all( actual==anticipate for actual, anticipate in zip(execut, anticipated_execut) )
             return success
         else:
             return 0

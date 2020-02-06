@@ -226,7 +226,7 @@ suggests that my-wattage-prediction-019871938618326 contains samples of the five
 
 ### Subscription
 
-If streams are viewed as nodes on a graph and links one type of edge (running from covariate to a variable that is predicted) then subscriptions can be viewed as edges of a different kind, also suggestive of causality but initiated from the other end. 
+If streams are viewed as nodes on a graph and links one type of edge (running from covariate to a variable that is predicted) then subscriptions can be viewed as edges of a different kind, also suggestive of causality but initiated from the other end.
 
 A subscription from source to target serves as an instruction to Rediz to propagate changes in the source (i.e. when set(name=source) is called) to a message mailbox attached to the target. The mailbox acts as a last value cache for a plurality of data streams that are, one might presume, of relevance to the prediction of the target stream.
 
@@ -355,7 +355,9 @@ Rediz can also be instantiated with no host, in which case fakeredis will be use
 
 ### Implementation
 
-Not obscure:
+A manifest of Redis keys used.
+
+#### Prefix pages
 
 | Redis key                       | Private | Type | Description                                       |
 |---------------------------------|---------|------|---------------------------------------------------|
@@ -366,11 +368,13 @@ Not obscure:
 | history::air-quality.json | No | Stream | Timestamped, sequenced  data feed                                 |
 | links::60::air-quality.json | No | Set | Outgoing links with lag of 60 seconds                           |
 | backlinks::moisture-13244.json | No | Set | Incoming links                                      |
-| subscriptions::60::air-quality.json | No | Set | Outgoing links with lag of 60 seconds                           |
-| backlinks::moisture-13244.json | No | Set | Incoming links                                      |
+| subscriptions::air-quality.json | No | Set | Listing of subscriptions                            |
+| subscribers::air-quality.json | No | Set | Listing of subscribers                             |
+| messages::moisture-13244.json | No | Hash | Messages from sources subscribed to                 |
 
+#### Obscure system keys
 
-Private and obscure:   OBSCURE=some random key
+Here "OBSCURE" is some random character sequence
 
 | Redis key                       | Private | Type | Description                                       |
 |---------------------------------|---------|------|---------------------------------------------------|
@@ -382,19 +386,25 @@ Private and obscure:   OBSCURE=some random key
 | OBSCURE::samples::900::air-quality.json  | Yes | Sorted set | Quarantined predictions with write_keys     |
 | owners::OBSCURE::samples::900::air-quality.json  | Yes | Sorted set | Redundant list of owners (write_keys) for quarantined predictions  |
 
-Transient key usage:
+#### Transient key usage:
+
+set() and predict() create randomly generated transient keys with TTL's commensurate with the longest quarantine time.
 
 | Redis key                                 | Type  | Description                                        |
 |-------------------------------------------|-------|----------------------------------------------------|
 | promised::dd92fe65::fake-feed-7fb7        | Value | Copy made when value is set()                      |
 | promised::ddasfff6::fake-feed-7fb7        | Sorted Set | Set of predictions made when predict() called |
 
-Promise format is  SOURCE::method::DESTINATION
+
+#### Other conventions
+
+Promises take values looking like SOURCE::method::DESTINATION
 
 | Example                                                                                  | Usage      |
 |------------------------------------------------------------------------------------------|------------|
 | promised::dc329389::fake-feed-7fb7::ticket:OBSCURE::samples::1::fake-feed-7fb76d7c.json' | Samples    |
 | promised::d36afe4e::fake-feed-7fb7::copy::delayed::1::fake-feed-7fb76d7c.json'           | Delays     |
+
 
 
 
