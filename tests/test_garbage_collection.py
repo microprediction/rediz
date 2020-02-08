@@ -1,6 +1,5 @@
 from rediz.client import Rediz
-from threezaconventions.crypto import random_key
-import json, os, uuid, random, time
+import json, random, time
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 
 
@@ -10,24 +9,26 @@ def dump(obj,name="garbage.json"): # Debugging
 
 def test_delete_simple():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
-    title = rdz.new(value="42")
+    title = rdz.random_title()
+    assert rdz.set(value="42",**title)
     dump(title)
     name, write_key = title["name"], title["write_key"]
     assert rdz.get(name)=="42"
-    rdz._delete(names=[name])
+    rdz._delete_implementation(names=[name])
     assert rdz.get(name) is None
 
 def test_expire():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
-    title = rdz.new(value="42")
+    title = rdz.random_title()
+    assert rdz.set(value="42",**title)
     name, write_key = title["name"], title["write_key"]
     rdz.client.expire(name=title["name"],time=0)
     import time
     time.sleep(0.1)
     name, write_key = title["name"], title["write_key"]
     assert rdz.get(name) is None
-    assert rdz.client.sismember(name=rdz.NAMES,value=name)
-    rdz._delete(names=[name])
+    assert rdz.client.sismember(name=rdz._NAMES, value=name)
+    rdz._delete_implementation(names=[name])
 
 def test_run_admin_garbage_collection():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
@@ -55,7 +56,7 @@ def test_admin_garbage_collection(num=100):
         remaining.append( rdz.card() )
 
     final_num = rdz.card()
-    rdz._delete(*names)
+    rdz._delete_implementation(*names)
 
 def test_find_orphans_low_cardinality_test(num=20):
 
@@ -64,9 +65,9 @@ def test_find_orphans_low_cardinality_test(num=20):
     original_num = rdz.card()
     if original_num<10000:
         # This test won't ultimately scale as it calls smembers
-        original_set = rdz.client.smembers(rdz.NAMES)
+        original_set = rdz.client.smembers(rdz._NAMES)
         for k in [5,20,400]:
-            some = rdz.client.srandmember(rdz.NAMES,k)
+            some = rdz.client.srandmember(rdz._NAMES, k)
             some_unique = list(set(some))
             assert all( s in original_set for s in some )
             assert len(some_unique)<=original_num
@@ -92,13 +93,13 @@ def test_find_orphans_low_cardinality_test(num=20):
         # Clean up most
         almost_all_orphans = rdz._randomly_find_orphans(num=10*num)
         if almost_all_orphans:
-            rdz._delete(*almost_all_orphans)
+            rdz._delete_implementation(*almost_all_orphans)
 
         # Clean up scraps
-        rdz._delete(*names)
+        rdz._delete_implementation(*names)
 
         final_num = rdz.card()
-        final_set = rdz.client.smembers(rdz.NAMES)
+        final_set = rdz.client.smembers(rdz._NAMES)
         set_diff_1  = final_set.difference(original_set)
         set_diff_2  = original_set.difference(final_set)
 

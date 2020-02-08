@@ -16,10 +16,10 @@ def test_delay_fake():
     do_test_delay(rdz)
 
 def do_test_delay(rdz):
-    assert 1 in rdz.DELAY_SECONDS
-    assert 5 in rdz.DELAY_SECONDS
+    assert 1 in rdz.DELAYS
+    assert 5 in rdz.DELAYS
     NAME      = 'test-delay-c6bd-464c-asad-fe9.json'
-    rdz._delete(NAME)
+    rdz._delete_implementation(NAME)
     time.sleep(0.1)
     WRITE_KEY = "6d77759b-685a-4e25-b75b-6619bf1f1119"
     assert rdz.set( name = NAME,  value = "living in the past",  write_key=WRITE_KEY )==1
@@ -37,4 +37,4 @@ def do_test_delay(rdz):
     
 
 
-    rdz._delete(NAME)
+    rdz._delete_implementation(NAME)

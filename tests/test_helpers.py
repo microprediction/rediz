@@ -44,17 +44,22 @@ def random_name():
     return random_key()+'.json'
 
 def test_card_fake():
-    rdz = Rediz(decode_responses=True)
+    rdz = Rediz()
     assert rdz.card()==0
-    title = rdz.new(value="32")
+    title = rdz.random_title()
+    rdz.set(value="32",**title)
     assert rdz.card()==1
-    rdz.delete(**title)
-    assert rdz.card()==0
+    del_count = rdz.delete(**title)
+    assert del_count>0
+    leftover = rdz.client.smembers(rdz._NAMES)
+    assert rdz.card() == 0
+    assert not leftover
 
 def test_card_real():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
     num = rdz.card()
-    title = rdz.new(value="32")
+    title = rdz.random_title()
+    rdz.set(value=143,**title)
     assert rdz.card()==num+1
     rdz.delete(**title)
     assert rdz.card()==num
@@ -63,14 +68,14 @@ def test_card_real():
 def do_test_exists_delete(rdz):
     title = {"name":"d7ec2edb-d045-490e-acbd-7a05122d930e.json","write_key":"3e68a4e0-a827-4462-a714-676aa575802c"}
     name = title["name"]
-    rdz._delete(name) # In case it is left over from previous
+    rdz._delete_implementation(name) # In case it is left over from previous
     assert rdz.exists(name)==0
     set_res = rdz._pipelined_set(value="10",budget=1,**title)
     exists_res = rdz.exists(name)
     #dump({"exists_res":exists_res,"set_res":set_res})
     assert exists_res==1
     delete_res = rdz.delete(**title)
-    assert delete_res==1
+    assert delete_res>0
     name = title["name"]
     assert rdz.exists(name)==0
 

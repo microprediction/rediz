@@ -2,6 +2,8 @@ from rediz.client import Rediz
 from threezaconventions.crypto import random_key
 import json, os, uuid
 
+# rm tmp*.json; pip install -e . ; python -m pytest tests/test_rediz_client.py ; cat tmp_rediz_client.json
+
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 
 def dump(obj,name="tmp_rediz_client.json"):
@@ -15,14 +17,14 @@ def test_set_integer():
     args = {"name": "3912eb73-f5e6-4f5e-9674-1a320779b7d9.json",
            "value": 25,
            "write_key": "db81045e-eead-44e0-b0a9-ba38d1d0395e"}
-    rdz._delete(args["name"])  # Previous run
+    rdz._delete_implementation(args["name"])  # Previous run
     res = rdz._pipelined_set(**args)
     dump(res)
     assert res["executed"][0]["value"]==25
 
     access = {"name": "3912eb73-f5e6-4f5e-9674-1a320779b7d9.json", "write_key": "db81045e-eead-44e0-b0a9-ba38d1d0395e", "value": 17}
     assert rdz.set(**access)==1
-    rdz._delete(args["name"])
+    rdz._delete_implementation(args["name"])
 
 def test_pipelined_set():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
@@ -56,7 +58,7 @@ def test_mixed():
     assert execution_log["executed"][0]["ttl"]>25,"Expected ttl>25 seconds"
     assert sum( [ int(t["obscure"]==True) for t in execution_log["executed"] ])==2,"Expected 2 obscure"
     assert sum( [ int(t["new"]==True) for t in execution_log["executed"] ])==2,"Expected 2 new"
-    rdz._delete(names)
+    rdz._delete_implementation(names)
 
 def test_mixed_log():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
@@ -64,17 +66,4 @@ def test_mixed_log():
     write_keys = [ random_key(), None, random_key() ]
     values = [ json.dumps([7.6 for _ in range(1000)]), "cat", json.dumps("dog")]
     result = rdz._pipelined_set(names=names,write_keys=write_keys,values=values)
-    rdz._delete(names)
-
-
-def test_mnew_fake():
-    fake_rdz = Rediz()
-    do_new_values_only(fake_rdz)
-
-
-def do_new_values_only(rdz):
-    rdz = Rediz()
-    access = rdz.new(value=10)
-    assert rdz.exists(access["name"]) == 1
-    rdz.delete(**access)
-    assert rdz.exists(access["name"]) == 0
+    rdz._delete_implementation(names)

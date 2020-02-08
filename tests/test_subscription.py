@@ -13,20 +13,26 @@ def don_test_subscription_singular():
 def dont_test_subscription_plural():
     subscription_example(plural=True)
 
-def test_plural_subscription_with_recall():
+def dont_test_plural_subscription_with_recall():
     subscription_example(plural=True,instant_recall=True)
 
 def test_plural_subscription_without_recall():
     subscription_example(plural=True,instant_recall=False)
 
 def subscription_example(plural=False,instant_recall=False):
+    """ We subscribe first to one publisher and then to 50 at once, and
+        verify propagation and cleanup after delete/unsubscribe
+    """
+
     rdz = Rediz(instant_recall=instant_recall,**REDIZ_TEST_CONFIG)
+
+    assert not rdz.get_subscriptions(name='non-existent-asdfaf.json')
 
     PUBLISHER             = 'PUBLISQHER_plural_'+str(plural)+'3b4e229a-ffb4-4fc2-8370-c147944aa2b.json'
     SUBSCRIBER            = 'SUBSCRIIBER_plural_'+str(plural)+'ed2b4f6-c6bd-464c-a9e9-322e0c3147.json'
     PUBLISHER_write_key   = "b0b5753b-14e6-4051-b13e-132bb13ed1a9_plural="+str(plural)
     SUBSCRIBER_write_key  = "caa09e4a-3901-4cdf-8301-774184e584f3_plural="+str(plural)
-    rdz._delete(PUBLISHER,SUBSCRIBER)
+    rdz._delete_implementation(PUBLISHER, SUBSCRIBER)
 
     assert rdz.set( name = SUBSCRIBER, value = "some value",       write_key=SUBSCRIBER_write_key )
     assert rdz.set( name = SUBSCRIBER, value = "some value",       write_key=SUBSCRIBER_write_key )
@@ -35,9 +41,9 @@ def subscription_example(plural=False,instant_recall=False):
         rdz.msubscribe( sources = [PUBLISHER], name = SUBSCRIBER, write_key=SUBSCRIBER_write_key )
     else:
         rdz.subscribe( source = PUBLISHER, name = SUBSCRIBER, write_key=SUBSCRIBER_write_key )
-    subscriptions = rdz.subscriptions(name=SUBSCRIBER,write_key=SUBSCRIBER_write_key)
+    subscriptions = rdz.get_subscriptions(name=SUBSCRIBER )
     assert PUBLISHER in subscriptions
-    subscribers = rdz.subscribers(name=PUBLISHER,write_key=PUBLISHER_write_key)
+    subscribers = rdz.get_subscribers(name=PUBLISHER )
     assert SUBSCRIBER in subscribers
 
     # Check propagation
@@ -47,9 +53,9 @@ def subscription_example(plural=False,instant_recall=False):
 
     # Test removal
     rdz.unsubscribe( name=SUBSCRIBER, source=PUBLISHER, write_key=SUBSCRIBER_write_key)
-    subscriptions = rdz.subscriptions(name=SUBSCRIBER,write_key=SUBSCRIBER_write_key)
+    subscriptions = rdz.get_subscriptions(name=SUBSCRIBER )
     assert PUBLISHER not in subscriptions
-    subscribers = rdz.subscribers(name=PUBLISHER,write_key=PUBLISHER_write_key)
+    subscribers = rdz.get_subscribers(name=PUBLISHER )
     assert SUBSCRIBER not in subscribers
 
     # Test re-subscribe
@@ -61,36 +67,39 @@ def subscription_example(plural=False,instant_recall=False):
     assert messages[PUBLISHER]=="propagate this"
 
     # Test removal with delete ...
+    subscribers = rdz.get_subscribers(name=PUBLISHER)
+    subscriptions = rdz.get_subscriptions(name=SUBSCRIBER)
     rdz.delete( name=SUBSCRIBER, write_key=SUBSCRIBER_write_key)
-    subscriptions = rdz.subscriptions(name=SUBSCRIBER,write_key=SUBSCRIBER_write_key)
-    assert subscriptions is None
-    subscribers = rdz.subscribers(name=PUBLISHER,write_key=PUBLISHER_write_key)
+    subscriptions = rdz.get_subscriptions( name=SUBSCRIBER )
+    subscribers = rdz.get_subscribers(name=PUBLISHER)
+    assert not subscriptions
     assert SUBSCRIBER not in subscribers
 
     # Multiple sources
     publishers = dict()
-    NUM = 50
-    for k in range(NUM):
+    NUM_PUBLISHERS = 50
+    for k in range(NUM_PUBLISHERS):
         source           = 'PUBLISHER_plural_'+str(plural)+'-number_'+str(k)+'__3b4e944aa2b.json'
         write_key        = 'PUBLISHER_plural_'+str(plural)+'--'+str(k)+'3b4e944aa2b_KEY'
         publishers[source] = write_key
     sources    = list(publishers.keys())
     write_keys = list(publishers.values())
-    values     = list(range(NUM))
+    values     = list(range(NUM_PUBLISHERS))
 
     assert rdz.set( name = SUBSCRIBER,
                    value = "I am back again",
                write_key = SUBSCRIBER_write_key ) # Should trigger propagation
 
     rdz.mset(names=sources,values=values, write_keys=write_keys)
-    assert rdz.mset( names = sources,  write_keys = write_keys, values=values )==NUM
+    assert rdz.mset( names = sources,  write_keys = write_keys, values=values )==NUM_PUBLISHERS
     values_back = rdz.mget( names = sources )
     assert all( int(v1)==int(v2) for v1,v2 in zip(values, values_back))
-    assert rdz.msubscribe( name = SUBSCRIBER, sources = sources, write_key=SUBSCRIBER_write_key )
-    subscriptions = rdz.subscriptions(name=SUBSCRIBER,write_key=SUBSCRIBER_write_key)
+    m_res =  rdz.msubscribe( name = SUBSCRIBER, sources = sources, write_key=SUBSCRIBER_write_key )
+    assert m_res==len(sources)
+    subscriptions = rdz.get_subscriptions(name=SUBSCRIBER )
     assert all( source in subscriptions for source in sources )
     for source, write_key in publishers.items():
-        subscribers = rdz.subscribers( name=source, write_key=write_key )
+        subscribers = rdz.get_subscribers(name=source )
         assert SUBSCRIBER in subscribers
 
     # Propagate ...
@@ -108,31 +117,31 @@ def subscription_example(plural=False,instant_recall=False):
         assert messages[source]==str(v)
 
     # Multiple delete of sources
-    assert rdz.exists( names = sources )==NUM
+    assert rdz.client.exists( *sources )==NUM_PUBLISHERS
     rdz.mdelete( names=sources, write_keys=write_keys )
-    assert rdz.exists( names = sources )==0
+    assert rdz.client.exists( *sources )==0
 
     for source, write_key in publishers.items():
-        assert rdz.subscribers(name=source, write_key=write_key) is None
+        assert not rdz.get_subscribers(name=source )
 
-    subscriptions = list(rdz.client.smembers( rdz.SUBSCRIPTIONS+SUBSCRIBER ))
+    subscriptions = rdz.get_subscriptions(SUBSCRIBER)
     for source in sources:
         assert source not in subscriptions
 
-    subscriptions = rdz.subscriptions( name=SUBSCRIBER, write_key=SUBSCRIBER_write_key )
+    subscriptions = rdz.get_subscriptions(name=SUBSCRIBER )
     for source in sources:
         assert source not in subscriptions
 
     # Messages may persist or not depending on settings
-    messages = rdz.messages( name = SUBSCRIBER, write_key=SUBSCRIBER_write_key )
-    if rdz.INSTANT_RECALL:
+    messages = rdz.messages( name = SUBSCRIBER, write_key= SUBSCRIBER_write_key )
+    if rdz._INSTANT_RECALL:
         for source in sources:
             assert source not in messages
     else:
-        assert len(messages)==NUM
+        assert len(messages)==NUM_PUBLISHERS
 
-    rdz._delete(PUBLISHER)
-    rdz._delete(SUBSCRIBER)
+    rdz.delete(name=PUBLISHER,write_key=PUBLISHER_write_key)
+    rdz.delete(name=SUBSCRIBER,write_key=SUBSCRIBER_write_key)
 
 
 if __name__=="__main__":

@@ -41,7 +41,7 @@ class RedizConventions(object):
     @staticmethod
     def is_small_value(value):
         """ A vector of 100 floats is considered small, for example """
-        return isinstance(value, (str, int, float)) and sys.getsizeof(value) < 1000
+        return sys.getsizeof(value) < 1024
 
     @staticmethod
     def is_scalar_value(value):
@@ -58,7 +58,7 @@ class RedizConventions(object):
         else:
             try:
                 v = json.loads(value)
-                return RedizConventions.is_vector_value(value)
+                return RedizConventions.is_vector_value(v)
             except:
                 return False
 
@@ -73,14 +73,6 @@ class RedizConventions(object):
                 return RedizConventions.is_dict_value(value)
             except:
                 return False
-
-    @staticmethod
-    def is_vector_value(value):
-        try:
-            fv = json.loads(value)
-            return True
-        except:
-            return False
 
     @staticmethod
     def to_record(value):
@@ -110,6 +102,10 @@ class RedizConventions(object):
     @staticmethod
     def random_name():
         return threezaconventions.crypto.random_key() + '.json'
+
+    @staticmethod
+    def random_title():
+        return {"name":RedizConventions.random_name(),"write_key":RedizConventions.random_key()}
 
     @staticmethod
     def hash(s):
