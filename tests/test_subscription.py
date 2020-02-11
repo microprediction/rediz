@@ -89,9 +89,9 @@ def subscription_example(plural=False,instant_recall=False):
     assert rdz.set( name = SUBSCRIBER,
                    value = "I am back again",
                write_key = SUBSCRIBER_write_key ) # Should trigger propagation
-
-    rdz.mset(names=sources,values=values, write_keys=write_keys)
-    assert rdz.mset( names = sources,  write_keys = write_keys, values=values )==NUM_PUBLISHERS
+    budgets = [3 for _ in sources]
+    rdz.mset(names=sources,values=values, write_keys=write_keys, budgets=budgets)
+    rdz.mset( names = sources,  write_keys = write_keys, values=values, budgets=budgets )
     values_back = rdz.mget( names = sources )
     assert all( int(v1)==int(v2) for v1,v2 in zip(values, values_back))
     m_res =  rdz.msubscribe( name = SUBSCRIBER, sources = sources, write_key=SUBSCRIBER_write_key )
@@ -104,22 +104,24 @@ def subscription_example(plural=False,instant_recall=False):
 
     # Propagate ...
     changed_values  = [ int(2*v) for v in values ]
-    rdz.mset( names = sources,  write_keys = write_keys, values=changed_values )
+    budgets = [2 for v in values ]
+    rdz.mset( names = sources,  write_keys = write_keys, values=changed_values, budgets=budgets )
     messages = rdz.messages( name = SUBSCRIBER, write_key=SUBSCRIBER_write_key )
     for source, v in zip( sources, changed_values):
         assert messages[source]==str(v)
 
     # One more time with feeling ....
     changed_values  = [ int(3*v) for v in values ]
-    rdz.mset( names = sources,  write_keys = write_keys, values=changed_values )
+    rdz.mset( names = sources,  write_keys = write_keys, values=changed_values, budgets=budgets )
     messages = rdz.messages( name = SUBSCRIBER, write_key=SUBSCRIBER_write_key )
     for source, v in zip( sources, changed_values):
         assert messages[source]==str(v)
 
     # Multiple delete of sources
     assert rdz.client.exists( *sources )==NUM_PUBLISHERS
-    rdz.mdelete( names=sources, write_keys=write_keys )
-    assert rdz.client.exists( *sources )==0
+    rdz.mdelete( names=sources, write_keys=write_keys )   # Expires but does not delete
+    time.sleep(0.15)                                      # Redis checks every 0.1 seconds (probably)
+    assert rdz.client.exists( *sources )<10, "Fail could be bad luck"         # Most will be deleted by now.
 
     for source, write_key in publishers.items():
         assert not rdz.get_subscribers(name=source )

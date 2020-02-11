@@ -1,4 +1,5 @@
-import re, sys, json
+import re, sys, json, math, time
+from itertools import zip_longest
 import numpy as np
 import threezaconventions.crypto
 from redis.client import list_or_args
@@ -10,10 +11,57 @@ Value     = Union[str,int]
 ValueList = List[Optional[Value]]
 DelayList = List[Optional[int]]
 
+SEP = "::"
+
 class RedizConventions(object):
 
-    def __init__(self):
-        pass
+    def __init__(self,history_len=None, lagged_len=None, delays=None, error_ttl=None, error_limit=None, num_predictions=None,
+                  obscurity=None, delay_grace=None, instant_recall=None ):
+        self.SEP = SEP
+        self.COPY_SEP = self.SEP + "copy" + self.SEP
+        self.PREDICTION_SEP = self.SEP + "prediction" + self.SEP
+        # User facing conventions: transparent use of prefixing
+        self.ERRORS = "errors" + self.SEP
+        self.DELAYED = "delayed" + self.SEP
+        self.LINKS = "links" + self.SEP
+        self.BACKLINKS = "backlinks" + self.SEP
+        self.MESSAGES = "messages" + self.SEP
+        self.HISTORY = "history" + self.SEP
+        self.HISTORY_LEN = int( history_len or 1000)
+        self.LAGGED_VALUES = "lagged_values" + self.SEP
+        self.LAGGED_TIMES = "lagged_times" + self.SEP
+        self.LAGGED_LEN = int( lagged_len or 10000)
+        self.SUBSCRIBERS = "subscribers" + self.SEP
+        self.SUBSCRIPTIONS = "subscriptions" + self.SEP
+        self.TRANSACTIONS = "transactions" + self.SEP
+
+        # User transparent temporal config
+        self.DELAYS = delays or [1, 5]  # TODO: Enlarge for production ... use a few grace seconds
+        self.ERROR_TTL = int( error_ttl or 60 * 5)  # Number of seconds that set execution error logs are persisted
+        self.ERROR_LIMIT = int( error_limit or 1000)  # Number of error messages to keep per write key
+        self.NUM_PREDICTIONS = int( num_predictions or 100)  # Number of scenerios in a prediction batch
+        self.NOISE = 0.3 / self.NUM_PREDICTIONS  # Tie-breaking / smoothing noise added to predictions
+
+        # Implementation details: private reserved redis keys and prefixes.
+        self._obscurity = (obscurity or "09909-OBSCURE-c94748") + self.SEP
+        self._RESERVE = self._obscurity + "reserve"  # Reserve of credits fed by rare cases when all models miss wildly
+        self._OWNERSHIP = self._obscurity + "ownership"  # Official map from name to write_key
+        self._NAMES = self._obscurity + "names"  # Redundant set of all names (needed for random sampling when collecting garbage)
+        self._PROMISES = self._obscurity + "promises" + self.SEP  # Prefixes queues of operations that are indexed by epoch second
+        self._POINTER = self._obscurity + "pointer"  # A convention used in history stream
+        self._BALANCES = self._obscurity + "balances"  # Hash of all balances attributed to write_keys
+        self._PREDICTIONS = self._obscurity + "predictions" + self.SEP  # Prefix to a listing of contemporaneous predictions by horizon. Must be private as this contains write_keys
+        self._OWNERS = "owners" + self.SEP  # Prefix to a redundant listing of contemporaneous prediction owners by horizon. Must be private as this contains write_keys
+        self._SAMPLES = self._obscurity + "samples" + self.SEP  # Prefix to delayed predictions by horizon. Contain write_keys !
+        self._PROMISED = "promised" + self.SEP  # Prefixes temporary values referenced by the promise queue
+
+        # Other implementation config
+        self._DELAY_GRACE = int(delay_grace or 5)  # Seconds beyond the schedule time when promise data expires
+        self._DEFAULT_MODEL_STD = 1.0  # Noise added for self-prediction
+        self._WINDOWS = [1e-4, 1e-3,  1e-2]  # Sizes of neighbourhoods around truth used in countback ... don't make too big or it hits performance
+        self._INSTANT_RECALL = instant_recall or False
+        self._MAX_TTL = 60 * 60  # Maximum TTL, useful for testing
+        self._TRANSACTIONS_TTL = 24 * (60 * 60)  # How long to keep transactions stream for inactive write_keys
 
     @staticmethod
     def sep():
@@ -40,8 +88,8 @@ class RedizConventions(object):
 
     @staticmethod
     def is_small_value(value):
-        """ A vector of 100 floats is considered small, for example """
-        return sys.getsizeof(value) < 1024
+        """ Somewhat arbitrary """
+        return sys.getsizeof(value) < 1200
 
     @staticmethod
     def is_scalar_value(value):
@@ -54,7 +102,7 @@ class RedizConventions(object):
     @staticmethod
     def is_vector_value(value):
         if isinstance(value, (list, tuple)):
-            return True
+            return all((RedizConventions.is_scalar_value(v) for v in value))
         else:
             try:
                 v = json.loads(value)
@@ -105,8 +153,324 @@ class RedizConventions(object):
 
     @staticmethod
     def random_title():
-        return {"name":RedizConventions.random_name(),"write_key":RedizConventions.random_key()}
+        return {"name":RedizConventions.random_name(), "write_key":RedizConventions.random_key()}
 
     @staticmethod
     def hash(s):
         return threezaconventions.crypto.hash5(s)
+
+    @staticmethod
+    def coerce_inputs(  names:Optional[NameList]=None,
+                         values:Optional[ValueList]=None,
+                         write_keys:Optional[KeyList]=None,
+                         name:Optional[str]=None,
+                         value:Optional[Any]=None,
+                         write_key:Optional[str]=None,
+                         budget:Optional[int]=None,
+                         budgets:Optional[List[int]]=None):
+        # Convention for broadcasting optional singleton inputs to arrays
+        names   = names or [ name ]
+        values  = values or [ value for _ in names ]
+        budgets = budgets or [ budget for _ in names ]
+        write_keys = write_keys or [ write_key for _ in names ]
+        return names, values, write_keys, budgets
+
+    @staticmethod
+    def delay_as_int(delay):
+        """ By convention, None means no delay """
+        return 0 if delay is None else int(delay)
+
+    def percentile_name(self, name, delay, write_key):
+        return RedizConventions.hash(self.delayed_name(name=name, delay=delay) + write_key) + '.json'
+
+    def identity(self, name):
+        return name
+
+    def delayed_name(self, name, delay):
+        return self.DELAYED + str(delay) + self.SEP + name
+
+    def messages_name(self, name):
+        return self.MESSAGES + name
+
+    def errors_name(self, write_key):
+        return self.MESSAGES + write_key
+
+    def transactions_name(self, write_key):
+        return self.TRANSACTIONS + write_key
+
+    def history_name(self, name):
+        return self.HISTORY + name
+
+    def lagged_values_name(self, name):
+        return self.LAGGED_VALUES + name
+
+    def lagged_times_name(self, name):
+        return self.LAGGED_TIMES + name
+
+    def links_name(self, name, delay):
+        return self.LINKS + str(delay) + self.SEP + name
+
+    def backlinks_name(self, name):
+        return self.BACKLINKS + name
+
+    def subscribers_name(self, name):
+        return self.SUBSCRIBERS + name
+
+    def subscriptions_name(self, name):
+        return self.SUBSCRIPTIONS + name
+
+    # --------------------------------------------------------------------------
+    #           Statistics
+    # --------------------------------------------------------------------------
+
+    @staticmethod
+    def to_zscores(prctls):
+        norminv = RedizConventions._norminv_function()
+        return [ norminv(p) for p in prctls ]
+
+
+    @staticmethod
+    def _norminv_function():
+        try:
+            from statistics import NormalDist
+            return NormalDist(mu=0, sigma=1.0).inv_cdf
+        except ImportError:
+            from scipy.stats import norm
+            return norm.ppf
+
+    @staticmethod
+    def _normcdf_function():
+        try:
+            from statistics import NormalDist
+            return NormalDist(mu=0, sigma=1.0).cdf
+        except ImportError:
+            from scipy.stats import norm
+            return norm.cdf
+
+    @staticmethod
+    def _zmean_percentile(ps):
+        """ Given a vector of percentiles, returns normal percentile of the mean zscore """
+        if len(ps):
+            norminv = RedizConventions._norminv_function()
+            zscores = [norminv(p) for p in ps]
+            avg_zscore = np.nanmean(zscores)
+            normcdf = RedizConventions._normcdf_function()
+            avg_p = normcdf(avg_zscore)
+            return avg_p
+        else:
+            return 0.5
+
+    # --------------------------------------------------------------------------
+    #           Default scenario generation
+    # --------------------------------------------------------------------------
+
+    def empirical_predictions(self, lagged_values ):
+        """ The empirical distribution, more or less """
+        # This is a benchmark model used automatically by the stream sponsor
+        lagged_values = list( map(float, lagged_values) )
+        num = len(lagged_values)
+        if num==0:
+            empirical_samples = [ 0 for _ in range(self.NUM_PREDICTIONS) ]
+            noise = 1.0
+        else:
+            num_reps = int( math.ceil( self.NUM_PREDICTIONS / num ) )
+            empirical_samples =  ( lagged_values*num_reps )[:self.NUM_PREDICTIONS]
+            population_std = np.nanstd( empirical_samples )
+            noise = population_std/num
+        jiggle = list(np.random.randn(self.NUM_PREDICTIONS))
+        predictions = [ x+noise*epsilon for x,epsilon in zip( empirical_samples, jiggle) ]
+        return sorted(predictions)
+
+    # --------------------------------------------------------------------------
+    #           Time to live economics
+    # --------------------------------------------------------------------------
+
+    @staticmethod
+    def _value_ttl(value, budget, num_delays, max_ttl ):
+        # Assign a time to live that won't break the bank
+        REPLICATION = 1 + 2 * num_delays
+        BLOAT = 3
+        DOLLAR = 10000.  # Credits per dollar
+        COST_PER_MONTH_10MB = 1. * DOLLAR
+        COST_PER_MONTH_1b = COST_PER_MONTH_10MB / (10 * 1000 * 1000)
+        SECONDS_PER_DAY = 60. * 60. * 24.
+        SECONDS_PER_MONTH = SECONDS_PER_DAY * 30.
+        FIXED_COST_bytes = 10  # Overhead
+        num_bytes = sys.getsizeof(value)
+        credits_per_month = REPLICATION * BLOAT * (num_bytes + FIXED_COST_bytes) * COST_PER_MONTH_1b
+        ttl_seconds = int(math.ceil(SECONDS_PER_MONTH / credits_per_month))
+        ttl_seconds = budget * ttl_seconds
+        ttl_seconds = min(ttl_seconds, max_ttl)
+        return ttl_seconds
+
+    @staticmethod
+    def chunker(results, n):
+        """ Assumes there are n*k operations and just chunks the results into groups of length k """
+
+        def grouper(iterable, n, fillvalue=None):
+            args = [iter(iterable)] * n
+            return zip_longest(*args, fillvalue=fillvalue)
+
+        m = int(len(results) / n)
+        return list(grouper(iterable=results, n=m, fillvalue=None))
+
+    # --------------------------------------------------------------------------
+    #           Public conventions (names and places )
+    # --------------------------------------------------------------------------
+
+    def derived_names(self, name):
+        """ Summary of data and links  """
+        references = dict()
+        for method_name, method in self._nullary_methods().items():
+            item = {method_name: method(name)}
+            references.update(item)
+        for method_name, method in self._delay_methods().items():
+            for delay in self.DELAYS:
+                item = {method_name + self.SEP + str(delay): method(name=name, delay=delay)}
+                references.update(item)
+        return references
+
+    def _nullary_methods(self):
+        return {"name": self.identity,
+                "lagged": self.lagged_values_name,
+                "lagged_times": self.lagged_times_name,
+                "backlinks": self.backlinks_name,
+                "subscribers": self.subscribers_name,
+                "subscriptions": self.subscriptions_name,
+                "history": self.history_name,
+                "messages": self.messages_name}
+
+    def _delay_methods(self):
+        return {"delayed": self.delayed_name,
+                "links": self.links_name,
+                "participants": self._sample_owners_name}
+
+    # --------------------------------------------------------------------------
+    #           Private conventions (names, places, formats, ttls )
+    # --------------------------------------------------------------------------
+
+    def _private_delay_methods(self):
+        return {"participants": self._sample_owners_name,
+                "predictions": self._predictions_name,
+                "samples": self._samples_name
+                }
+
+    def _private_derived_names(self, name):
+        references = dict()
+        for method_name, method in self._private_delay_methods().items():
+            for delay in self.DELAYS:
+                item = {method_name + self.SEP + str(delay): method(name=name, delay=delay)}
+                references.update(item)
+        return references
+
+    def _names(self):
+        return list(self.client.smembers(self._NAMES))
+
+    def _ownership_name(self):
+        return self._OWNERSHIP
+
+    def _promised_name(self, name):
+        return self._PROMISED + self.random_key()[:8] + self.SEP + name[:14]
+
+    def _copy_promise(self, source, destination):
+        return source + self.COPY_SEP + destination
+
+    def _promise_queue_name(self, epoch_seconds):
+        return self._PROMISES + str(int(epoch_seconds))
+
+    def _sample_owners_name(self, name, delay):
+        return self._OWNERS + self._SAMPLES + str(delay) + self.SEP + name
+
+    def _predictions_name(self, name, delay):
+        return self._PREDICTIONS + str(delay) + self.SEP + name
+
+    def _samples_name(self, name, delay):
+        return self._SAMPLES + str(delay) + self.SEP + name
+
+    def _format_scenario(self, write_key, k):
+        """ A "ticket" indexed by write_key and an index from 0 to self.NUM_PREDiCTIONS-1 """
+        return str(k).zfill(8) + self.SEP + write_key
+
+    def _make_scenario_obscure(self, ticket):
+        """ Change write_key to a hash of write_key """
+        parts = ticket.split(self.SEP)
+        return parts[0] + self.SEP + self.hash(parts[1])
+
+    def _scenario_percentile(self, scenario):
+        """ Extract scenario percentile from scenario string """
+        return (0.5 + float(scenario.split(self.SEP)[0])) / self.NUM_PREDICTIONS
+
+    def _scenario_owner(self, scenario):
+        """ Extract owner of a scenario from scenario string """
+        return scenario.split(self.SEP)[1]
+
+    def _prediction_promise(self, target, delay, predictions_name):
+        """ Format for a promise that sits in a promise queue waiting to be inserted into samples::1::name, for instance """
+        return predictions_name + self.PREDICTION_SEP + self._samples_name(name=target, delay=delay)
+
+    def _interpret_delay(self, delay_name):
+        """ Extract root name and delay in seconds as int from  delayed::600:name """
+        assert self.DELAYED in delay_name
+        parts = delay_name.split(self.SEP)
+        root = parts[-1]
+        delay = int(parts[-2])
+        return root, delay
+
+
+    # --------------------------------------------------------------------------
+    #           Private getters
+    # --------------------------------------------------------------------------
+
+    def _get_sample_owners(self, name, delay):
+        """ Set of participants in a market """
+        return list(self.client.smembers(self._sample_owners_name(name=name, delay=delay)))
+
+    def _pools(self, names, delays):
+        """ Return count of number of scenarios in predictions::5::name, predictions::1::name  for name in names
+               Returns:  pools    { name: [ 5000, 1000, 0, 0 ] }
+        """
+        pools = dict([(n, list()) for n in names])
+        pool_pipe = self.client.pipeline()
+        ndxs = dict([(n, list()) for n in names])
+        for name in names:
+            for delay in delays:
+                ndxs[name].append(len(pool_pipe))
+                pool_pipe.zcard(self._predictions_name(name=name, delay=delay))
+        exec = pool_pipe.execute()
+        for name in names:
+            for delay_ndx in range(len(delays)):
+                pools[name].append(exec[ndxs[name][delay_ndx]])
+        return pools
+
+
+    # --------------------------------------------------------------------------
+    #            Economic model for data storage
+    # --------------------------------------------------------------------------
+
+    def _promise_ttl(self):
+        return max(self.DELAYS) + self._DELAY_GRACE
+
+    def _cost_based_history_len(self, value):
+        return self.HISTORY_LEN    # TODO: Could be refined
+
+    def _cost_based_lagged_len(self, value ):
+        t = time.time()
+        sz = (sys.getsizeof(value) + sys.getsizeof(t)) + 10
+        return int( math.ceil( 10 * self.LAGGED_LEN / sz) )
+
+    def _cost_based_ttl(self, value, budget):
+        return RedizConventions._value_ttl(value=value, budget=budget, num_delays=len(self.DELAYS), max_ttl=self._MAX_TTL )
+
+    # --------------------------------------------------------------------------
+    #            Redis version/capability inference
+    # --------------------------------------------------------------------------
+
+    def _streams_support(self):
+        # Returns True if redis streams are supported by the redis client
+        # (Note that streams are not supported on fakeredis)
+        try:
+            record_of_test = {"time": str(time.time())}
+            self.client.xadd(name='e5312d16-dc87-46d7-a2e5-f6a6225e63a5', fields=record_of_test)
+            return True
+        except:
+            return False

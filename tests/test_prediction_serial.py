@@ -33,8 +33,8 @@ def do_setup(rdz,target):
 
 def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_key3, num_exec=0) :
     samples       = rdz.get_samples(name=target, delay=1)
-    #lagged        = rdz.get_lagged(name=target)
-    owners        = rdz.client.smembers(rdz.OWNERS + rdz.SAMPLES + "1" + rdz.SEP + target)
+    lagged        = rdz.get_lagged(name=target)
+    owners        = rdz.client.smembers(rdz._sample_owners_name(name=target,delay=1))
     predictions   = rdz.get_predictions(name=target, delay=1)
     links         = rdz._get_links_implementation(name=target, delay=1)
     backlinks     = rdz._get_backlinks_implementation(name=target)

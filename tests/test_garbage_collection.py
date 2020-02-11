@@ -2,10 +2,10 @@ from rediz.client import Rediz
 import json, random, time
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 
+# # rm tmp*.json; pip install -e . ; python -m pytest tests/test_garbage_collection.py ; cat tmp_garbage.json
 
-
-def dump(obj,name="garbage.json"): # Debugging
-    json.dump(obj,open("tmp_garbage.json","w"))
+def dump(obj,name="tmp_garbage.json"): # Debugging
+    json.dump(obj,open(name,"w"))
 
 def test_delete_simple():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
@@ -13,14 +13,16 @@ def test_delete_simple():
     assert rdz.set(value="42",**title)
     dump(title)
     name, write_key = title["name"], title["write_key"]
-    assert rdz.get(name)=="42"
-    rdz._delete_implementation(names=[name])
+    v = rdz.get(name)
+    assert v=="42"
+    rdz.delete(**title)
+    time.sleep(1.1)
     assert rdz.get(name) is None
 
 def test_expire():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
     title = rdz.random_title()
-    assert rdz.set(value="42",**title)
+    assert rdz.set(value="44",**title)
     name, write_key = title["name"], title["write_key"]
     rdz.client.expire(name=title["name"],time=0)
     import time
@@ -33,9 +35,10 @@ def test_expire():
 def test_run_admin_garbage_collection():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
     rdz.admin_garbage_collection()
-    report = rdz.card()
-    if False:
-        dump(report)
+    names = rdz._names()
+    if names:
+        report = rdz._size(name=names[0],with_report=True)
+    dump(report)
 
 def test_admin_garbage_collection(num=100):
     rdz = Rediz(**REDIZ_TEST_CONFIG)
@@ -43,12 +46,14 @@ def test_admin_garbage_collection(num=100):
     names      = [ rdz.random_name() for _ in range(num) ]
     write_keys = [ rdz.random_key() for _ in range(num) ]
     values = ["from test_admin_garbage_collection" for _ in write_keys ]
-    assert rdz.mset(names=names,write_keys=write_keys,values=values)==len(values)
+    budgets = [ 1 for _ in range(num) ]
+    mset_res = rdz.mset(names=names,write_keys=write_keys,values=values, budgets=budgets)
+    assert len(mset_res)==len(names)
     expire_pipe = rdz.client.pipeline()
     for name in names:
         expire_pipe.expire(name=name,time=0)
     expire_pipe.execute()
-    time.sleep(0.1)
+    time.sleep(0.15)
 
     remaining = list()
     for iter_no in range(5):
@@ -77,7 +82,8 @@ def test_find_orphans_low_cardinality_test(num=20):
         write_keys = [ rdz.random_key() for _ in range(num) ]
         value  = "a string to store"
         values = [value for _ in write_keys ]
-        title = rdz.mset(names=names,write_keys=write_keys,values=values)
+        budgets = [ 7 for _ in names ]
+        title = rdz.mset(names=names,write_keys=write_keys,values=values, budgets=budgets)
         assert rdz.client.exists(*names)==len(names), "Names were not created as expected."
         for name in names:
             rdz.client.expire(name=name,time=5*60)

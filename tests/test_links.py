@@ -28,8 +28,8 @@ def do_test_link(rdz):
 
     DELAY = rdz.delayed_name(name=SOURCE, delay=delay)
     rdz._delete_implementation(TARGET, SOURCE, DELAY)
-    assert rdz.set(name=TARGET,write_key=TARGET_write_key,value=json.dumps({"temp":81}))   # Ensure existence
-    assert rdz.set(name=SOURCE,write_key=SOURCE_write_key,value=json.dumps({"temp":77.6})) # Ensure existence
+    assert rdz.set(name=TARGET,write_key=TARGET_write_key,value=json.dumps({"temp":81}))  is not None # Ensure existence
+    assert rdz.set(name=SOURCE,write_key=SOURCE_write_key,value=json.dumps({"temp":77.6}))  is not None # Ensure existence
     assert rdz.exists(TARGET)
     assert rdz.exists(SOURCE)
     assert rdz.client.exists(*[SOURCE,TARGET])
@@ -43,7 +43,7 @@ def do_test_link(rdz):
     assert rdz.delayed_name(name=SOURCE,delay=delay) in backlinks
 
     time.sleep(1.5)
-    assert rdz.admin_promises()
+    rdz.admin_promises()
 
     # By now delay::1 should exist
 
@@ -59,5 +59,6 @@ def do_test_link(rdz):
     assert DELAY not in backlinks
 
     rdz.delete(name=TARGET,write_key=TARGET_write_key)
+    time.sleep(0.15)  # Time for redis to find the expired name
     assert not( rdz.client.exists(DELAY) ), "delete failed to clean up delay::"
 
