@@ -38,7 +38,7 @@ def test_run_admin_garbage_collection():
     names = rdz._names()
     if names:
         report = rdz._size(name=names[0],with_report=True)
-    dump(report)
+        dump(report)
 
 def test_admin_garbage_collection(num=100):
     rdz = Rediz(**REDIZ_TEST_CONFIG)

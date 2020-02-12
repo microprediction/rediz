@@ -133,7 +133,8 @@ class Rediz(RedizConventions):
 
     def mset(self,names:NameList, values:ValueList, write_keys:KeyList, budgets:List[int] ):
         """ Apply set() for multiple names and values """
-        return self._set_implementation(names=names, values=values, write_keys=write_keys, return_args=None, budgets=budgets, with_percentiles=True )
+        with_copulas = sum(budgets)>=len(names)**3
+        return self._set_implementation(names=names, values=values, write_keys=write_keys, return_args=None, budgets=budgets, with_percentiles=True, with_copulas=with_copulas )
 
     def delete(self, name, write_key):
         """ Delete/expire all artifacts associated with name (links, subs, markets etc) """
@@ -234,7 +235,7 @@ class Rediz(RedizConventions):
 
     def _set_implementation(self,   names:Optional[NameList]=None,values:Optional[ValueList]=None, write_keys:Optional[KeyList]=None,budgets: Optional[List[int]] = None,
                                     name:Optional[str]=None,value:Optional[Any]=None, write_key:Optional[str]=None, budget:Optional[int]=None,
-                                    return_args:Optional[List[str]]=None, with_percentiles=False):
+                                    return_args:Optional[List[str]]=None, with_percentiles=False, with_copulas=False):
 
         if return_args is None:
             return_args = ['name','write_key','value','percentile']
@@ -268,7 +269,7 @@ class Rediz(RedizConventions):
             # TODO: Allow a mix of valid/invalid here
             if all( self.is_scalar_value(v) for v in values ):
                 fvalues = list(map(float, values))
-                prctls = self._msettle(names=names, values=fvalues, budgets=budgets, with_percentiles=with_percentiles, write_keys=write_keys)
+                prctls = self._msettle(names=names, values=fvalues, budgets=budgets, with_percentiles=with_percentiles, write_keys=write_keys, with_copulas=with_copulas)
             else:
                 prctls = [None for _ in names]
 
@@ -864,7 +865,7 @@ class Rediz(RedizConventions):
             # TODO: Log failed prediction attempt to write_key log
             return 0
 
-    def _msettle(self, names, values, budgets, with_percentiles, write_keys):
+    def _msettle(self, names, values, budgets, with_percentiles, write_keys, with_copulas):
         """ Parallel version of settle  """
         assert len(set(names))==len(names),"mget() cannot be used with repeated names"
         retrieve_pipe = self.client.pipeline()
@@ -887,38 +888,25 @@ class Rediz(RedizConventions):
 
         retrieved = retrieve_pipe.execute()
 
-        # Generate mset() instructions for percentiles
+        # Compute percentiles by zooming out the selection
         prctl_names      = list()   # prctl vectors are longer as they include delays
-        prctl_values     = list()
-        prctl_write_keys = list()
-        prctl_budgets    = list()
-        percentile_budgets = [int(math.ceil(0.5 * budget / len(self.DELAYS))) for budget in budgets]
         percentiles = dict([(name, dict( (d,0.5) for d in self.DELAYS  )) for name in names])
         if with_percentiles:
-            for name, prctl_budget,write_key in zip(names, percentile_budgets, write_keys) :
+            for name in names:
                 pools = [retrieved[pools_lookup[name][delay_ndx]] for delay_ndx in range(num_delay) ]
                 if any(pools):
                     for delay_ndx, pool in enumerate(pools):
                         assert pool == retrieved[ pools_lookup[name][delay_ndx] ]  # Just checkin
                         participant_set = retrieved[ participants_lookup[name][delay_ndx] ]
                         if pool and len(participant_set) > 1:
-                            # Choose a window for percentiles
+                            # Zoom out window for percentiles ... want a few so we can average zscores
+                            # from more than one contributor, hopefully leading to more accurate percentiles
                             percentile_scenarios = list()
                             for window_ndx in range(num_windows):
                                 if len(percentile_scenarios) < 10:
                                     _ndx = scenarios_lookup[name][delay_ndx][window_ndx]
                                     percentile_scenarios = retrieved[_ndx]
                             percentiles[name][delay_ndx] = self._zmean_scenarios_percentile(percentile_scenarios=percentile_scenarios)
-
-                    if percentiles[name]:
-                        for delay_ndx, delay in enumerate(self.DELAYS):
-                            if delay_ndx in percentiles[name]:
-                                prctl_value = percentiles[name][delay_ndx]
-                                prctl_name  = self.percentile_name(name=name, delay=delay, write_key=write_key)
-                                prctl_names.append(prctl_name)
-                                prctl_values.append(prctl_value)
-                                prctl_write_keys.append(write_key)
-                                prctl_budgets.append(prctl_budget)
 
         # Rewards
         pipe = self.client.pipeline()
@@ -929,7 +917,9 @@ class Rediz(RedizConventions):
                 payments = Counter()
                 for delay_ndx, pool, participant_set in zip(range(num_delay), pools, participant_sets):
                     if pool and len(participant_set) > 1:
-                        # Zoom out rewards scenarios window
+                        # Zoom out rewards scenarios window if we don't have a winner
+                        # Possibly this should be adjusted by the number of participants to reduce wealth variance
+                        # It is unlikely that we'd have just one so won't worry too much about this for now.
                         rewarded_scenarios = list()
                         for window_ndx in range(num_windows):
                             if len(rewarded_scenarios) == 0:
@@ -949,12 +939,36 @@ class Rediz(RedizConventions):
                         pipe.expire(name=self.transactions_name(recipient), time=self._TRANSACTIONS_TTL)
 
         pipe.execute()
+
+        # Derived markets ... z's for 1-d, 2-d, 3-d market-implied z-scores and z-curves
+        # By default mset() creates a derivative market for the market-implied z-scores
+        # If the budget is large enough, it also creates copula markets on z-curves based
+        # on permutations of the market implied percentiles
         if with_percentiles and prctl_names:
-            zscores = RedizConventions.to_zscores(prctl_values)
-            self._set_implementation( budgets=prctl_budgets, names=prctl_names, values=zscores, write_keys=prctl_write_keys, with_percentiles=False )
-            # TODO: Add in geohashing here
-
-
+            z_budgets = list()
+            z_names   = list()
+            z_curves  = list()
+            z_write_keys = list()
+            for delay_ndx, delay in enumerate(self.DELAYS):
+                percentiles1 = [ percentiles[name][delay_ndx] for name in names ]
+                num_names = len(names)
+                selections1 = list(itertools.permutations(list(range(num_names)), 1))
+                if with_copulas and num_names<=10:
+                    selections2 = list(itertools.permutations(list(range(num_names)), 2))[:720]
+                    selections3 = list(itertools.permutations(list(range(num_names)), 3))[:90]
+                selections = selections1 + selections2 + selections3
+                for selection in selections:
+                    selected_names   = [ names[o] for o in selection ]
+                    dim              = len(selection)
+                    z_budget         = int( math.ceil( sum( [ budgets[o] for o in selection ] ) / (dim**3) ) )
+                    selected_prctls  = [ percentiles1[o] for o in selection ]
+                    zcurve_value     = RedizConventions.to_zcurve(selected_prctls)
+                    zname            = RedizConventions.zcurve_name(selected_names, delay)
+                    z_names.append(zname)
+                    z_budgets.append(z_budget)
+                    z_curves.append(zcurve_value)
+                    z_write_keys.append(write_key)
+            self._set_implementation(budgets=z_budgets, names=z_names, values=z_curves, write_keys=z_write_keys, with_percentiles=False, with_copulas=False )
         return percentiles
 
     def _zmean_scenarios_percentile(self, percentile_scenarios):
@@ -982,7 +996,9 @@ class Rediz(RedizConventions):
 
 
     def _settle(self, name, value, budget, with_percentiles, write_key ):
-        """ Reward closest guesses and also compute statistical percentile estimate """
+        """ Reward closest guesses and also compute statistical percentile estimate
+              ** deprecated in favour of _msettle()   TODO: Run comparisons and eliminate this
+        """
 
         percentile_budget = int(math.ceil(0.5 * budget / len(self.DELAYS)))
 
@@ -1006,17 +1022,6 @@ class Rediz(RedizConventions):
         assert all( ( isinstance(p, (int,float)) for p in pools ))
         participant_sets = retrieved[1::K]
         assert all( isinstance(s,set) for s in participant_sets )
-
-        DEBUG = True
-        if DEBUG:
-            # Check monotonicity as a further check against pipeline result indexing error
-            for delay_ndx in range(num_delay):
-                num_winners = list()
-                for window_ndx in range(num_windows):
-                    winners = retrieved[ scenarios_lookup[delay_ndx][window_ndx] ]
-                    num_winners.append(len(winners))
-                assert all( a>=0 for a in np.diff( num_winners ) )
-
 
         # Select winners in neighbourhood, trying hard for at least one
         if any(pools):

@@ -181,8 +181,8 @@ class RedizConventions(object):
         """ By convention, None means no delay """
         return 0 if delay is None else int(delay)
 
-    def percentile_name(self, name, delay, write_key):
-        return RedizConventions.hash(self.delayed_name(name=name, delay=delay) + write_key) + '.json'
+    def percentile_name(self, name, delay):
+        return RedizConventions.zcurve_name(names=[name],delay=delay)
 
     def identity(self, name):
         return name
@@ -262,6 +262,7 @@ class RedizConventions(object):
         return {"delayed": self.delayed_name,
                 "links": self.links_name,
                 "participants": self._sample_owners_name}
+
 
     # --------------------------------------------------------------------------
     #           Private conventions (names, places, formats, ttls )
@@ -447,15 +448,15 @@ class RedizConventions(object):
     #           Z-order curves
     # --------------------------------------------------------------------------
 
+
+
+
     def zcurve_name(self, names, delay):
-        """ Naming convention for derived quantities, called zcurves
-              1-d derived are z-scores
-              2-d derived are z-order curves analogous to geohash
-              3,4, derived are general z-order curves
-        """
+        """ Naming convention for derived quantities, called zcurves """
         basenames = [n.split('.')[-2] for n in names]
-        prefix = "z" + str(len(names))
-        return prefix + self.SEP.join(basenames + [delay]) + '.json'
+        prefix    = "z" + str(len(names))
+        clearbase = "~".join( [prefix] + basenames + [delay] )
+        return RedizConventions.hash(clearbase)+'.json'
 
     @staticmethod
     def morton_scale(dim):

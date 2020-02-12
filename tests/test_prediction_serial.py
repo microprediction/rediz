@@ -24,7 +24,7 @@ def model(rdz,target,write_key):
         x_samples = x_samples[:rdz.NUM_PREDICTIONS]
         noise     = np.random.randn(rdz.NUM_PREDICTIONS)
         jiggered  = [x+0.1*n for x,n in zip(x_samples,noise) ]
-    assert rdz.predict(name=target,values=jiggered,write_key=write_key)
+    rdz.predict(name=target,values=jiggered,write_key=write_key,delay=rdz.DELAYS[0])
 
 def do_setup(rdz,target):
     rdz._delete_implementation(target)
