@@ -143,11 +143,11 @@ class Rediz(RedizConventions):
         """ Delete/expire all artifacts associated with multiple names """
         return self._permissioned_mdelete(names=names, write_key=write_key, write_keys=write_keys)
 
-    def predict(self, name, values, write_key ):
+    def predict(self, name, values, delay, write_key ):
         """ Supply scenarios for scalar value taken by name
                values :   [ float ]  len  self.NUM_PREDICTIONS
         """
-        return self._predict_implementation( name, values, write_key )
+        return self._predict_implementation( name, values, delay, write_key )
 
     # --------------------------------------------------------------------------
     #            Public interface  (subscription)
@@ -952,6 +952,9 @@ class Rediz(RedizConventions):
         if with_percentiles and prctl_names:
             zscores = RedizConventions.to_zscores(prctl_values)
             self._set_implementation( budgets=prctl_budgets, names=prctl_names, values=zscores, write_keys=prctl_write_keys, with_percentiles=False )
+            # TODO: Add in geohashing here
+
+
         return percentiles
 
     def _zmean_scenarios_percentile(self, percentile_scenarios):

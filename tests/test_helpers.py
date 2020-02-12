@@ -131,3 +131,29 @@ def test_coerce_outputs():
                                 ]
                     }
     out = Rediz._coerce_outputs(execution_log)
+
+
+def test_morton():
+    rdz     = Rediz()
+    for dim in [2,3]:
+        for _ in range(100):
+            prtcls  = list(np.random.rand(dim))
+            z = rdz.to_zcurve(prctls=prtcls)
+            prtcls_back = rdz.from_zcurve(z, dim=len(prtcls) )
+            assert all( abs(p1-p2)<10./rdz.morton_scale(dim=3) for p1,p2 in zip(prtcls,prtcls_back)), "Morton embedding failed "
+
+
+
+def show_morton_distribution():
+    """ Verify that zcurves are N(0,1) """
+    import matplotlib.pyplot as plt
+    from scipy.stats import probplot
+    rdz = Rediz()
+    zs = list()
+    for dim in [2, 3]:
+        for _ in range(10000):
+            prtcls = list(np.random.rand(dim))
+            z = rdz.to_zcurve(prctls=prtcls)
+            zs.append(z)
+    probplot(zs,plot=plt)
+    plt.show()

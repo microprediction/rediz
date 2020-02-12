@@ -1,4 +1,5 @@
 import re, sys, json, math, time
+import pymorton
 from itertools import zip_longest
 import numpy as np
 import threezaconventions.crypto
@@ -219,89 +220,6 @@ class RedizConventions(object):
     def subscriptions_name(self, name):
         return self.SUBSCRIPTIONS + name
 
-    # --------------------------------------------------------------------------
-    #           Statistics
-    # --------------------------------------------------------------------------
-
-    @staticmethod
-    def to_zscores(prctls):
-        norminv = RedizConventions._norminv_function()
-        return [ norminv(p) for p in prctls ]
-
-
-    @staticmethod
-    def _norminv_function():
-        try:
-            from statistics import NormalDist
-            return NormalDist(mu=0, sigma=1.0).inv_cdf
-        except ImportError:
-            from scipy.stats import norm
-            return norm.ppf
-
-    @staticmethod
-    def _normcdf_function():
-        try:
-            from statistics import NormalDist
-            return NormalDist(mu=0, sigma=1.0).cdf
-        except ImportError:
-            from scipy.stats import norm
-            return norm.cdf
-
-    @staticmethod
-    def _zmean_percentile(ps):
-        """ Given a vector of percentiles, returns normal percentile of the mean zscore """
-        if len(ps):
-            norminv = RedizConventions._norminv_function()
-            zscores = [norminv(p) for p in ps]
-            avg_zscore = np.nanmean(zscores)
-            normcdf = RedizConventions._normcdf_function()
-            avg_p = normcdf(avg_zscore)
-            return avg_p
-        else:
-            return 0.5
-
-    # --------------------------------------------------------------------------
-    #           Default scenario generation
-    # --------------------------------------------------------------------------
-
-    def empirical_predictions(self, lagged_values ):
-        """ The empirical distribution, more or less """
-        # This is a benchmark model used automatically by the stream sponsor
-        lagged_values = list( map(float, lagged_values) )
-        num = len(lagged_values)
-        if num==0:
-            empirical_samples = [ 0 for _ in range(self.NUM_PREDICTIONS) ]
-            noise = 1.0
-        else:
-            num_reps = int( math.ceil( self.NUM_PREDICTIONS / num ) )
-            empirical_samples =  ( lagged_values*num_reps )[:self.NUM_PREDICTIONS]
-            population_std = np.nanstd( empirical_samples )
-            noise = population_std/num
-        jiggle = list(np.random.randn(self.NUM_PREDICTIONS))
-        predictions = [ x+noise*epsilon for x,epsilon in zip( empirical_samples, jiggle) ]
-        return sorted(predictions)
-
-    # --------------------------------------------------------------------------
-    #           Time to live economics
-    # --------------------------------------------------------------------------
-
-    @staticmethod
-    def _value_ttl(value, budget, num_delays, max_ttl ):
-        # Assign a time to live that won't break the bank
-        REPLICATION = 1 + 2 * num_delays
-        BLOAT = 3
-        DOLLAR = 10000.  # Credits per dollar
-        COST_PER_MONTH_10MB = 1. * DOLLAR
-        COST_PER_MONTH_1b = COST_PER_MONTH_10MB / (10 * 1000 * 1000)
-        SECONDS_PER_DAY = 60. * 60. * 24.
-        SECONDS_PER_MONTH = SECONDS_PER_DAY * 30.
-        FIXED_COST_bytes = 10  # Overhead
-        num_bytes = sys.getsizeof(value)
-        credits_per_month = REPLICATION * BLOAT * (num_bytes + FIXED_COST_bytes) * COST_PER_MONTH_1b
-        ttl_seconds = int(math.ceil(SECONDS_PER_MONTH / credits_per_month))
-        ttl_seconds = budget * ttl_seconds
-        ttl_seconds = min(ttl_seconds, max_ttl)
-        return ttl_seconds
 
     @staticmethod
     def chunker(results, n):
@@ -474,3 +392,147 @@ class RedizConventions(object):
             return True
         except:
             return False
+
+
+ # --------------------------------------------------------------------------
+    #           Statistics
+    # --------------------------------------------------------------------------
+
+    def normcdf(self, x):
+        g = self._normcdf_function()
+        return g(x)
+
+    def norminv(self,p):
+        f = self._norminv_function()
+        return f(p)
+
+    @staticmethod
+    def to_zscores(prctls):
+        norminv = RedizConventions._norminv_function()
+        return [ norminv(p) for p in prctls ]
+
+
+    @staticmethod
+    def _norminv_function():
+        try:
+            from statistics import NormalDist
+            return NormalDist(mu=0, sigma=1.0).inv_cdf
+        except ImportError:
+            from scipy.stats import norm
+            return norm.ppf
+
+    @staticmethod
+    def _normcdf_function():
+        try:
+            from statistics import NormalDist
+            return NormalDist(mu=0, sigma=1.0).cdf
+        except ImportError:
+            from scipy.stats import norm
+            return norm.cdf
+
+    @staticmethod
+    def _zmean_percentile(ps):
+        """ Given a vector of percentiles, returns normal percentile of the mean zscore """
+        if len(ps):
+            norminv = RedizConventions._norminv_function()
+            zscores = [norminv(p) for p in ps]
+            avg_zscore = np.nanmean(zscores)
+            normcdf = RedizConventions._normcdf_function()
+            avg_p = normcdf(avg_zscore)
+            return avg_p
+        else:
+            return 0.5
+
+    # --------------------------------------------------------------------------
+    #           Z-order curves
+    # --------------------------------------------------------------------------
+
+    def zcurve_name(self, names, delay):
+        """ Naming convention for derived quantities, called zcurves
+              1-d derived are z-scores
+              2-d derived are z-order curves analogous to geohash
+              3,4, derived are general z-order curves
+        """
+        basenames = [n.split('.')[-2] for n in names]
+        prefix = "z" + str(len(names))
+        return prefix + self.SEP.join(basenames + [delay]) + '.json'
+
+    @staticmethod
+    def morton_scale(dim):
+        return 2**10
+
+    @staticmethod
+    def morton_large(dim):
+        SCALE = RedizConventions.morton_scale(dim=dim)
+        return pymorton.interleave( *[ SCALE-1 for _ in range(dim) ] )
+
+    def to_zcurve(self, prctls: List[float] ):
+        """ A mapping from R^n -> R based on the Morton z-curve """
+        dim = len(prctls)
+        if dim==1:
+            return self.to_zscores(prctls)
+        else:
+            SCALE = RedizConventions.morton_scale(dim)
+            int_prctls = [ int(math.floor(p*SCALE)) for p in prctls ]
+            m1         = pymorton.interleave(*int_prctls)
+            int_prctls_back = pymorton.deinterleave2(m1) if dim==2 else  pymorton.deinterleave3(m1)
+            assert all( i1==i2 for i1,i2 in zip(int_prctls, int_prctls_back))
+            m2         = pymorton.interleave(*[ SCALE-1 for _ in range(dim) ])
+            zpercentile =  m1/m2
+            return self.norminv(zpercentile)
+
+    def from_zcurve(self, zvalue, dim):
+        zpercentile = self.normcdf(zvalue)
+        SCALE = self.morton_scale(dim)
+        zmorton     = int( self.morton_large(dim)*zpercentile+0.5 )
+        if dim==2:
+            values  = pymorton.deinterleave2(zmorton)
+        elif dim==3:
+            values  = pymorton.deinterleave3(zmorton)
+        prtcls = [ v/SCALE for v in values ]
+        return prtcls
+
+
+
+    # --------------------------------------------------------------------------
+    #           Default scenario generation
+    # --------------------------------------------------------------------------
+
+    def empirical_predictions(self, lagged_values ):
+        """ The empirical distribution, more or less """
+        # This is a benchmark model used automatically by the stream sponsor
+        lagged_values = list( map(float, lagged_values) )
+        num = len(lagged_values)
+        if num==0:
+            empirical_samples = [ 0 for _ in range(self.NUM_PREDICTIONS) ]
+            noise = 1.0
+        else:
+            num_reps = int( math.ceil( self.NUM_PREDICTIONS / num ) )
+            empirical_samples =  ( lagged_values*num_reps )[:self.NUM_PREDICTIONS]
+            population_std = np.nanstd( empirical_samples )
+            noise = population_std/num
+        jiggle = list(np.random.randn(self.NUM_PREDICTIONS))
+        predictions = [ x+noise*epsilon for x,epsilon in zip( empirical_samples, jiggle) ]
+        return sorted(predictions)
+
+    # --------------------------------------------------------------------------
+    #           Time to live economics
+    # --------------------------------------------------------------------------
+
+    @staticmethod
+    def _value_ttl(value, budget, num_delays, max_ttl ):
+        # Assign a time to live that won't break the bank
+        REPLICATION = 1 + 2 * num_delays
+        BLOAT = 3
+        DOLLAR = 10000.  # Credits per dollar
+        COST_PER_MONTH_10MB = 1. * DOLLAR
+        COST_PER_MONTH_1b = COST_PER_MONTH_10MB / (10 * 1000 * 1000)
+        SECONDS_PER_DAY = 60. * 60. * 24.
+        SECONDS_PER_MONTH = SECONDS_PER_DAY * 30.
+        FIXED_COST_bytes = 10  # Overhead
+        num_bytes = sys.getsizeof(value)
+        credits_per_month = REPLICATION * BLOAT * (num_bytes + FIXED_COST_bytes) * COST_PER_MONTH_1b
+        ttl_seconds = int(math.ceil(SECONDS_PER_MONTH / credits_per_month))
+        ttl_seconds = budget * ttl_seconds
+        ttl_seconds = min(ttl_seconds, max_ttl)
+        return ttl_seconds
