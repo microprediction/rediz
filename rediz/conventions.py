@@ -14,6 +14,8 @@ DelayList = List[Optional[int]]
 
 SEP = "::"
 
+
+
 class RedizConventions(object):
 
     def __init__(self,history_len=None, lagged_len=None, delays=None, error_ttl=None, error_limit=None, num_predictions=None,
@@ -40,11 +42,11 @@ class RedizConventions(object):
         self.DELAYS = delays or [1, 5]  # TODO: Enlarge for production ... use a few grace seconds
         self.ERROR_TTL = int( error_ttl or 60 * 5)  # Number of seconds that set execution error logs are persisted
         self.ERROR_LIMIT = int( error_limit or 1000)  # Number of error messages to keep per write key
-        self.NUM_PREDICTIONS = int( num_predictions or 100)  # Number of scenerios in a prediction batch
+        self.NUM_PREDICTIONS = int( num_predictions or 1000)  # Number of scenerios in a prediction batch
         self.NOISE = 0.3 / self.NUM_PREDICTIONS  # Tie-breaking / smoothing noise added to predictions
 
         # Implementation details: private reserved redis keys and prefixes.
-        self._obscurity = (obscurity or "09909-OBSCURE-c94748") + self.SEP
+        self._obscurity = (obscurity or "obscure") + self.SEP
         self._RESERVE = self._obscurity + "reserve"  # Reserve of credits fed by rare cases when all models miss wildly
         self._OWNERSHIP = self._obscurity + "ownership"  # Official map from name to write_key
         self._NAMES = self._obscurity + "names"  # Redundant set of all names (needed for random sampling when collecting garbage)
@@ -79,8 +81,12 @@ class RedizConventions(object):
         return 18
 
     @staticmethod
+    def is_plain_name(name: str):
+        return RedizConventions.is_valid_name(name) and not "~" in name
+
+    @staticmethod
     def is_valid_name(name: str):
-        name_regex = re.compile(r'^[-a-zA-Z0-9_.:]{1,200}\.[json,HTML]+$', re.IGNORECASE)
+        name_regex = re.compile(r'^[-a-zA-Z0-9_~.:]{1,200}\.[json,html]+$', re.IGNORECASE)
         return (re.match(name_regex, name) is not None) and (not RedizConventions.sep() in name)
 
     @staticmethod
@@ -449,14 +455,12 @@ class RedizConventions(object):
     # --------------------------------------------------------------------------
 
 
-
-
-    def zcurve_name(self, names, delay):
+    def zcurve_name(self, names, delay, obscure=False):
         """ Naming convention for derived quantities, called zcurves """
         basenames = [n.split('.')[-2] for n in names]
         prefix    = "z" + str(len(names))
-        clearbase = "~".join( [prefix] + basenames + [delay] )
-        return RedizConventions.hash(clearbase)+'.json'
+        clearbase = "~".join( [prefix] + basenames + [str(delay)] )
+        return clearbase+'.json' if not obscure else RedizConventions.hash(clearbase)+'.json'
 
     @staticmethod
     def morton_scale(dim):
@@ -471,7 +475,7 @@ class RedizConventions(object):
         """ A mapping from R^n -> R based on the Morton z-curve """
         dim = len(prctls)
         if dim==1:
-            return self.to_zscores(prctls)
+            return self.to_zscores(prctls)[0]
         else:
             SCALE = RedizConventions.morton_scale(dim)
             int_prctls = [ int(math.floor(p*SCALE)) for p in prctls ]
@@ -510,8 +514,8 @@ class RedizConventions(object):
         else:
             num_reps = int( math.ceil( self.NUM_PREDICTIONS / num ) )
             empirical_samples =  ( lagged_values*num_reps )[:self.NUM_PREDICTIONS]
-            population_std = np.nanstd( empirical_samples )
-            noise = population_std/num
+            population_std = np.nanstd( empirical_samples ) if num>5 else 1.0
+            noise = (population_std/num)
         jiggle = list(np.random.randn(self.NUM_PREDICTIONS))
         predictions = [ x+noise*epsilon for x,epsilon in zip( empirical_samples, jiggle) ]
         return sorted(predictions)

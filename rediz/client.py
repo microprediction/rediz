@@ -21,6 +21,11 @@ def dump(obj,name="tmp_client.json"):
     if DEBUGGING:
         json.dump(obj,open(name,"w"))
 
+def client():
+    """ Create client from private config """
+    from .redis_config import REDIZ_CONFIG
+    return Rediz(**REDIZ_CONFIG)
+
 class Rediz(RedizConventions):
 
     # Initialization
@@ -29,7 +34,9 @@ class Rediz(RedizConventions):
         # Set some system parameters
         lagged_len  = kwargs.pop('lagged_len', None)
         history_len = kwargs.pop('history_len', None )
-        super().__init__(lagged_len=lagged_len, history_len=history_len)
+        delays = kwargs.pop('delays', None)
+        obscurity = kwargs.pop('obscurity', None)
+        super().__init__(lagged_len=lagged_len, history_len=history_len, delays=delays, obscurity=obscurity)
         # Initialize Rediz instance. Expects host, password, port   ... or default to fakeredis
         self.client  = self.make_redis_client(**kwargs)
 
@@ -122,17 +129,18 @@ class Rediz(RedizConventions):
             return self._get_messages_implementation(name=name,write_key=write_key)
 
 
-
     # --------------------------------------------------------------------------
     #            Public interface  (set/delete)
     # --------------------------------------------------------------------------
 
     def set( self, name, value, write_key, budget=10 ):
         """ Set name=value and initiate clearing, derived zscore market etc """
+        assert RedizConventions.is_plain_name(name),"Expecting plain name"
         return self._set_implementation(name=name, value=value, write_key=write_key, return_args=None, budget=budget, with_percentiles=True )
 
     def mset(self,names:NameList, values:ValueList, write_keys:KeyList, budgets:List[int] ):
         """ Apply set() for multiple names and values """
+        assert all( (RedizConventions.is_plain_name(name) for name in names) ),"Plain names only"
         with_copulas = sum(budgets)>=len(names)**3
         return self._set_implementation(names=names, values=values, write_keys=write_keys, return_args=None, budgets=budgets, with_percentiles=True, with_copulas=with_copulas )
 
@@ -148,7 +156,11 @@ class Rediz(RedizConventions):
         """ Supply scenarios for scalar value taken by name
                values :   [ float ]  len  self.NUM_PREDICTIONS
         """
-        return self._predict_implementation( name, values, delay, write_key )
+        assert len(values)==self.NUM_PREDICTIONS
+        assert delay in self.DELAYS
+        assert self.is_valid_key(write_key)
+        fvalues = list(map(float,values))
+        return self._predict_implementation( name=name, values=values, delay=delay, write_key=write_key )
 
     # --------------------------------------------------------------------------
     #            Public interface  (subscription)
@@ -255,7 +267,7 @@ class Rediz(RedizConventions):
             if self.is_scalar_value(v):
                 for delay_ndx, delay in enumerate(self.DELAYS):
                     if np.random.rand()<1/self.NUM_PREDICTIONS or pools[nm][delay_ndx]==0:
-                        self._baseline_prediction( name=nm, value=v, write_key=wk )
+                        self._baseline_prediction( name=nm, value=v, write_key=wk, delay=delay )
 
         # Rewards, percentiles
         # Settlement also triggers the derived market for zscores
@@ -277,7 +289,8 @@ class Rediz(RedizConventions):
         assert len(prctls)==len(names)
         exec_args = [ arg for arg in return_args if arg in ['name','write_key','value']]
         titles = self._coerce_outputs(execution_log=execution_log, exec_args=exec_args)
-        for title,prctl in zip(titles,prctls):
+        for title in titles:
+            prctl = prctls[title["name"]]
             if prctl is not None:
                 title.update( {"percentiles":prctl} )
         return titles[0] if singular else titles
@@ -801,7 +814,12 @@ class Rediz(RedizConventions):
                      move_pipe.zadd(name=destination,mapping=value_as_dict)
                      owners  = [self._scenario_owner(ticket) for ticket in value_as_dict.keys()]
                      unique_owners = list(set(owners))
-                     move_pipe.sadd(self._OWNERS + destination, *unique_owners)
+                     from redis.exceptions import DataError
+                     try:
+                         move_pipe.sadd( self._OWNERS + destination, *unique_owners)
+                     except DataError:
+                         print("Unique owners are "+str(list(unique_owners)))
+                         print("Failed to insert prediction ",self._OWNERS + destination)
              else:
                  raise Exception("bug - missing case ")
 
@@ -815,14 +833,15 @@ class Rediz(RedizConventions):
     #            Implementation  (prediction and settlement)
     # --------------------------------------------------------------------------
 
-    def _baseline_prediction(self, name, value, write_key ):
+    def _baseline_prediction(self, name, value, write_key, delay ):
+        # As a finer point, we should really be using the delay times here and sampling by time not lag ... but it is just a lazy benchmark anyway
         lagged_values = self._get_lagged_implementation(name, with_times=False, with_values=True, to_float=True, start=0, end=None, count=self.NUM_PREDICTIONS)
         predictions = self.empirical_predictions(lagged_values=lagged_values)
-        return self._predict_implementation( name=name, values=predictions, write_key=write_key )
+        return self._predict_implementation( name=name, values=predictions, write_key=write_key, delay=delay )
 
     def _predict_implementation(self, name, values, write_key, delay=None, delays=None):
-        """ Supply paths """
-        if delays is None and delays is None:
+        """ Supply scenarios """
+        if delays is None and delay is None:
             delays = self.DELAYS
         elif delays is None:
             delays = [ delay ]
@@ -830,9 +849,9 @@ class Rediz(RedizConventions):
         if len(values)==self.NUM_PREDICTIONS and self.is_valid_key(write_key
                 ) and all( [ isinstance(v,(int,float) ) for v in values] ) and all (delay in self.DELAYS for delay in delays):
             # Jigger sorted predictions
-            values.sort()
             noise =  np.random.randn(self.NUM_PREDICTIONS).tolist()
             jiggered_values = [v + n*self.NOISE for v, n in zip(values, noise)]
+            jiggered_values.sort()
             predictions = dict([(self._format_scenario(write_key=write_key, k=k), v) for k, v in enumerate(jiggered_values)])
 
             # Open pipeline
@@ -889,8 +908,8 @@ class Rediz(RedizConventions):
         retrieved = retrieve_pipe.execute()
 
         # Compute percentiles by zooming out the selection
-        prctl_names      = list()   # prctl vectors are longer as they include delays
-        percentiles = dict([(name, dict( (d,0.5) for d in self.DELAYS  )) for name in names])
+        some_percentiles = False
+        percentiles = dict([(name, dict( (d,0.5) for d in range(len(self.DELAYS))  )) for name in names])
         if with_percentiles:
             for name in names:
                 pools = [retrieved[pools_lookup[name][delay_ndx]] for delay_ndx in range(num_delay) ]
@@ -898,7 +917,7 @@ class Rediz(RedizConventions):
                     for delay_ndx, pool in enumerate(pools):
                         assert pool == retrieved[ pools_lookup[name][delay_ndx] ]  # Just checkin
                         participant_set = retrieved[ participants_lookup[name][delay_ndx] ]
-                        if pool and len(participant_set) > 1:
+                        if pool and len(participant_set) >= 1:
                             # Zoom out window for percentiles ... want a few so we can average zscores
                             # from more than one contributor, hopefully leading to more accurate percentiles
                             percentile_scenarios = list()
@@ -906,6 +925,7 @@ class Rediz(RedizConventions):
                                 if len(percentile_scenarios) < 10:
                                     _ndx = scenarios_lookup[name][delay_ndx][window_ndx]
                                     percentile_scenarios = retrieved[_ndx]
+                                    some_percentiles = True
                             percentiles[name][delay_ndx] = self._zmean_scenarios_percentile(percentile_scenarios=percentile_scenarios)
 
         # Rewards
@@ -923,7 +943,7 @@ class Rediz(RedizConventions):
                         rewarded_scenarios = list()
                         for window_ndx in range(num_windows):
                             if len(rewarded_scenarios) == 0:
-                                _ndx = scenarios_lookup[delay_ndx][window_ndx]
+                                _ndx = scenarios_lookup[name][delay_ndx][window_ndx]
                                 rewarded_scenarios = retrieved[_ndx]
 
                         game_payments = self._game_payments(pool=pool, participant_set=participant_set, rewarded_scenarios=rewarded_scenarios)
@@ -944,7 +964,7 @@ class Rediz(RedizConventions):
         # By default mset() creates a derivative market for the market-implied z-scores
         # If the budget is large enough, it also creates copula markets on z-curves based
         # on permutations of the market implied percentiles
-        if with_percentiles and prctl_names:
+        if with_percentiles and some_percentiles:
             z_budgets = list()
             z_names   = list()
             z_curves  = list()
@@ -962,8 +982,8 @@ class Rediz(RedizConventions):
                     dim              = len(selection)
                     z_budget         = int( math.ceil( sum( [ budgets[o] for o in selection ] ) / (dim**3) ) )
                     selected_prctls  = [ percentiles1[o] for o in selection ]
-                    zcurve_value     = RedizConventions.to_zcurve(selected_prctls)
-                    zname            = RedizConventions.zcurve_name(selected_names, delay)
+                    zcurve_value     = self.to_zcurve(selected_prctls)
+                    zname            = self.zcurve_name(selected_names, delay)
                     z_names.append(zname)
                     z_budgets.append(z_budget)
                     z_curves.append(zcurve_value)
