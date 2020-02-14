@@ -27,7 +27,7 @@ setup(
     test_suite='pytest',
     tests_require=['pytest'],
     include_package_data=True,
-    install_requires=["threezaconventions","fakeredis","redis","sortedcontainers"],
+    install_requires=["threezaconventions","fakeredis","redis","sortedcontainers","numpy"],
     entry_points={
         "console_scripts": [
             "rediz=rediz.__main__:main",

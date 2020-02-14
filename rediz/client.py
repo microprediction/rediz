@@ -482,10 +482,11 @@ class Rediz(RedizConventions):
         pipe.set(name=name_of_copy, value=value, ex=promise_ttl)
 
         # (1.5) Update the time to live for predictions and samples
+        distribution_ttl = self._cost_based_distribution_ttl(budget=budget)
         for delay in self.DELAYS:
-            pipe.expire(name=self._samples_name(name=name,delay=delay),time=ttl)
-            pipe.expire(name=self._sample_owners_name(name=name,delay=delay), time=ttl)
-            pipe.expire(name=self._predictions_name(name=name,delay=delay), time=ttl)
+            pipe.expire(name=self._samples_name(name=name,delay=delay),time=distribution_ttl)
+            pipe.expire(name=self._sample_owners_name(name=name,delay=delay), time=distribution_ttl)
+            pipe.expire(name=self._predictions_name(name=name,delay=delay), time=distribution_ttl)
 
         # (2) Decide how to store: lags, history or neither, but always use exactly six operations
         len_in = len(pipe)
@@ -561,6 +562,11 @@ class Rediz(RedizConventions):
         else:
             return 0
 
+    def _expire_derivatives(self, names):
+        expire_pipe  = self.client.pipeline()
+        for name in self.zcurve_names(names):
+            self.client.expire(name)
+        expire_pipe.execute()
 
     def _delete_implementation(self, names, *args):
         """ Removes all traces of name """
@@ -626,6 +632,7 @@ class Rediz(RedizConventions):
         delete_pipe.hdel(self._ownership_name(),*names)
 
         del_exec = delete_pipe.execute()
+
         return sum( ( 1 for r in del_exec if r ) )
 
      # --------------------------------------------------------------------------
@@ -807,7 +814,8 @@ class Rediz(RedizConventions):
          move_pipe = self.client.pipeline(transaction=True)
          for value, destination, method in zip(source_values, destinations, methods):
              if method == 'copy':
-                 move_pipe.set(name=destination,value=value)
+                 delay_ttl = max(self.DELAYS)+self._DELAY_GRACE+5*60
+                 move_pipe.set(name=destination,value=value,ex=delay_ttl)
              elif method == 'predict':
                  if len(value):
                      value_as_dict = dict(value)
@@ -954,9 +962,14 @@ class Rediz(RedizConventions):
                     for (recipient, amount) in payments.items():
                         rescaled_amount = budget * float(amount)
                         pipe.hincrbyfloat(name=self._BALANCES, key=recipient, amount=rescaled_amount)
-                        transaction_record = {"name": name, "amount": rescaled_amount}
-                        pipe.xadd(name=self.transactions_name(write_key=recipient), fields=transaction_record)
-                        pipe.expire(name=self.transactions_name(recipient), time=self._TRANSACTIONS_TTL)
+                        write_code = RedizConventions.hash(write_key)
+                        transaction_record = {"name": name, "write_code":write_code, "amount": rescaled_amount}
+                        key_trans_name = self.transactions_name(write_key=write_key)
+                        name_trans_name = self.transactions_name(name=name)
+                        pipe.xadd(name=key_trans_name, fields=transaction_record)
+                        pipe.xadd(name=name_trans_name, fields=transaction_record)
+                        pipe.expire(name=key_trans_name, time=self._TRANSACTIONS_TTL)
+                        pipe.expire(name=name_trans_name, time=self._TRANSACTIONS_TTL)
 
         pipe.execute()
 
@@ -964,6 +977,7 @@ class Rediz(RedizConventions):
         # By default mset() creates a derivative market for the market-implied z-scores
         # If the budget is large enough, it also creates copula markets on z-curves based
         # on permutations of the market implied percentiles
+        some_derived=False
         if with_percentiles and some_percentiles:
             z_budgets = list()
             z_names   = list()
@@ -972,10 +986,10 @@ class Rediz(RedizConventions):
             for delay_ndx, delay in enumerate(self.DELAYS):
                 percentiles1 = [ percentiles[name][delay_ndx] for name in names ]
                 num_names = len(names)
-                selections1 = list(itertools.permutations(list(range(num_names)), 1))
+                selections1 = list(itertools.combinations(list(range(num_names)), 1))
                 if with_copulas and num_names<=10:
-                    selections2 = list(itertools.permutations(list(range(num_names)), 2))[:720]
-                    selections3 = list(itertools.permutations(list(range(num_names)), 3))[:90]
+                    selections2 = list(itertools.combinations(list(range(num_names)), 2))
+                    selections3 = list(itertools.combinations(list(range(num_names)), 3))
                 selections = selections1 + selections2 + selections3
                 for selection in selections:
                     selected_names   = [ names[o] for o in selection ]
@@ -988,7 +1002,8 @@ class Rediz(RedizConventions):
                     z_budgets.append(z_budget)
                     z_curves.append(zcurve_value)
                     z_write_keys.append(write_key)
-            self._set_implementation(budgets=z_budgets, names=z_names, values=z_curves, write_keys=z_write_keys, with_percentiles=False, with_copulas=False )
+            if z_names:
+                self._set_implementation(budgets=z_budgets, names=z_names, values=z_curves, write_keys=z_write_keys, with_percentiles=False, with_copulas=False )
         return percentiles
 
     def _zmean_scenarios_percentile(self, percentile_scenarios):
@@ -1161,8 +1176,8 @@ class Rediz(RedizConventions):
             all_names = [name] + derived + private_derived
         else:
             all_names = [name] + derived
-        for derived_name in all_names:
-            mem_pipe.memory_usage(derived_name)
+        for n in all_names:
+            mem_pipe.memory_usage(n)
         exec = mem_pipe.execute()
         report_data = list()
         for derived_name, mem in zip(all_names, exec):

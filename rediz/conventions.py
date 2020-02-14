@@ -18,7 +18,8 @@ SEP = "::"
 
 class RedizConventions(object):
 
-    def __init__(self,history_len=None, lagged_len=None, delays=None, error_ttl=None, error_limit=None, num_predictions=None,
+    def __init__(self,history_len=None, lagged_len=None, delays=None, max_ttl=None, error_ttl=None, transactions_ttl=None,
+                  error_limit=None, num_predictions=None,
                   obscurity=None, delay_grace=None, instant_recall=None ):
         self.SEP = SEP
         self.COPY_SEP = self.SEP + "copy" + self.SEP
@@ -63,8 +64,8 @@ class RedizConventions(object):
         self._DEFAULT_MODEL_STD = 1.0  # Noise added for self-prediction
         self._WINDOWS = [1e-4, 1e-3,  1e-2]  # Sizes of neighbourhoods around truth used in countback ... don't make too big or it hits performance
         self._INSTANT_RECALL = instant_recall or False
-        self._MAX_TTL = 60 * 60  # Maximum TTL, useful for testing
-        self._TRANSACTIONS_TTL = 24 * (60 * 60)  # How long to keep transactions stream for inactive write_keys
+        self._MAX_TTL = int( max_ttl or 60 * 60 ) # Maximum TTL, useful for testing
+        self._TRANSACTIONS_TTL = int( transactions_ttl or 24 * (60 * 60) )  # How long to keep transactions stream for inactive write_keys
 
     @staticmethod
     def sep():
@@ -202,8 +203,8 @@ class RedizConventions(object):
     def errors_name(self, write_key):
         return self.MESSAGES + write_key
 
-    def transactions_name(self, write_key):
-        return self.TRANSACTIONS + write_key
+    def transactions_name(self, write_key=None, name=None):
+        return self.TRANSACTIONS + write_key if write_key is not None else self.TRANSACTIONS + name
 
     def history_name(self, name):
         return self.HISTORY + name
@@ -384,7 +385,12 @@ class RedizConventions(object):
         return int( math.ceil( 10 * self.LAGGED_LEN / sz) )
 
     def _cost_based_ttl(self, value, budget):
+        """ Time to live for name implies a minimal update frequency """
         return RedizConventions._value_ttl(value=value, budget=budget, num_delays=len(self.DELAYS), max_ttl=self._MAX_TTL )
+
+    def _cost_based_distribution_ttl(self,budget):
+        """ Time to live for samples ... mostly budget independent """
+        return max(self.DELAYS)+self._DELAY_GRACE+60+budget
 
     # --------------------------------------------------------------------------
     #            Redis version/capability inference
@@ -401,7 +407,7 @@ class RedizConventions(object):
             return False
 
 
- # --------------------------------------------------------------------------
+    # --------------------------------------------------------------------------
     #           Statistics
     # --------------------------------------------------------------------------
 
@@ -454,10 +460,19 @@ class RedizConventions(object):
     #           Z-order curves
     # --------------------------------------------------------------------------
 
+    def zcurve_names(self, names):
+        import itertools
+        znames=list()
+        for delay in self.DELAYS:
+           for dim in [1,2,3]:
+                name_combinations = itertools.combinations(sorted(names),dim)
+                zname = self.zcurve_name( names=name_combinations,delay=delay )
+                znames.append(zname)
+        return znames
 
     def zcurve_name(self, names, delay, obscure=False):
         """ Naming convention for derived quantities, called zcurves """
-        basenames = [n.split('.')[-2] for n in names]
+        basenames = sorted( [n.split('.')[-2] for n in names] )
         prefix    = "z" + str(len(names))
         clearbase = "~".join( [prefix] + basenames + [str(delay)] )
         return clearbase+'.json' if not obscure else RedizConventions.hash(clearbase)+'.json'
