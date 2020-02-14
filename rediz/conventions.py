@@ -189,7 +189,7 @@ class RedizConventions(object):
         return 0 if delay is None else int(delay)
 
     def percentile_name(self, name, delay):
-        return RedizConventions.zcurve_name(names=[name],delay=delay)
+        return self.zcurve_name(names=[name],delay=delay)
 
     def identity(self, name):
         return name
@@ -519,20 +519,8 @@ class RedizConventions(object):
     # --------------------------------------------------------------------------
 
     def empirical_predictions(self, lagged_values ):
-        """ The empirical distribution, more or less """
-        # This is a benchmark model used automatically by the stream sponsor
-        lagged_values = list( map(float, lagged_values) )
-        num = len(lagged_values)
-        if num==0:
-            empirical_samples = [ 0 for _ in range(self.NUM_PREDICTIONS) ]
-            noise = 1.0
-        else:
-            num_reps = int( math.ceil( self.NUM_PREDICTIONS / num ) )
-            empirical_samples =  ( lagged_values*num_reps )[:self.NUM_PREDICTIONS]
-            population_std = np.nanstd( empirical_samples ) if num>5 else 1.0
-            noise = (population_std/num)
-        jiggle = list(np.random.randn(self.NUM_PREDICTIONS))
-        predictions = [ x+noise*epsilon for x,epsilon in zip( empirical_samples, jiggle) ]
+        from rediz.samplers import exponential_bootstrap
+        predictions = exponential_bootstrap(lagged=lagged_values, decay=0.005, num=self.NUM_PREDICTIONS)
         return sorted(predictions)
 
     # --------------------------------------------------------------------------

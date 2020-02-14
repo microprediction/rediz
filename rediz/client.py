@@ -276,23 +276,22 @@ class Rediz(RedizConventions):
             if self.is_scalar_value(values[0]):
                 prctls = [self._settle(name=name, value=float(values[0]), budget=budgets[0], with_percentiles=with_percentiles, write_key=write_keys[0])]
             else:
-                prctls = [None]
+                prctls = None
         else:
             # TODO: Allow a mix of valid/invalid here
             if all( self.is_scalar_value(v) for v in values ):
                 fvalues = list(map(float, values))
                 prctls = self._msettle(names=names, values=fvalues, budgets=budgets, with_percentiles=with_percentiles, write_keys=write_keys, with_copulas=with_copulas)
             else:
-                prctls = [None for _ in names]
+                prctls = None
 
         # Coerce execution log and maybe add percentiles
-        assert len(prctls)==len(names)
         exec_args = [ arg for arg in return_args if arg in ['name','write_key','value']]
         titles = self._coerce_outputs(execution_log=execution_log, exec_args=exec_args)
-        for title in titles:
-            prctl = prctls[title["name"]]
-            if prctl is not None:
-                title.update( {"percentiles":prctl} )
+        if prctls is not None:
+            for title in titles:
+                if title["name"] in prctls:
+                    title.update( {"percentiles":prctls[title["name"]]} )
         return titles[0] if singular else titles
 
 
@@ -977,7 +976,7 @@ class Rediz(RedizConventions):
         # By default mset() creates a derivative market for the market-implied z-scores
         # If the budget is large enough, it also creates copula markets on z-curves based
         # on permutations of the market implied percentiles
-        some_derived=False
+
         if with_percentiles and some_percentiles:
             z_budgets = list()
             z_names   = list()
@@ -1086,7 +1085,7 @@ class Rediz(RedizConventions):
                 for delay_ndx, delay in enumerate(self.DELAYS):
                     if delay_ndx in percentiles:
                         prctl = percentiles[delay_ndx]
-                        prctl_name = self.percentile_name(name=name,delay=delay,write_key=write_key)
+                        prctl_name = self.percentile_name(name=name,delay=delay)
                         self._set_implementation(budget=percentile_budget, name=prctl_name, value=prctl, write_key=write_key, with_percentiles=False)
 
             if len(payments):

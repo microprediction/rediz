@@ -22,9 +22,9 @@ def do_test_delay(rdz):
     rdz._delete_implementation(NAME)
     time.sleep(0.1)
     WRITE_KEY = "6d77759b-685a-4e25-b75b-6619bf1f1119"
-    assert len( rdz.set( name = NAME,  value = "living in the past",  write_key=WRITE_KEY ) )
+    prctl = rdz.set( name = NAME,  value = "living in the past",  write_key=WRITE_KEY )
     time.sleep(4)
-    assert len( rdz.set( name = NAME,  value = "living in the present",  write_key=WRITE_KEY ) )
+    prctl = rdz.set( name = NAME,  value = "living in the present",  write_key=WRITE_KEY )
     time.sleep(3)
     assert rdz.admin_promises()>0
     delayed_value = rdz.get_delayed(name=NAME,delay=1 )
