@@ -7,7 +7,12 @@ Rediz is a Python package that provides for a shared, specialized use of Redis i
 
 ### TLDR:
 
-At www.3za.org the Rediz library is used to create a public read, write permission-based shared remote database that anyone can publish data streams to for a nominal cost of their choosing (as little as 0.0001 USD per update). An update overwrites a value in this database keyed by a name (a string, synonymous with a URL at www.3za.org). People publish streams because it is a very cost effective way to receive predictions and insight (such as suggestions for causally related data) and in some cases advances civic and scientific goals. Stream ownership take the form of a write_key (usually a UUID). Every stream update, which is to say a set() or mset(), triggers an extremely lightweight reward mechanism which distributes credits to those making accurate probabilistic micro-forecasts. Rediz is not designed to replace prediction markets aimed at human participation but rather, real-time out of sample Machine Learning and statistical battles between algorithms that might be deployed as running processes or microservices.  
+At www.3za.org the Rediz library is used to create a public read, write permission-based shared remote database that anyone can publish data streams to for a
+ nominal cost. An update overwrites a value in this database keyed by a name (a string, synonymous with a URL at www.3za.org). People publish streams because it is a very cost
+ effective way to receive predictions and insight (such as suggestions for causally related data). Every stream update, which is to say a set() or mset(), triggers a reward
+ mechanism distributing credits to those providing prescient scenarios. 
+ 
+ Rediz can process several hundred thousand contributed scenarios per second - which is somewhat comparable to Nasdaq processing a similar number of orders.   
 
 ### Publishing live data
 
@@ -17,27 +22,29 @@ The use pattern for consumers of "microprediction" involves repeatedly publishin
       my_secret_key="eae775f3-a33a-4105-ab8f-77336b0a3921"
       while True:
           time.sleep(15)
-          value = measure_somehow()
-          assert rdz.set(name='air-pressure-06820.json',write_key=my_secret_key,value=value)        
+          value  = measure_somehow()
+          prctl  = rdz.set(name='air-pressure-06820.json',write_key=my_secret_key,value=value)        
+
+The set() command returns a kind of market-implied percentile. Thus Rediz can be used to convert any data into uniformly distributed data. 
 
 #### Ownership (write_key)
 
-Prior to calling set() the user should be in possession of a hard to guess write_key. For instance:  
+Prior to calling set() the user should be in possession of a hard to guess write_key. 
 
-     write_key = str(uuid.uuid4())
      write_key = rdz.random_key()
 
-Calling set() the first time claims the name. The example will fail, naturally, if the name 'air-pressure-06820.json' was already taken. It is also possible to use the following style:  
+If obscurity is desired this style can also work:  
 
-     title = rdz.new(value=123.5)
+     title = rdz.random_title()
      rdz.set(**title, value=134.5)
-     rdz.set(**title, value=134.5)
+     rdz.set(**title, value=137.1)
 
-whereupon Rediz generates a write_key for the user and, if not supplied, also a random name.
+whereupon Rediz generates a write_key for the user and also a random stream name.
 
 #### Naming rules
 
-RedizConventions documents naming rules. Names are restricted so they can be synonymous with URLs without the need for escaping (and in the future, so they can be synonymous with AWS SNS message topics). Names cannot contain double colons as these carry a special significance in Rediz discussed below.  
+The RedizConventions class documents naming rules. Speaking loosely, names should be web friendly (no URL escaping) and SNS topic friendly. 
+Names cannot contain double colons as these carry a special significance in Rediz.  
 
 #### Value types
 
@@ -135,41 +142,103 @@ However as noted, owners can always make their names obscure.
 
 ### Prediction
 
-The primary motivation for using Rediz is short term prediction. Rediz is not an analytics package per se but rather, orchestrates incentive based prediction by other packages and humans. As data arrives, rewards for accurate prediction are computed in an incremental manner. This updates balances attached to write_keys.
+The primary motivation for using Rediz is short term prediction. Although rediz.samplers contains some rudimentary methods, Rediz is not intended to be an
+analytics package per se but rather, a way of orchestrating incentive based prediction. As data arrives, rewards for accurate prediction are computed in
+an incremental manner. 
 
-The user creating a stream through repeated use of set() does not need to take any further action in order that prediction occur. They need only browse the results which will, hopefully, become more accurate over time.  The stream of credits provided by set() or mset() subsidizes an otherwise zero-sum game played between contributors. The default subsidy is 1 unit with set() and 1000 units with mset().
+#### Accounting 
 
-#### Predictable values (scalar only for now)
+A set() triggers updates to balances to write_keys. Balances can be read by those possessing the write_key. 
 
-At present only scalar data is predicted. This means the set() operation should be similar to:
+         get_balance(self, write_key )
+
+The user creating a stream through repeated use of set() does not need to take any further action in order that prediction occur. 
+They need only browse the results which will, hopefully, become more accurate over time.  The stream of credits provided by set() or mset() subsidizes
+ an otherwise zero-sum game played between contributors. 
+
+#### Providing a univariate time series stream for prediction 
+
+For the simplest kind of prediction use set()
 
     rdz.set(name='air-pressure-06820.json',write_key=my_secret_key,value=26.2)  
 
-The scalar data is assumed to be continuous. Soon, Rediz prediction will provide better support for:  
+to predict univariate time series data predictions (samples) accessed via: 
 
-- Low dimensional continuous valued data (e.g. R^3, R^4)
-- High dimensional continuous valued data (e.g. R^15, R^50)   
-- Dictionary style data
-- Categorical data
-- Ordinal data
-- Two dimensional geospatial data (lat/long in geohash)
+    rdz.get_predictions(name='air-pressure-06820.json', delay=15)
+    
+or directly 'predictions::15::air-pressure-06820.json' 
 
-Cunning users may already be able to use existing Rediz scalar prediction to effect some of these cases.
+#### Providing multivariate time series streams for multivariate prediction 
 
-#### Providing predictions
+The set() command also accepts a vector quantity. However this will not trigger prediction. Instead, mset() should be called: 
 
-Predictions of a data stream can be made by anyone supplying a set of value scenarios and a write_key.
+     names  = [ 'airp-06820.json', 'airp-06821.json', 'airp-06821.json' ]
+     values = [ 26.2, 33.4, 44.1 ]
+     write_keys = [ write_key for _ in names ]
+     budgets = [ 100, 100, 100 ]
+     rdz.mset(names=names,values=values, budgets=budgets, write_keys=write_keys) 
 
-    rdz.predict(name="air-pressure-06820.json", write_key="my-obscure-key-81763198236891632", values = my_scenarios)
+This initiates prediction of each of the three variables. However it also creates derived (implied) predictions
 
-where here "my_scenarios" is a list of values of the same type as the target (i.e. float for now). The list should be of standard length given by rdz.NUM_PREDICTIONS.
+- Prediction of implied percentiles 
+- Prediction of two and three dimensional implied Copulas
 
-The list of values provided can be conceptualized as a collection of Monte Carlo paths of some model, or quasi-Monte Carlo points (sigma points) providing an atomic approximation. However as the reward scheme effects a smoothing of sorts, perhaps it is most accurate to think about the values provided as a kind of basis for the distribution function. A future version of Rediz may allow for weights to be supplied.
+These derived markets are assigned names such as 
 
+    'z1~airp-06820.json'
+    'z3~airp-06820~airp-06821~airp-06821.json' 
+    
+as well as ancilliary streams such as 
+
+    delayed:15:z2~airp-06820~airp-06821~airp-06821.json
+    
+as with any name. As the reader will infer, Rediz takes a novel, multi-stage approach to multivariate prediction that is
+inspired by the theory of Copula functions. 
+
+#### Predicting univariate streams 
+
+In Rediz, prediction is synonymous with the provision of Monte Carlo paths, as distinct from a single number forecast (point estimate).  Predictions of
+ a data stream can be made by anyone supplying a set of sorted value scenarios and their own write_key (used to track their rewards). For example: 
+
+    my_scenarios = sorted(list(np.random.randn(1000)))
+    rdz.predict(name="airp-06820.json", write_key="my-obscure-key-81763198236891632", values = my_scenarios, delay=15)
+
+ The delay argument indicates the horizon in seconds. Here "my_scenarios" is a list of scalar values - the same type as the target (i.e. float). The list should be of standard length given by rdz.NUM_PREDICTIONS. The list of
+values provided can be conceptualized as a collection of samples of a probabilistic model, or perhaps quasi-Monte Carlo points (e.g. sigma points) providing
+ an atomic approximation. However as the reward scheme effects a smoothing of sorts, perhaps it is most accurate to think about the values provided
+ as basis for the distribution function. A future version of Rediz may allow for weights to be supplied alongside scenarios. 
+ 
+#### Predicting implied z-score streams 
+
+An identical call can be used to predict implied z-scores. 
+
+    my_scenarios = list(np.random.randn(1000))
+    rdz.predict(name="z1~airp-06820.json", write_key="my-obscure-key-81763198236891632", values = my_scenarios, delay=15)
+
+Implied z-scores are approximately N(0,1) independent random variables. They are computed by looking at the percentiles of submitted scenarios close to the realized outcome. 
+
+#### Predicting implied z-curve streams 
+
+Once again, an almost identical call replacing predict() with zpredict() can be used to convey opinion about the joint behaviour. 
+
+    my_scenarios = list( [ np.random.randn(3) ] for _ in range(1000) ] )
+    rdz.predict3d(name="z3~airp-06820~airp-06821~airp-06821.json", write_key="my-obscure-key-81763198236891632", values = my_scenarios, delay=15)
+
+The predict3d() method will do the following: 
+
+- Convert a three dimensional sample to a one dimensional sample. 
+- Call predict(name="z3~airp-06820~airp-06821~airp-06821.json") 
+
+The stream "z3~airp-06820~airp-06821~airp-06821.json" is a univariate stream that is roughly normally distributed. It is a matter of preference as to whether
+it is best to predict in three dimensions or one. One can alternatively call rdz.predict() directly, providing univariate samples rather than tri-variate. 
+
+The analogous function predict2d() is a convenience for predicting streams such as "z2~airp-06820~airp-06821.json"
 
 #### Benchmark prediction
 
-The owner of the stream is automatically a participant using predictions generated by Rediz. The benchmark prediction approaches the empirical distribution. As noted, the owner of the stream is typically looking to pay for accurate prediction by others so it is not important that this benchmark be extremely good, merely that there is one.
+The owner of the stream is automatically a participant using predictions generated by Rediz. 
+The benchmark prediction algorithm is found in rediz.samples. As noted, the owner of the stream is typically looking to pay for accurate
+prediction by others over and above this benchmark. 
 
 #### Collectively generated distributions
 
@@ -182,7 +251,7 @@ Contributed predictions are aggregated in two places:
 
 These database entries are sets (actually redis sorted sets) aggregating all predictions or samples from the community. The distinction is that the terminology "samples" refers to delayed predictions which are used to clear the market when a set() is performed, and represent past predictions.
 
-#### Rewards (present)
+#### Rewards
 
 Clearing refers to an incremental, instantaneous adjustment of credits that are associated to write_keys. Upon arrival of a new data point with value "y", the samples are examined and a net gain or loss is assigned to all write_keys associated with all linked delays. These quantities sum to zero, though typically the net gain to the owner of the stream will be negative allowing other linked streams to gain credits on average. If N=1000 say is the number of samples provided by each participant and there are P participants then:
 
@@ -190,11 +259,7 @@ Clearing refers to an incremental, instantaneous adjustment of credits that are 
 - Entries inside the ball are rewarded P/(N*W)
 - For entries outside the ball, a reward of -1/N is assigned.
 
-Rewards sum to zero.
-
-#### Rewards (proposed)
-
-As noted it may be possible to provide weighted samples soon.
+Rewards sum to zero. As noted it may be possible to provide weighted samples soon. In that event the rules may change somewhat: 
 
 - Weighted samples (w,z) in a neighborhood (ball) of y radius h are selected, with h increased if necessary to include approximately M samples.   
 - For entries in the ball, positive rewards R(w,z) proportional to w and a kernel K(x,y) are computed.
@@ -248,6 +313,8 @@ is in credits where 1 credit=0.0001 USD.
 
 #### Creation and maintenance of streams
 
+This section is lagging implementation... best to read the interface section of the code 
+
 | Publishing    | Key(s)? |  Cost |  Interpretation                  | Done? |   
 |---------------|---------|-------|----------------------------------|-------|
 | set           | Yes     |  1    | Create/modify value at one name  | Y     |
@@ -265,7 +332,7 @@ is in credits where 1 credit=0.0001 USD.
 |---------------|---------|-------|----------------------------------|-------|
 | get           | No      |  0    | Retrieve a value (one name)      | Y     |
 | mget          | No      |  0    | Retrieve from many names         | Y     |
-| history       | No      |  0    | Shorthand for get("history::.."")| N     |
+| get_history       | No      |  0    | Shorthand for get("history::.."")| N     |
 | delayed       | No      |  0    | Shorthand for get("delayed::.."")| N     |
 | card          | No      |  0    | Count of all names               | Y     |
 | exists        | No      |  0    | Count names that exist in a list | Y     |
@@ -355,7 +422,7 @@ Rediz can also be instantiated with no host, in which case fakeredis will be use
 
 ### Implementation
 
-A manifest of Redis keys used.
+A manifest of Redis keys used. This section lags implementation. 
 
 #### Prefix pages
 
@@ -411,33 +478,42 @@ Promises take values looking like SOURCE::method::DESTINATION
 
 
 
-
-
-
 ### General discussion
 
 We refer the reader to www.3za.org for more information about the motivation for Rediz.
 
-#### Theory
+#### Related theory
 
-Through judicious choice of parameters this reward scheme includes as special cases some well known mechanisms - notably the parimutuel in the case of categorical data though that is not the intended focus. Another useful point of comparison is so-called implicit maximum Likelihood estimation. Some theoretical observations informing the reward mechanism include the following:
+Through judicious choice of parameters this reward scheme includes as special cases some well known mechanisms - notably the parimutuel in the case of
+ categorical data (not the intended focus). Another useful point of comparison is so-called implicit maximum Likelihood estimation. Some theoretical observations informing the reward mechanism include the following:
 - A log-wealth maximizing investor constrained to invest all wealth has incentive to contribute paths that reflect her unbiased assessment of the joint distribution, irrespective of paths supplied by others.
 - In the case where a contributor adjusts model parameters and then supplies samples from that model, it can be shown that minimizing expected squared distance to the nearest point is equivalent to Maximum Likelihood estimation of the model parameters.
 
 See https://arxiv.org/abs/1809.09087 for a proof of the second statement and http://finmathblog.blogspot.com/2013/11/keeping-punters-log-happy-some.html for the first. However when players are allowed to form coalitions, a possible future feature, the interpretation is more complex.
 
+
+
+#### Volumetrics 
+
+Using rediz.NUM_PREDICTIONS=1000, Rediz has been tested at a rate of approximately 100,000 scenario submissions per second. This is comparabl to the number of orders processed by Nasdaq. 
+
 #### Comparison to prediction markets and related packages
 
-To our knowledge Rediz differs from existing software in the broad category of statistical aggregation with economic incentives. This
- category includes such things as prediction markets, exchanges, data science contests and crowdsourcing. The approach taken herein differs
- in engineering aspects as well as focus (streaming public data).
+To our knowledge Rediz differs markedly from existing software in the broad category of statistical aggregation with economic incentives. This
+ category includes such things as prediction markets, exchanges, combinatorial auctions, data science contests and crowdsourcing. High volume streams
+  of contributions are anticipated, with throughput commensurate with high volume financial exchanges such as Nasdaq. 
 
-- Clearing operations are O(1)  
-- There is no temporal state (e.g. limit orders, wagers), only guaranteed data delays and samples.
-- Settlement is instantaneous.
-- Every quantity has a distributional estimate.
+Some notable aspects of Rediz:
 
-The last statement refers back to the fact that every data stream predicts itself - albeit somewhat poorly as a Dirac distribution centered on the last value. Maintainers of streams can use mset() rather than set() to increase the subsidy beyond one credit.    
+- There are no point estimates. 
+- Clearing operations are O(1).   
+- There is little temporal state (e.g. limit orders, wagers) - only quarantine. 
+- Settlement is instantaneous upon arrival of the ground truth. 
+- Joint probabilities are predicted by means of space filling curves. 
+
+Rediz exploits, and explores, the interplay between space filling curves and Copula theory. However by arranging 3-margin derived predictions, Rediz also 
+provides the consumer of prediction with more information about the joint distribution than Sklar's theorem can handle. 
+
 
 #### Improvements
 

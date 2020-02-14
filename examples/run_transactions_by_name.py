@@ -10,10 +10,10 @@ if __name__ == '__main__':
     all_trans = [ (k,rdz.client.ttl(k),rdz.client.memory_usage(k)) for k in all_keys if rdz.TRANSACTIONS in k ]
 
     pprint.pprint(all_trans[:5])
+    if all_trans:
+        example_trans = all_trans[0]
+        trans = rdz.client.xrange(example_trans[0])
+        pprint.pprint(trans)
 
-    example_trans = all_trans[0]
-    trans = rdz.client.xrange(example_trans[0])
-    pprint.pprint(trans)
-
-    balances = rdz.client.hgetall(rdz._BALANCES)
-    pprint.pprint(balances)
+        balances = rdz.client.hgetall(rdz._BALANCES)
+        pprint.pprint(balances)

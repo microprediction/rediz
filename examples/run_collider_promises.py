@@ -1,11 +1,7 @@
 
-import requests, time
+import time
 from rediz.collider_config_private import REDIZ_COLLIDER_CONFIG
 from rediz.client import Rediz
-import asyncio
-import aiohttp
-import json
-import numpy as np
 
 if __name__ == '__main__':
     rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
