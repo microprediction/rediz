@@ -1,6 +1,5 @@
 
 
-
 ## REDIZ
 
 Rediz is a Python package that provides for a shared, specialized use of Redis in the context of open, collective live data prediction.
@@ -16,7 +15,8 @@ People create data streams by repeatedly calling set() because it is a cost effe
  - Anomaly detection
  - Assessent of the predictive value of the data 
   
- and other insights including the identities of streams that might be causally related. 
+ and other insights including the identities of streams that might be causally related. Rediz is especially well suited to community prediction of civic data streams such as 
+ transport, water, electricity and so on. 
   
 ### Publishing live data
 
@@ -270,20 +270,11 @@ These database entries are sets (actually redis sorted sets) aggregating all pre
 
 #### Rewards
 
-Clearing refers to an incremental, instantaneous adjustment of credits that are associated to write_keys. Upon arrival of a new data point with value "y", the samples are examined and a net gain or loss is assigned to all write_keys associated with all linked delays. These quantities sum to zero, though typically the net gain to the owner of the stream will be negative allowing other linked streams to gain credits on average. If N=1000 say is the number of samples provided by each participant and there are P participants then:
+Submitted scenarios are eligible if they have been quarantined for the minimum time period. 
 
-- Samples z in a neighborhood (ball) of y radius h are selected, with h increased if necessary so there is at least one winner. There are W winners.
+- We find W winners in a neighborhood (ball) of radius h around the revealed ground truth. 
 - Entries inside the ball are rewarded P/(N*W)
-- For entries outside the ball, a reward of -1/N is assigned.
-
-Rewards sum to zero. As noted it may be possible to provide weighted samples soon. In that event the rules may change somewhat: 
-
-- Weighted samples (w,z) in a neighborhood (ball) of y radius h are selected, with h increased if necessary to include approximately M samples.   
-- For entries in the ball, positive rewards R(w,z) proportional to w and a kernel K(x,y) are computed.
-- For entries outside the ball, zero reward is assigned.
-- All rewards are translated so that they sum to zero.
-
-Clearing rewards sample contributors who provide samples in previously under-sampled regions in the distribution - which might be a joint distribution in the case of vector data.
+- Entries outside the ball are rewarded -1/N.
 
 #### Interpreting predictions
 
@@ -293,7 +284,7 @@ Subject to careful statistical interpretation, various types of projections/mome
 |----------------------------------------------|-------------------------------------|-------|
 | mean::predictions:60:air-pressure-06820.json | Mean 1 minute forecast              | No    |
 | mean::samples:600:air-pressure-06820.json    | Mean ex-post 10 min population std  | No    |
-| percentiles::predictions:600:air-pressure-06820.json    | Forecast histogram    | No    |
+| percentiles::predictions:600:air-pressure-06820.json    | Forecast histogram       | No    |
 
 
 ### Links
@@ -480,18 +471,25 @@ To our knowledge Rediz differs markedly from existing software in the broad cate
  category includes such things as prediction markets, exchanges, combinatorial auctions, data science contests and crowdsourcing. Some notable aspects of Rediz:
 
 - There are no point estimates. 
-- The online reward mechanism is constant - O(1) - in the number of participants.    
-- Joint probabilities are predicted by means of space filling curves. 
+- The online reward mechanism is constant (i.e. O(1)) in the number of participants.    
+- Joint probabilities, including 2-Copulas and 3-Copulas, are parametrized by space filling curves. 
+- Interrelated marginal, implied zscore and Copula crowd-sourcing encourages separation of concerns.   
 
 #### Possible future improvements
 
 Performance:
 - Some consolidation of multiple calls
 - Moving more of the logic from Python into Lua scripts.
+- Implement 64 bit z-curves 
 
 Features:
+- Support for weighted scenarios. 
 - Cryptographic verification of delays.
 - Exposing some time series functionality
 - Data preparation methods for commonly used plotting / blotting packages.
 - Darwinian state management (killing useless write_keys et cetera)
 - A fifth data type representing a JSON document. 
+- More mechanisms driven by links and subscriptions.
+- Integration with AutoML and other participant conveniences. 
+
+ 

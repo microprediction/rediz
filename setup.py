@@ -1,17 +1,14 @@
 import pathlib
 from setuptools import setup, find_packages
 
-# The directory containing this file
 HERE = pathlib.Path(__file__).parent
 
-# The text of the README file
 README = (HERE / "README.md").read_text()
 
-# This call to setup() does all the work
 setup(
     name="rediz",
-    version="0.0.7",
-    description="Redis usage patterns for live shared data (used at www.3za.org) ",
+    version="0.1.0",
+    description="Redis used for incentive-based distributional prediction of live data streams.",
     long_description=README,
     long_description_content_type="text/markdown",
     url="https://github.com/microprediction/rediz",
@@ -27,7 +24,7 @@ setup(
     test_suite='pytest',
     tests_require=['pytest'],
     include_package_data=True,
-    install_requires=["threezaconventions","fakeredis","redis","sortedcontainers","numpy","aiohttp"],
+    install_requires=["threezaconventions","fakeredis","redis","sortedcontainers","numpy","aiohttp","pymorton","scipy"],
     entry_points={
         "console_scripts": [
             "rediz=rediz.__main__:main",
