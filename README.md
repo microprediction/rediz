@@ -7,11 +7,17 @@ Rediz is a Python package that provides for a shared, specialized use of Redis i
 
 ### TLDR:
 
-At www.3za.org the Rediz library is used to create a public read remote database that anyone can publish data streams to for a
- nominal cost. An update overwrites a value in this database keyed by a name. A name is a string, synonymous with a URL at www.3za.org. People publish streams because it is a cost
- effective way to receive predictions and insight, such as suggestions for causally related data which can help predict the stream. Every stream update, which is to say a set() or mset(), triggers a reward
- mechanism distributing credits to those providing prescient scenarios. 
-
+At www.3za.org the Rediz library is used to create a public read database that anyone can publish to for a
+nominal cost. Streams are keyed by names (strings) that are synonymous with URL's at www.3za.org. 
+People create data streams by repeatedly calling set() because it is a cost effective way to receive:
+ - History
+ - Predictions
+ - Normalized data
+ - Anomaly detection
+ - Assessent of the predictive value of the data 
+  
+ and other insights including the identities of streams that might be causally related. 
+  
 ### Publishing live data
 
 Repeatedly publishing data to the same name creates a stream. 
@@ -39,25 +45,26 @@ If name obscurity is desired this style can also work:
 
 whereupon Rediz generates a write_key for the user and also a random stream name. The term title connotates a combination of a name and write_key. 
 
-#### Naming rules
+#### Stream name rules
 
-See the RedizConventions.is_plain_name() for naming rules. Speaking loosely, names are intended to be web friendly (no URL escaping) and topic friendly, which more or less
-reduces the possibilities to alphanumeric, underscores, colons and hyphens.  Names cannot contain double colons or tildes as these carry a special significance in Rediz.  
+See the RedizConventions.is_plain_name() for naming rules. Names are intended to be web friendly (no URL escaping) and topic friendly (e.g. SNS). This 
+leaves us with alphanumeric, hyphens, underscores, colons (discouraged) and at most one period. Lowercase is encouraged. The name extension must suggest the format. Only .json is supported at present. Names cannot
+ contain double colons or tildes as these carry a special significance in Rediz.  
 
 #### Value types
 
 Values are stored as binary strings. However the rediz library infers an implied type when set() is called. The four possibilities are
 
-| type    | Example object    |  Example string                    |
-| --------|-------------------|------------------------------------|
-| scalar  | 7.0               | '7.3'                              |
-| vector  | [6,5.3,1.0]       | '[4.0, 5.3, 11.1]'                 |
-| dict    | {"age":17}        | '{"temp": 17.3, "pressure": 55.4}' |
-| any     | "jamba-juice"     | 'something@other'                  |
+| type    | Example object    |  Example string                    | Predicted? |
+| --------|-------------------|------------------------------------|------------|
+| scalar  | 7.0               | '7.3'                              | Yes        |
+| vector  | [6,5.3,1.0]       | '[4.0, 5.3, 11.1]'                 | No         |
+| dict    | {"age":17}        | '{"temp": 17.3, "pressure": 55.4}' | No         |
+| any     | "jamba-juice"     | 'something@other'                  | No         |
 
-where "any" is a catch-all. The Rediz getter methods will typically convert from string to obj unless the user desires otherwise. The RedizConventions class document how the type
- implication is made. Future versions of Rediz may support a fifth type representing a JSON document - but this introduces a dependency on Rediz JSON package so has thus far been resisted.
-
+where "any" is a catch-all. The Rediz getter methods will typically convert from string to obj unless the user desires otherwise. The RedizConventions class
+ document how the type implication is made. 
+ 
 ### Derivative data
 
 One motivation for publishing data using set() repeatedly is that Rediz will maintain derived streams.
@@ -467,23 +474,16 @@ See https://arxiv.org/abs/1809.09087 for a proof of the second statement and htt
 Using rediz.NUM_PREDICTIONS=1000, Rediz has been tested at a rate of approximately 100,000 scenario submissions per second. 
 This is comparable to the number of orders processed by Nasdaq. 
 
-#### Comparison to prediction markets and related packages
+#### Comparison to ...
 
 To our knowledge Rediz differs markedly from existing software in the broad category of statistical aggregation with economic incentives. This
- category includes such things as prediction markets, exchanges, combinatorial auctions, data science contests and crowdsourcing. High volume streams
-  of contributions are anticipated, with throughput commensurate with high volume financial exchanges such as Nasdaq. 
-
-Some notable aspects of Rediz:
+ category includes such things as prediction markets, exchanges, combinatorial auctions, data science contests and crowdsourcing. Some notable aspects of Rediz:
 
 - There are no point estimates. 
-- Clearing operations are O(1).   
-- There is little temporal state (e.g. limit orders, wagers) - only quarantine. 
-- Settlement is instantaneous upon arrival of the ground truth. 
+- The online reward mechanism is constant - O(1) - in the number of participants.    
 - Joint probabilities are predicted by means of space filling curves. 
 
-The use of Morton Z-curves to parametrize Copulas is, to our knowledge, a novel aspect of Rediz inviting further experiment.  
-
-#### Planned improvements
+#### Possible future improvements
 
 Performance:
 - Some consolidation of multiple calls
@@ -494,3 +494,4 @@ Features:
 - Exposing some time series functionality
 - Data preparation methods for commonly used plotting / blotting packages.
 - Darwinian state management (killing useless write_keys et cetera)
+- A fifth data type representing a JSON document. 
