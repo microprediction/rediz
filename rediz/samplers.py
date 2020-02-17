@@ -29,7 +29,7 @@ def independent_bootstrap(lagged, decay, num):
 def differenced_bootstrap(lagged, decay, num):
     """ One parameter jiggled bootstrap favouring more recent observations (applied to differences processes) """
     safe_diff_lagged = np.diff( list(lagged)+ [0.,0.])
-    diff_samples     = exponential_bootstrap( safe_diff_lagged , decay=decay, num=num )
+    diff_samples     = independent_bootstrap( lagged=safe_diff_lagged , decay=decay, num=num )
     return [ lagged[0] + dx for dx in diff_samples ]
 
 

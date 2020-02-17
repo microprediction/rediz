@@ -689,7 +689,7 @@ class Rediz(RedizConventions):
 
     def _permissioned_link_implementation(self, name, write_key, delay, target=None, targets=None):
         " Create link to possibly non-existent target(s) "
-        # TODO: Optimize with a beg for forgiveness patten
+        # TODO: Maybe optimize with a beg for forgiveness patten to avoid two calls
         if targets is None:
             targets = [ target ]
         root = self._root_name(name)
@@ -726,14 +726,14 @@ class Rediz(RedizConventions):
     #      Implementation  (Admministrative - garbage collection )
     # --------------------------------------------------------------------------
 
-    def admin_garbage_collection(self, fraction=0.1 ):
+    def admin_garbage_collection(self, fraction=0.1, with_report=False ):
         """ Randomized search and destroy for expired data """
         num_keys     = self.client.scard(self._NAMES)
         num_survey   = min( 100, max( 20, int( fraction*num_keys ) ) )
         orphans      = self._randomly_find_orphans( num=num_survey )
         if orphans is not None:
             self._delete_implementation(*orphans)
-            return len(orphans)
+            return len(orphans) if not with_report else orphans
         else:
             return 0
 
@@ -759,7 +759,7 @@ class Rediz(RedizConventions):
     #            Implementation  (Administrative - promises)
     # --------------------------------------------------------------------------
 
-    def admin_promises(self ):
+    def admin_promises(self, with_report=False):
          """ Iterate through task queues populating delays and samples """
 
          # Find recent promise queues that exist
@@ -811,30 +811,29 @@ class Rediz(RedizConventions):
 
          # Copy delay promises and insert prediction promises
          move_pipe = self.client.pipeline(transaction=True)
+         report = dict()
          for value, destination, method in zip(source_values, destinations, methods):
              if method == 'copy':
                  delay_ttl = max(self.DELAYS)+self._DELAY_GRACE+5*60
                  move_pipe.set(name=destination,value=value,ex=delay_ttl)
+                 report[destination]=str(value)
              elif method == 'predict':
                  if len(value):
                      value_as_dict = dict(value)
                      move_pipe.zadd(name=destination,mapping=value_as_dict)
+                     report[destination] = str(len(value_as_dict))
                      owners  = [self._scenario_owner(ticket) for ticket in value_as_dict.keys()]
                      unique_owners = list(set(owners))
                      from redis.exceptions import DataError
                      try:
                          move_pipe.sadd( self._OWNERS + destination, *unique_owners)
                      except DataError:
-                         print("Unique owners are "+str(list(unique_owners)))
-                         print("Failed to insert prediction ",self._OWNERS + destination)
+                         report[destination] = "Failed to insert predictions to " + destination
              else:
                  raise Exception("bug - missing case ")
 
          execut = move_pipe.execute()
-
-         # Admin log
-
-         return sum(execut)
+         return sum(execut) if not with_report else report
 
     # --------------------------------------------------------------------------
     #            Implementation  (prediction and settlement)
@@ -1024,7 +1023,7 @@ class Rediz(RedizConventions):
             game_payments.update(payouts)
         if abs(sum(game_payments.values())) > 0.1:
             # This can occur if owners gets out of sync with the scenario hash ... which it should not
-            # FIXME: Raise system alert and/or garbage cleanup of owner::samples::delay::name versus samples::delay::name
+            # FIXME: Fail gracefully and raise system alert and/or garbage cleanup of owner::samples::delay::name versus samples::delay::name
             raise Exception("Leakage in zero sum game")
         return game_payments
 
@@ -1168,6 +1167,7 @@ class Rediz(RedizConventions):
         return delayed[0] if singular else delayed
 
     def _size_implementation(self, name, with_report=False, with_private=False ):
+        """ Aggregate memory usage of name and derived names """
         derived = list(self.derived_names(name).values())
         private_derived = list(self._private_derived_names(name).values())
         mem_pipe = self.client.pipeline()
@@ -1191,6 +1191,7 @@ class Rediz(RedizConventions):
         return report if with_report else total
 
     def _get_from_prefixed_name(self, prefixed_name, **kwargs):
+        """ Interpret things like  delayed::15::air-pressure.json """
         assert self.SEP in prefixed_name, "Expecting prefixed name with "+self.SEP
         parts = prefixed_name.split(self.SEP)
         if len(parts)==2:
@@ -1228,6 +1229,7 @@ class Rediz(RedizConventions):
         return res if plural else res[0]
 
     def _pipelined_get(self, names):
+        """ Retrieve name values """
         # mget() may be faster but might be more prone to interrupt other processes? Not sure.
         if len(names):
             get_pipe = self.client.pipeline(transaction=True)
@@ -1261,6 +1263,7 @@ class Rediz(RedizConventions):
 
 
     def _get_links_implementation(self, name, delay=None, delays=None):
+        """ Set of outgoing links created by name owner """
         if delay is None and delays is None:
             delays = self.DELAYS
             singular = False
@@ -1271,6 +1274,7 @@ class Rediz(RedizConventions):
         return links[0] if singular else links
 
     def _get_backlinks_implementation(self, name):
+        """ Set of links pointing to name """
         return self.client.hgetall(self.backlinks_name(name=name))
 
     def _get_subscribers_implementation(self, name):
@@ -1286,7 +1290,7 @@ class Rediz(RedizConventions):
         return self._get_distribution( namer=self._samples_name, name=name, delay=delay, delays=delays, obscure=obscure )
 
     def _get_distribution(self, namer, name, delay=None, delays=None, obscure=True):
-        """ Get predictions or samples and obfuscate the write keys """
+        """ Get predictions or samples and obfuscate (hash) the write keys """
         singular = delays is None
         delays   = delays or [delay]
         distribution_names  = [ namer(name=name,delay=delay) for delay in delays ]

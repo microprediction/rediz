@@ -47,7 +47,7 @@ def set_collider_values(rdz,change_data):
 
 if __name__ == '__main__':
     rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
-    HOURS_TO_RUN=3
+    HOURS_TO_RUN=10
     previous_data=None
     offset = time.time() % 60
     start_time = time.time()

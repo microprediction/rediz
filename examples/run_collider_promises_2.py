@@ -6,13 +6,12 @@ from rediz.client import Rediz
 if __name__ == '__main__':
     rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
     HOURS=10
-    for k in range(60*60*2*HOURS):
+    for k in range(HOURS*60*60*2):
         time.sleep(0.5)
-
         garbage_before = time.time()
-        rdz.admin_garbage_collection()
+        rdz.admin_promises()
         garbage_after = time.time()
-        print("Garbage collection took " + str(garbage_after - garbage_before) + " seconds.")
+        print("Promise delivery took " + str(garbage_after - garbage_before) + " seconds.")
 
 
 

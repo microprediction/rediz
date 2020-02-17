@@ -5,7 +5,7 @@ from rediz.client import Rediz
 
 if __name__ == '__main__':
     rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
-    HOURS=2
+    HOURS=10
     for k in range(60*60*2*HOURS):
         time.sleep(0.5)
 
