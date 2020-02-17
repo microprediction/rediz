@@ -74,7 +74,7 @@ One motivation for publishing data using set() repeatedly is that Rediz will mai
 The set() command overwrites the previous value, but scalar and vector value revisions are available as a list:
 
 | Example                                    | Intepretation                    |
-|--------------      ------------------------|----------------------------------|
+|--------------------------------------------|----------------------------------|
 | lagged_values::air-pressure-06820.json     | List of lagged values            |
 | lagged_times::air-pressure-06820.json      | List of lagged times             |
 

@@ -733,9 +733,9 @@ class Rediz(RedizConventions):
         orphans      = self._randomly_find_orphans( num=num_survey )
         if orphans is not None:
             self._delete_implementation(*orphans)
-            return len(orphans) if not with_report else orphans
+            return len(orphans) if not with_report else {"ophans":orphans}
         else:
-            return 0
+            return 0 if not with_report else {"orphans":None}
 
 
     def _randomly_find_orphans(self,num=1000):

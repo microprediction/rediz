@@ -46,8 +46,9 @@ def set_collider_values(rdz,change_data):
         print("Missing data")
 
 
-def example_feed(rdz):
-    HOURS_TO_RUN = 10000
+def example_feed():
+    rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
+    HOURS_TO_RUN = 10000000
     previous_data = None
     offset = time.time() % 60
     start_time = time.time()
@@ -62,19 +63,20 @@ def example_feed(rdz):
                 else:
                     changes = [0 for k in range(num)]
                 print(changes)
-
-                set_before = time.time()
-                change_data = {"names": data["names"], "values": changes}
-                set_collider_values(rdz=rdz, change_data=change_data)
-                set_after = time.time()
-                print("Set() took " + str(set_after - set_before) + " seconds.")
-                time.sleep(10)
-                previous_data = data.copy()
+                if any( [abs(c)>1e-3 for c in changes ] ):
+                    set_before = time.time()
+                    change_data = {"names": data["names"], "values": changes}
+                    set_collider_values(rdz=rdz, change_data=change_data)
+                    set_after = time.time()
+                    print("Set() took " + str(set_after - set_before) + " seconds.")
+                    previous_data = data.copy()
+                    time.sleep(10)
+                else:
+                    time.sleep(5)
         else:
             time.sleep(1)
 
 if __name__ == '__main__':
-    rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
-    example_feed(rdz)
+    example_feed()
 
 
