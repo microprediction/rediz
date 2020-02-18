@@ -32,6 +32,7 @@ class RedizConventions(object):
         self.MESSAGES = "messages" + self.SEP
         self.HISTORY = "history" + self.SEP
         self.HISTORY_LEN = int( history_len or 1000)
+        self.LAGGED = "lagged"+self.SEP
         self.LAGGED_VALUES = "lagged_values" + self.SEP
         self.LAGGED_TIMES = "lagged_times" + self.SEP
         self.LAGGED_LEN = int( lagged_len or 10000)

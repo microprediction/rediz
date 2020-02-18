@@ -1147,7 +1147,7 @@ class Rediz(RedizConventions):
             times  = raw_times
 
         if with_values and with_times:
-            return zip(times, values )
+            return list(zip(times, values ))
         elif with_values and not with_times:
             return values
         elif with_times and not with_values:
@@ -1195,34 +1195,34 @@ class Rediz(RedizConventions):
         assert self.SEP in prefixed_name, "Expecting prefixed name with "+self.SEP
         parts = prefixed_name.split(self.SEP)
         if len(parts)==2:
-            parts[0] = parts[0]+self.SEP
-            if parts[0] == self.BACKLINKS:
+            ps = parts[0]+self.SEP
+            if ps == self.BACKLINKS:
                 data = self.get_backlinks(name=parts[-1])
-            elif parts[0] == self.SUBSCRIPTIONS:
+            elif ps == self.SUBSCRIPTIONS:
                 data = self.get_subscriptions(name=parts[-1])
-            elif parts[0] == self.SUBSCRIBERS:
+            elif ps == self.SUBSCRIBERS:
                 data = self.get_subscribers(name=parts[-1])
-            elif parts[0] in self.LAGGED_VALUES:
-                data = self.get_lagged_values(name=parts[-1], **kwargs)
-            elif parts[0] in self.LAGGED:
-                data = self.get_lagged(name=parts[-1], **kwargs)
-            elif parts[0] == self.LAGGED_TIMES:
-                data = self.get_lagged_values(name=parts[-1], **kwargs)
-            elif parts[0] == self.ERRORS:
-                data = self.get_errors(write_key=parts[-1], **kwargs)
-            elif parts[0] == self.HISTORY:
-                data = self.get_history(name=parts[-1], **kwargs)
+            elif ps == self.LAGGED_VALUES:
+                data = self.get_lagged_values(name=parts[-1])
+            elif ps == self.LAGGED:
+                data = self.get_lagged(name=parts[-1])
+            elif ps == self.LAGGED_TIMES:
+                data = self.get_lagged_times(name=parts[-1])
+            elif ps == self.ERRORS:
+                data = self.get_errors(write_key=parts[-1])
+            elif ps == self.HISTORY:
+                data = self.get_history(name=parts[-1])
             else:
                 data = None
         elif len(parts) == 3:
-            parts[0] = parts[0]+self.SEP
-            if parts[0] == self.DELAYED:
+            ps = parts[0]+self.SEP
+            if ps == self.DELAYED:
                 data = self.get_delayed(name=parts[-1], delay=int(parts[1]), to_float=True)
-            elif parts[0] == self._PREDICTIONS:
+            elif ps == self._PREDICTIONS:
                 data = self.get_predictions(name=parts[-1], delay=int(parts[1]))
-            elif parts[0] == self._SAMPLES:
+            elif ps == self._SAMPLES:
                 data = self.get_samples(name=parts[-1], delay=int(parts[1]))
-            elif parts[0] == self.LINKS:
+            elif ps == self.LINKS:
                 data = self.get_links(name=parts[-1], delay=int(parts[1]))
             else:
                 data = None
