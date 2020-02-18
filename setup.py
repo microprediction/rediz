@@ -7,7 +7,7 @@ README = (HERE / "README.md").read_text()
 
 setup(
     name="rediz",
-    version="0.1.3",
+    version="0.1.4",
     description="Redis used for incentive-based distributional prediction of live data streams.",
     long_description=README,
     long_description_content_type="text/markdown",
@@ -24,7 +24,7 @@ setup(
     test_suite='pytest',
     tests_require=['pytest'],
     include_package_data=True,
-    install_requires=["threezaconventions","fakeredis","redis","sortedcontainers","numpy","aiohttp","pymorton","scipy"],
+    install_requires=["threezaconventions","fakeredis","redis","sortedcontainers","numpy","aiohttp","pymorton","scipy","pathlib","cachetools"],
     entry_points={
         "console_scripts": [
             "rediz=rediz.__main__:main",
