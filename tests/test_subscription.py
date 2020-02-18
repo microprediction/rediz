@@ -101,6 +101,10 @@ def subscription_example(plural=False,instant_recall=False):
     for source, write_key in publishers.items():
         subscribers = rdz.get_subscribers(name=source )
         assert SUBSCRIBER in subscribers
+        subscribers1 = rdz.get(rdz.SUBSCRIBERS+source)
+        assert SUBSCRIBER in subscribers1
+
+
 
     # Propagate ...
     changed_values  = [ int(2*v) for v in values ]
@@ -144,6 +148,7 @@ def subscription_example(plural=False,instant_recall=False):
 
     rdz.delete(name=PUBLISHER,write_key=PUBLISHER_write_key)
     rdz.delete(name=SUBSCRIBER,write_key=SUBSCRIBER_write_key)
+
 
 
 if __name__=="__main__":

@@ -61,6 +61,9 @@ def example_feed(rdz):
                     changes = [data["values"][k] - previous_data["values"][k] for k in range(num)]
                 else:
                     changes = [0 for k in range(num)]
+
+                # Scale changes
+                changes = [ 1000.*c for c in changes ]
                 print(changes)
 
                 set_before = time.time()
