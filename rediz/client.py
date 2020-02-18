@@ -1202,14 +1202,18 @@ class Rediz(RedizConventions):
                 data = self.get_subscriptions(name=parts[-1])
             elif parts[0] == self.SUBSCRIBERS:
                 data = self.get_subscribers(name=parts[-1])
-            elif parts[0] == self.LAGGED_VALUES:
+            elif parts[0] in self.LAGGED_VALUES:
                 data = self.get_lagged_values(name=parts[-1], **kwargs)
+            elif parts[0] in self.LAGGED:
+                data = self.get_lagged(name=parts[-1], **kwargs)
             elif parts[0] == self.LAGGED_TIMES:
                 data = self.get_lagged_values(name=parts[-1], **kwargs)
             elif parts[0] == self.ERRORS:
                 data = self.get_errors(write_key=parts[-1], **kwargs)
             elif parts[0] == self.HISTORY:
                 data = self.get_history(name=parts[-1], **kwargs)
+            else:
+                data = None
         elif len(parts) == 3:
             parts[0] = parts[0]+self.SEP
             if parts[0] == self.DELAYED:
@@ -1220,6 +1224,8 @@ class Rediz(RedizConventions):
                 data = self.get_samples(name=parts[-1], delay=int(parts[1]))
             elif parts[0] == self.LINKS:
                 data = self.get_links(name=parts[-1], delay=int(parts[1]))
+            else:
+                data = None
         else:
             data=None
         return data

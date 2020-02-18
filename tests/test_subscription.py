@@ -105,7 +105,6 @@ def subscription_example(plural=False,instant_recall=False):
         assert SUBSCRIBER in subscribers1
 
 
-
     # Propagate ...
     changed_values  = [ int(2*v) for v in values ]
     budgets = [2 for v in values ]
