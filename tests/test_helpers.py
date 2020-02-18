@@ -148,6 +148,14 @@ def test_morton():
             assert all( abs(p1-p2)<10./rdz.morton_scale(dim=3) for p1,p2 in zip(prtcls,prtcls_back)), "Morton embedding failed "
 
 
+def test_to_float():
+    from rediz.conventions import RedizConventions
+    import time
+    values = [1.0, 1.00031, float(time.time())]
+    values1 = RedizConventions.to_float(values)
+    assert all( [ abs(v1-v2)<1e-6 for v1,v2 in zip(values,values1) ] )
+
+
 
 def show_morton_distribution():
     """ Verify that zcurves are N(0,1) """

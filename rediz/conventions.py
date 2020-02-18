@@ -146,7 +146,7 @@ class RedizConventions(object):
     @staticmethod
     def to_float(values):
         # Canonical way to convert str or [str] or [[str]] to float equivalent with nan replacing None
-        return np.array(values, dtype=np.float32).tolist()
+        return np.array(values, dtype=float).tolist()
 
     @staticmethod
     def is_valid_key(key):

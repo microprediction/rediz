@@ -64,7 +64,7 @@ class Rediz(RedizConventions):
         if len(parts)==1:
             data =  self._get_implementation(name=name,**kwargs )
         else:
-            data = self._get_from_prefixed_name(prefixed_name=name,**kwargs)
+            data = self._get_from_prefixed_name(prefixed_name=name)
 
         if isinstance(data,set):
             data = list(set)
@@ -1190,7 +1190,7 @@ class Rediz(RedizConventions):
         report.update({"total":total})
         return report if with_report else total
 
-    def _get_from_prefixed_name(self, prefixed_name, **kwargs):
+    def _get_from_prefixed_name(self, prefixed_name):
         """ Interpret things like  delayed::15::air-pressure.json """
         assert self.SEP in prefixed_name, "Expecting prefixed name with "+self.SEP
         parts = prefixed_name.split(self.SEP)
