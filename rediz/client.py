@@ -133,6 +133,12 @@ class Rediz(RedizConventions):
     #            Public interface  (set/delete)
     # --------------------------------------------------------------------------
 
+    def mtouch(self, names, budgets):
+        return self._touch_implementation(names=names, budgets=budgets)
+
+    def touch(self, name, budget=1):
+        return self._touch_implementation(name=name,budget=budget)
+
     def set( self, name, value, write_key, budget=10 ):
         """ Set name=value and initiate clearing, derived zscore market etc """
         assert RedizConventions.is_plain_name(name),"Expecting plain name"
@@ -635,6 +641,24 @@ class Rediz(RedizConventions):
         return sum( ( 1 for r in del_exec if r ) )
 
      # --------------------------------------------------------------------------
+     #            Implementation  (touch)
+     # --------------------------------------------------------------------------
+
+    def _touch_implementation(self, name=None, budget=1, names=None, budgets=None):
+        """ Prevents death """
+        names = names or [ name ]
+        budgets = budgets or [ budget for _ in names ]
+        ttl = self._cost_based_ttl(value=6.0,budget=budget)
+        expire_pipe = self.client.pipeline()
+        for name in names:
+            dn = self.derived_names(name=name)
+            pdn = self._private_derived_names(name=name)
+            for nm in [name]+list(dn.values())+list(pdn.values()):
+                expire_pipe.expire(name=nm,time=ttl)
+        expire_pipe.execute()
+
+
+    # --------------------------------------------------------------------------
      #            Implementation  (subscribe)
      # --------------------------------------------------------------------------
 

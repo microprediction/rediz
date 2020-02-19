@@ -5,6 +5,7 @@ from rediz.client import Rediz
 import asyncio
 import aiohttp
 import json
+import datetime
 
 async def fetch(session, url):
     async with session.get(url) as response:
@@ -46,33 +47,44 @@ def set_collider_values(rdz,change_data):
         print("Missing data")
 
 
+
 def example_feed():
     rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
     HOURS_TO_RUN = 10000000
     previous_data = None
     offset = time.time() % 60
     start_time = time.time()
+    last_time = start_time
     while time.time() < start_time + HOURS_TO_RUN * 60 * 60:
         if abs(time.time() % 60 - offset) < 5:
             data = collider_prices() or collider_prices()
-            print(data)
             if data:
                 num = len(data["names"])
                 if previous_data is not None:
                     changes = [data["values"][k] - previous_data["values"][k] for k in range(num)]
                 else:
                     changes = [0 for k in range(num)]
-                print(changes)
-                if any( [abs(c)>1e-3 for c in changes ] ):
+                changes = [1000. * c for c in changes]
+                change_data = {"names": data["names"], "values": changes}
+                if any( [abs(c)>1e-4 for c in changes ] ):
+                    print(data)
+                    print(changes)
+                    print(datetime.datetime.now())
                     set_before = time.time()
-                    change_data = {"names": data["names"], "values": changes}
+                    # Rescale
                     set_collider_values(rdz=rdz, change_data=change_data)
                     set_after = time.time()
                     print("Set() took " + str(set_after - set_before) + " seconds.")
                     previous_data = data.copy()
+                    last_time = time.time()
                     time.sleep(10)
                 else:
+                    rdz.mtouch(names=data["names"], budgets=[1 for _ in data["names"]])
                     time.sleep(5)
+                if (time.time()-last_time>15*60):
+                    # Heartbeat
+                    print(datetime.datetime.now())
+                    last_time = time.time()
         else:
             time.sleep(1)
 

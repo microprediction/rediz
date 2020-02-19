@@ -53,6 +53,7 @@ def do_test_lags_and_delays(rdz):
     time.sleep(3)
     rdz.admin_promises()
     delayed_value = rdz.get_delayed(name=NAME, delay=1)
+    rdz.touch(name=NAME)
     assert abs(float(delayed_value)-16.0)<1e-5
     delayed_value = rdz.client.get(name=rdz.DELAYED + "5" + rdz.SEP + NAME)
     assert abs(float(delayed_value)-6.0)<1e-5
