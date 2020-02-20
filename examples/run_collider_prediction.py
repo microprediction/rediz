@@ -1,5 +1,4 @@
 from rediz.collider_config_private import REDIZ_COLLIDER_CONFIG
-from rediz.redis_config import REDIZ_CONFIG
 from rediz.client import Rediz
 import time
 import numpy as np
@@ -26,7 +25,7 @@ def gu_samples(rdz, name, lagged=None):
     return gaussian_samples(lagged=lagged, num=rdz.NUM_PREDICTIONS )
 
 def z_samples(rdz,zname,method,decay):
-    """ Scenario generation for z-embedded multivariate time series. """
+    """ Scenario generation for z-embedded multivariate time series can be the same. """
     return u_samples(rdz=rdz, name=zname,method=method,decay=decay)
 
 MODEL_COEFS   = [ 0.1*r/NUM_PARTICIPANTS for r in list(range(NUM_PARTICIPANTS)) ]
@@ -58,7 +57,7 @@ def model(rdz):
 
 
 def model_loop():
-    rdz = Rediz(**REDIZ_CONFIG)
+    rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
     HOURS = 26
     PREDICTIONS_PER_SECOND = 50
     for _ in range(60 * 60 * HOURS * PREDICTIONS_PER_SECOND):

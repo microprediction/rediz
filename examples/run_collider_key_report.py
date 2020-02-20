@@ -7,7 +7,7 @@ def summarize(rdz,name,names):
     ttl = str( rdz.client.ttl(name) )
     in_keys = name in names
     memory = rdz.client.memory_usage(name)
-    return ttl+" "+str(in_keys)+" "+str(memory)
+    return "ttl="+ttl+" "+str(in_keys)+" mem="+str(memory)
 
 if __name__ == '__main__':
     rdz = Rediz(**REDIZ_COLLIDER_CONFIG)

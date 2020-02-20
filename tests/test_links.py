@@ -2,7 +2,7 @@ from rediz.client import Rediz
 import json, os, uuid, time
 
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
-# python -m pytest tests/test_links.py ; cat tmp_links.json
+# pip install -e ; python -m pytest tests/test_links.py ; cat tmp_links.json
 
 def dump(obj,name="tmp_links.json"):
     json.dump(obj,open(name,"w"))
@@ -16,13 +16,13 @@ def test_real():
     do_test_link(rdz_real)
 
 def do_test_link(rdz):
-    SOURCE          = "source-153f88.json"
+    SOURCE          = "source7-153f88.json"
     delay           = 1
     assert 1 in rdz.DELAYS
     assert 5 in rdz.DELAYS
-    TARGET              = "target-db77f1c0d75f.json"
-    SOURCE_write_key    = "source-key-01f339453-e057-4e98-9e26-eec6abee711f"
-    TARGET_write_key    = "target-key-c73126a7df8339453-e057-4e98-9e26-eec6abee711f"
+    TARGET              = "target7-db77f1c0d75f.json"
+    SOURCE_write_key    = "source7-key-01f339453-e057-4e98-9e26-eec6abee711f"
+    TARGET_write_key    = "target7-key-c73126a7df8339453-e057-4e98-9e26-eec6abee711f"
     assert rdz.is_valid_key(TARGET_write_key)
     assert rdz.is_valid_key(SOURCE_write_key)
 

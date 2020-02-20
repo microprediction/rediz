@@ -3,7 +3,7 @@ import numpy as np
 from collections import Counter
 from typing import List, Union, Any, Optional
 from redis.client import list_or_args
-from .conventions import RedizConventions, KeyList, NameList, ValueList
+from .conventions import RedizConventions, REDIZ_CONVENTIONS_ARGS, KeyList, NameList, ValueList
 
 # REDIZ
 # -----
@@ -16,15 +16,7 @@ PY_REDIS_ARGS = ('host','port','db','username','password','socket_timeout','sock
                  'ssl_check_hostname', 'max_connections', 'single_connection_client','health_check_interval', 'client_name')
 FAKE_REDIS_ARGS = ('decode_responses',)
 
-DEBUGGING = True
-def dump(obj,name="tmp_client.json"):
-    if DEBUGGING:
-        json.dump(obj,open(name,"w"))
 
-def client():
-    """ Create client from private config """
-    from .redis_config import REDIZ_CONFIG
-    return Rediz(**REDIZ_CONFIG)
 
 class Rediz(RedizConventions):
 
@@ -32,12 +24,11 @@ class Rediz(RedizConventions):
 
     def __init__(self,**kwargs):
         # Set some system parameters
-        lagged_len  = kwargs.pop('lagged_len', None)
-        history_len = kwargs.pop('history_len', None )
-        delays = kwargs.pop('delays', None)
-        obscurity = kwargs.pop('obscurity', None)
-        super().__init__(lagged_len=lagged_len, history_len=history_len, delays=delays, obscurity=obscurity)
+        conventions_kwargs = dict([ (k,v) for k,v in kwargs.items() if k in REDIZ_CONVENTIONS_ARGS] )
+        super().__init__(**conventions_kwargs)
         # Initialize Rediz instance. Expects host, password, port   ... or default to fakeredis
+        for k in conventions_kwargs.keys():
+            kwargs.pop(k)
         self.client  = self.make_redis_client(**kwargs)
 
 
@@ -166,7 +157,7 @@ class Rediz(RedizConventions):
         assert delay in self.DELAYS
         assert self.is_valid_key(write_key)
         fvalues = list(map(float,values))
-        return self._predict_implementation( name=name, values=values, delay=delay, write_key=write_key )
+        return self._predict_implementation( name=name, values=fvalues, delay=delay, write_key=write_key )
 
     # --------------------------------------------------------------------------
     #            Public interface  (subscription)
@@ -834,10 +825,11 @@ class Rediz(RedizConventions):
          source_values = retrieve_pipe.execute()
 
          # Copy delay promises and insert prediction promises
-         move_pipe = self.client.pipeline(transaction=True)
+         move_pipe = self.client.pipeline(transaction=False)
          report = dict()
          for value, destination, method in zip(source_values, destinations, methods):
              if method == 'copy':
+                 assert value is not None, json.dumps({"value":value,"destination":destination})
                  delay_ttl = max(self.DELAYS)+self._DELAY_GRACE+5*60
                  move_pipe.set(name=destination,value=value,ex=delay_ttl)
                  report[destination]=str(value)
@@ -856,7 +848,11 @@ class Rediz(RedizConventions):
              else:
                  raise Exception("bug - missing case ")
 
-         execut = move_pipe.execute()
+         try:
+             execut = move_pipe.execute()
+         except DataError:
+             print("admin_promises failed to move data, probably due to None value ")
+
          return sum(execut) if not with_report else report
 
     # --------------------------------------------------------------------------
@@ -1008,11 +1004,12 @@ class Rediz(RedizConventions):
             for delay_ndx, delay in enumerate(self.DELAYS):
                 percentiles1 = [ percentiles[name][delay_ndx] for name in names ]
                 num_names = len(names)
-                selections1 = list(itertools.combinations(list(range(num_names)), 1))
+                selections = list(itertools.combinations(list(range(num_names)), 1))
                 if with_copulas and num_names<=10:
                     selections2 = list(itertools.combinations(list(range(num_names)), 2))
                     selections3 = list(itertools.combinations(list(range(num_names)), 3))
-                selections = selections1 + selections2 + selections3
+                    selections = selections + selections2 + selections3
+
                 for selection in selections:
                     selected_names   = [ names[o] for o in selection ]
                     dim              = len(selection)
@@ -1242,9 +1239,9 @@ class Rediz(RedizConventions):
             ps = parts[0]+self.SEP
             if ps == self.DELAYED:
                 data = self.get_delayed(name=parts[-1], delay=int(parts[1]), to_float=True)
-            elif ps == self._PREDICTIONS:
+            elif ps in [self._PREDICTIONS, self.PREDICTIONS]:
                 data = self.get_predictions(name=parts[-1], delay=int(parts[1]))
-            elif ps == self._SAMPLES:
+            elif ps in [self._SAMPLES, self.SAMPLES]:
                 data = self.get_samples(name=parts[-1], delay=int(parts[1]))
             elif ps == self.LINKS:
                 data = self.get_links(name=parts[-1], delay=int(parts[1]))
@@ -1330,7 +1327,7 @@ class Rediz(RedizConventions):
         distribution_names  = [ namer(name=name,delay=delay) for delay in delays ]
         pipe = self.client.pipeline()
         for distribution_name in distribution_names:
-            pipe.zrange(name=distribution_name, start=0, end=-1, withscores=True )
+            pipe.zrange(name=distribution_name, start=0, end=-1, withscores=True ) # TODO: Return ordered
         private_distributions = pipe.execute()
         data = list()
         for distribution in private_distributions:

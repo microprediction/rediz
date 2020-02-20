@@ -14,6 +14,7 @@ DelayList = List[Optional[int]]
 
 SEP = "::"
 
+REDIZ_CONVENTIONS_ARGS = ('history_len', 'lagged_len', 'delays', 'max_ttl', 'error_ttl', 'transactions_ttl','error_limit', 'num_predictions','obscurity','delay_grace','instant_recall')
 
 
 class RedizConventions(object):
@@ -39,6 +40,8 @@ class RedizConventions(object):
         self.SUBSCRIBERS = "subscribers" + self.SEP
         self.SUBSCRIPTIONS = "subscriptions" + self.SEP
         self.TRANSACTIONS = "transactions" + self.SEP
+        self.PREDICTIONS = "predictions"+ self.SEP
+        self.SAMPLES = "samples" + self.SEP
 
         # User transparent temporal config
         self.DELAYS = delays or [1, 5]  # TODO: Enlarge for production ... use a few grace seconds
@@ -55,9 +58,9 @@ class RedizConventions(object):
         self._PROMISES = self._obscurity + "promises" + self.SEP  # Prefixes queues of operations that are indexed by epoch second
         self._POINTER = self._obscurity + "pointer"  # A convention used in history stream
         self._BALANCES = self._obscurity + "balances"  # Hash of all balances attributed to write_keys
-        self._PREDICTIONS = self._obscurity + "predictions" + self.SEP  # Prefix to a listing of contemporaneous predictions by horizon. Must be private as this contains write_keys
+        self._PREDICTIONS = self._obscurity + self.PREDICTIONS  # Prefix to a listing of contemporaneous predictions by horizon. Must be private as this contains write_keys
         self._OWNERS = "owners" + self.SEP  # Prefix to a redundant listing of contemporaneous prediction owners by horizon. Must be private as this contains write_keys
-        self._SAMPLES = self._obscurity + "samples" + self.SEP  # Prefix to delayed predictions by horizon. Contain write_keys !
+        self._SAMPLES = self._obscurity + self.SAMPLES  # Prefix to delayed predictions by horizon. Contain write_keys !
         self._PROMISED = "promised" + self.SEP  # Prefixes temporary values referenced by the promise queue
 
         # Other implementation config

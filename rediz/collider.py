@@ -6,6 +6,10 @@ import asyncio
 import aiohttp
 import json
 import datetime
+import pprint
+
+## TODO: Modify so this calls the Algorithmia API rather than Rediz directly
+## TODO: Move it to algoz ?!
 
 async def fetch(session, url):
     async with session.get(url) as response:
@@ -54,39 +58,39 @@ def example_feed():
     previous_data = None
     offset = time.time() % 60
     start_time = time.time()
-    last_time = start_time
+    closed = False
+    cold   = True
     while time.time() < start_time + HOURS_TO_RUN * 60 * 60:
-        if abs(time.time() % 60 - offset) < 5:
-            data = collider_prices() or collider_prices()
-            if data:
-                num = len(data["names"])
-                if previous_data is not None:
-                    changes = [data["values"][k] - previous_data["values"][k] for k in range(num)]
-                else:
-                    changes = [0 for k in range(num)]
-                changes = [1000. * c for c in changes]
-                change_data = {"names": data["names"], "values": changes}
-                if any( [abs(c)>1e-4 for c in changes ] ):
-                    print(data)
-                    print(changes)
-                    print(datetime.datetime.now())
+        if abs(time.time() % 60 - offset) < 1:
+            data = collider_prices() or collider_prices() or collider_prices()
+            down = data is None
+            if not down:
+                print(data)
+                if cold:
+                    previous_data = data.copy()
+                    time.sleep(15)
+                num = len(data["values"])
+                changes = [ 100.*(data["values"][k] - previous_data["values"][k]) for k in range(num)]
+                changed = any( [abs(c)>1e-4 for c in changes ] )
+                if not changed and not cold:
+                    closed = True
+                    print("Market is closed")
+                if changed:
+                    change_data = {"names": data["names"], "values": changes}
+                    previous_data = data.copy()
                     set_before = time.time()
-                    # Rescale
                     set_collider_values(rdz=rdz, change_data=change_data)
                     set_after = time.time()
                     print("Set() took " + str(set_after - set_before) + " seconds.")
-                    previous_data = data.copy()
-                    last_time = time.time()
+                    pprint.pprint(change_data)
                     time.sleep(10)
-                else:
-                    rdz.mtouch(names=data["names"], budgets=[1 for _ in data["names"]])
-                    time.sleep(5)
-                if (time.time()-last_time>15*60):
-                    # Heartbeat
-                    print(datetime.datetime.now())
-                    last_time = time.time()
+                cold = False
+            if closed:
+                rdz.mtouch(names=data["names"], budgets=[1 for _ in data["names"]])
+                print(datetime.datetime.now())
+            time.sleep(10)
         else:
-            time.sleep(1)
+            time.sleep(0.5)
 
 if __name__ == '__main__':
     example_feed()
