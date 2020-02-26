@@ -829,10 +829,12 @@ class Rediz(RedizConventions):
          report = dict()
          for value, destination, method in zip(source_values, destinations, methods):
              if method == 'copy':
-                 assert value is not None, json.dumps({"value":value,"destination":destination})
-                 delay_ttl = max(self.DELAYS)+self._DELAY_GRACE+5*60
-                 move_pipe.set(name=destination,value=value,ex=delay_ttl)
-                 report[destination]=str(value)
+                 if value is None:
+                     pass # Too late, too bad
+                 else:
+                     delay_ttl = max(self.DELAYS)+self._DELAY_GRACE+5*60
+                     move_pipe.set(name=destination,value=value,ex=delay_ttl)
+                     report[destination]=str(value)
              elif method == 'predict':
                  if len(value):
                      value_as_dict = dict(value)
@@ -1233,6 +1235,8 @@ class Rediz(RedizConventions):
                 data = self.get_errors(write_key=parts[-1])
             elif ps == self.HISTORY:
                 data = self.get_history(name=parts[-1])
+            elif ps == self.BALANCE:
+                data = self.get_balance(write_key=parts[-1])
             else:
                 data = None
         elif len(parts) == 3:

@@ -42,6 +42,7 @@ class RedizConventions(object):
         self.TRANSACTIONS = "transactions" + self.SEP
         self.PREDICTIONS = "predictions"+ self.SEP
         self.SAMPLES = "samples" + self.SEP
+        self.BALANCE = "balance" + self.SEP
 
         # User transparent temporal config
         self.DELAYS = delays or [1, 5]  # TODO: Enlarge for production ... use a few grace seconds
