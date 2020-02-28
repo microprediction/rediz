@@ -210,9 +210,9 @@ class RedizConventions(object):
 
     def transactions_name(self, write_key=None, name=None):
         """ Transaction records are produced by stream, by write_key and by both together """
-        stem = None if name is None else os.path.splitext(name)[0]
-        assert (write_key is not None) or (stem is not None)
-        tail = self.SEP.join( [ s for s in [write_key,stem] if s is not None ])
+        key_stem  = None if write_key is None else os.path.splitext(write_key)[0]   # Sometimes name is passed as key
+        name_stem = None if name is None else os.path.splitext(name)[0]
+        tail = self.SEP.join( [ s for s in [key_stem,name_stem] if s is not None ])
         return self.TRANSACTIONS + tail + '.json'
 
     def history_name(self, name):

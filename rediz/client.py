@@ -3,6 +3,7 @@ import numpy as np
 from collections import Counter
 from typing import List, Union, Any, Optional
 from redis.client import list_or_args
+from redis.exceptions import DataError
 from .conventions import RedizConventions, REDIZ_CONVENTIONS_ARGS, KeyList, NameList, ValueList
 
 # REDIZ
@@ -861,7 +862,6 @@ class Rediz(RedizConventions):
                      report[destination] = str(len(value_as_dict))
                      owners  = [self._scenario_owner(ticket) for ticket in value_as_dict.keys()]
                      unique_owners = list(set(owners))
-                     from redis.exceptions import DataError
                      try:
                          move_pipe.sadd( self._OWNERS + destination, *unique_owners)
                      except DataError:
@@ -1043,6 +1043,7 @@ class Rediz(RedizConventions):
                 if len(payments):
                     pipe = self.client.pipeline()
                     for (recipient, amount) in payments.items():
+                        # Record keeping
                         rescaled_amount = budget * float(amount)
                         pipe.hincrbyfloat(name=self._BALANCES, key=recipient, amount=rescaled_amount)
                         write_code = RedizConventions.hash(write_key)
@@ -1051,13 +1052,10 @@ class Rediz(RedizConventions):
                         key_trans_name = self.transactions_name(write_key=recipient)
                         name_trans_name = self.transactions_name(name=name)
                         key_name_trans_name = self.transactions_name(write_key=recipient,name=name)
-                        pipe.xadd(name=key_trans_name, fields=transaction_record)
-                        pipe.xadd(name=name_trans_name, fields=transaction_record)
-                        pipe.xadd(name=key_name_trans_name, fields=transaction_record)
-                        pipe.expire(name=key_trans_name, time=self._TRANSACTIONS_TTL)
-                        pipe.expire(name=name_trans_name, time=self._TRANSACTIONS_TTL)
-                        pipe.expire(name=key_name_trans_name, time=self._TRANSACTIONS_TTL)
-
+                        all_trans_name = self.transactions_name(write_key=None,name=None)
+                        for tn in [all_trans_name, key_trans_name, name_trans_name, key_name_trans_name]:
+                            pipe.xdd(name=tn, fields=transaction_record )
+                            pipe.expire(name=tn,      time=self._TRANSACTIONS_TTL)
         pipe.execute()
 
         # Derived markets ... z's for 1-d, 2-d, 3-d market-implied z-scores and z-curves
