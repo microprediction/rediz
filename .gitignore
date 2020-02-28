@@ -1,0 +1,12 @@
+*_private.py
+unbump.sh
+tmp_*.json
+*x.py
+tests/tmp*
+tests/__pycache*
+rediz.egg-info
+rediz/__pycache__
+rediz_config_not_used.py
+build
+dist
+__pycache__

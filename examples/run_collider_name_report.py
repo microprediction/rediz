@@ -11,12 +11,9 @@ def summarize(rdz,name,names):
 
 if __name__ == '__main__':
     rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
-    all_names = rdz.client.smembers( rdz._NAMES )
-    all_keys = rdz.client.keys()
-    all_ttl = dict( [ (k,summarize(rdz,k,all_names)) for k in all_keys ] )
-    pprint.pprint(all_ttl)
-
-
+    names = REDIZ_COLLIDER_CONFIG['names']
+    report = rdz._size(name=names[0],with_report=True)
+    pprint.pprint(report)
 
 
 

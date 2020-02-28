@@ -9,6 +9,20 @@ from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 
 
 
+def test_transactions_name():
+    name = "barney.json"
+    write_key = "key"
+
+    rdz = Rediz(**REDIZ_TEST_CONFIG)
+
+    case1 = rdz.transactions_name(write_key=write_key,name=name)
+    assert case1=='transactions::key::barney.json'
+
+    case2 = rdz.transactions_name(write_key=write_key)
+    assert case2 == 'transactions::key.json'
+
+    case3 = rdz.transactions_name(name=name)
+    assert case3 == 'transactions::barney.json'
 
 
 def test_cdf_invcdf():

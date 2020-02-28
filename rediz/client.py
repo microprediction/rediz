@@ -1,4 +1,4 @@
-import fakeredis, sys, math, json, redis, time, random, itertools
+import fakeredis, sys, math, json, redis, time, random, itertools, datetime
 import numpy as np
 from collections import Counter
 from typing import List, Union, Any, Optional
@@ -1046,7 +1046,7 @@ class Rediz(RedizConventions):
                         rescaled_amount = budget * float(amount)
                         pipe.hincrbyfloat(name=self._BALANCES, key=recipient, amount=rescaled_amount)
                         write_code = RedizConventions.hash(write_key)
-                        transaction_record = {"name": name, "write_code":write_code, "amount": rescaled_amount}
+                        transaction_record = {"settlement_time":str(datetime.datetime.now()),"name": name, "write_code":write_code, "amount": rescaled_amount}
                         key_trans_name = self.transactions_name(write_key=write_key)
                         name_trans_name = self.transactions_name(name=name)
                         key_name_trans_name = self.transactions_name(write_key=write_key,name=name)
@@ -1055,6 +1055,7 @@ class Rediz(RedizConventions):
                         pipe.xadd(name=key_name_trans_name, fields=transaction_record)
                         pipe.expire(name=key_trans_name, time=self._TRANSACTIONS_TTL)
                         pipe.expire(name=name_trans_name, time=self._TRANSACTIONS_TTL)
+                        pipe.expire(name=key_name_trans_name, time=self._TRANSACTIONS_TTL)
 
         pipe.execute()
 

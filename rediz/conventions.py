@@ -1,4 +1,4 @@
-import re, sys, json, math, time
+import re, sys, json, math, time, os
 import pymorton
 from itertools import zip_longest
 import numpy as np
@@ -210,9 +210,10 @@ class RedizConventions(object):
 
     def transactions_name(self, write_key=None, name=None):
         """ Transaction records are produced by stream, by write_key and by both together """
-        assert (write_key is not None) or (name is not None)
-        tail = self.SEP.join( [ s for s in [name,write_key] if s is not None ])
-        return self.TRANSACTIONS + tail
+        stem = None if name is None else os.path.splitext(name)[0]
+        assert (write_key is not None) or (stem is not None)
+        tail = self.SEP.join( [ s for s in [write_key,stem] if s is not None ])
+        return self.TRANSACTIONS + tail + '.json'
 
     def history_name(self, name):
         return self.HISTORY + name
