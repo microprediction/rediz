@@ -1013,7 +1013,7 @@ class Rediz(RedizConventions):
                             # from more than one contributor, hopefully leading to more accurate percentiles
                             percentile_scenarios = list()
                             for window_ndx in range(num_windows):
-                                if len(percentile_scenarios) < 10:
+                                if len(percentile_scenarios) < 5:
                                     _ndx = scenarios_lookup[name][delay_ndx][window_ndx]
                                     percentile_scenarios = retrieved[_ndx]
                                     some_percentiles = True
@@ -1046,10 +1046,11 @@ class Rediz(RedizConventions):
                         rescaled_amount = budget * float(amount)
                         pipe.hincrbyfloat(name=self._BALANCES, key=recipient, amount=rescaled_amount)
                         write_code = RedizConventions.hash(write_key)
-                        transaction_record = {"settlement_time":str(datetime.datetime.now()),"name": name, "write_code":write_code, "amount": rescaled_amount}
-                        key_trans_name = self.transactions_name(write_key=write_key)
+                        recipient_code = RedizConventions.hash(recipient)
+                        transaction_record = {"settlement_time":str(datetime.datetime.now()),"stream": name, "stream_owner_code":write_code,"recipient_code":recipient_code, "amount": rescaled_amount}
+                        key_trans_name = self.transactions_name(write_key=recipient)
                         name_trans_name = self.transactions_name(name=name)
-                        key_name_trans_name = self.transactions_name(write_key=write_key,name=name)
+                        key_name_trans_name = self.transactions_name(write_key=recipient,name=name)
                         pipe.xadd(name=key_trans_name, fields=transaction_record)
                         pipe.xadd(name=name_trans_name, fields=transaction_record)
                         pipe.xadd(name=key_name_trans_name, fields=transaction_record)
