@@ -55,7 +55,7 @@ class Rediz(RedizConventions):
         if len(parts)==1:
             data =  self._get_implementation(name=name,**kwargs )
         else:
-            data = self._get_from_prefixed_name(prefixed_name=name)
+            data = self._get_prefixed_implementation(prefixed_name=name)
 
         if isinstance(data,set):
             data = list(set)
@@ -70,6 +70,9 @@ class Rediz(RedizConventions):
 
     def get_predictions(self, name, delay=None, delays=None):
         return self._get_predictions_implementation(name=name, delay=delay, delays=delays)
+
+    def get_cdf(self, name, delay, values):
+        return self._get_cdf_implementation(name=name, delay=delay, values=values )
 
     def get_reserve(self):
         return float(self.client.hget(self._BALANCES, self._RESERVE) or 0)
@@ -111,6 +114,11 @@ class Rediz(RedizConventions):
     def get_backlinks(self, name ):
         return self._get_backlinks_implementation(name=name )
 
+    def get_transactions(self, max='+', min='-', count=None, write_key=None, name=None):
+        return self._get_transactions_implementation(max=max,min=min,count=count, write_key=write_key, name=name)
+
+
+
     # --------------------------------------------------------------------------
     #            Permissioned get
     # --------------------------------------------------------------------------
@@ -121,7 +129,7 @@ class Rediz(RedizConventions):
 
 
     # --------------------------------------------------------------------------
-    #            Public interface  (set/delete)
+    #            Public interface  (set/delete streams)
     # --------------------------------------------------------------------------
 
     def mtouch(self, names, budgets):
@@ -149,7 +157,11 @@ class Rediz(RedizConventions):
         """ Delete/expire all artifacts associated with multiple names """
         return self._permissioned_mdelete(names=names, write_key=write_key, write_keys=write_keys)
 
-    def predict(self, name, values, delay, write_key ):
+    # --------------------------------------------------------------------------
+    #            Public interface  (set/delete scenarios)
+    # --------------------------------------------------------------------------
+
+    def set_scenarios(self, name, values, delay, write_key):
         """ Supply scenarios for scalar value taken by name
                values :   [ float ]  len  self.NUM_PREDICTIONS
         """
@@ -157,7 +169,14 @@ class Rediz(RedizConventions):
         assert delay in self.DELAYS
         assert self.is_valid_key(write_key)
         fvalues = list(map(float,values))
-        return self._predict_implementation( name=name, values=fvalues, delay=delay, write_key=write_key )
+        return self._set_scenarios_implementation(name=name, values=fvalues, delay=delay, write_key=write_key)
+
+    def delete_scenarios(self, name, write_key, delay=None, delays=None):
+        return self._delete_scenarios_implementation( name=name, write_key=write_key, delay=delay, delays=delays )
+
+    def get_cdf(self, name, delay, values ):
+        """ Return approximate cdf for a vector of values """
+        return self._get_cdf_implementation(name=name, delay=delay, values=values )
 
     # --------------------------------------------------------------------------
     #            Public interface  (subscription)
@@ -865,9 +884,53 @@ class Rediz(RedizConventions):
         # As a finer point, we should really be using the delay times here and sampling by time not lag ... but it is just a lazy benchmark anyway
         lagged_values = self._get_lagged_implementation(name, with_times=False, with_values=True, to_float=True, start=0, end=None, count=self.NUM_PREDICTIONS)
         predictions = self.empirical_predictions(lagged_values=lagged_values)
-        return self._predict_implementation( name=name, values=predictions, write_key=write_key, delay=delay )
+        return self._set_scenarios_implementation(name=name, values=predictions, write_key=write_key, delay=delay)
 
-    def _predict_implementation(self, name, values, write_key, delay=None, delays=None):
+    def _delete_scenarios_implementation(self, name, write_key, delay=None, delays=None):
+        if delays is None and delay is None:
+            delays = self.DELAYS
+        elif delays is None:
+            delays = [ delay ]
+        assert name==self._root_name(name)
+        if self.is_valid_key(write_key ) and all(delay in self.DELAYS for delay in delays):
+            delete_pipe = self.client.pipeline(transaction=True)  # <-- Important that transaction=True
+            for delay in delays:
+                collective_predictions_name = self._predictions_name(name, delay)
+                keys = [ self._format_scenario(self, write_key, k) for k in range(self.NUM_PREDICTIONS) ]
+                delete_pipe.zrem( collective_predictions_name, *keys)
+                samples_name = self._samples_name(name=name, delay=delay)
+                delete_pipe.zrem(samples_name, *keys)
+                owners_name = self._sample_owners_name(name=name,delay=delay)
+                delete_pipe.srem(owners_name,write_key)
+            exec = delete_pipe.execute()
+            return sum(exec)
+
+    def _get_scenarios_implementation(self, name, write_key, delay, cursor=0):
+        """ Charge for this! Not encouraged as it should not be necessary, and it is inefficient to get scenarios back from the collective zset """
+        assert name == self._root_name(name)
+        if self.is_valid_key(write_key) and delay in self.DELAYS:
+            cursor, items = self.client.zscan(name=self._predictions_name(name=name, delay=delay),cursor=cursor,match='*'+write_key+'*',count=self.NUM_PREDICTIONS)
+            return {"cursor":cursor, "scenarios":dict(items)}
+
+    def _get_invcdf_implementation(self, name, delay, percentiles):
+        """ Random estimate of invcdf at percentiles 0 < p < 1 """
+        # Requires maintenance of a sketch which is left for future work
+        raise NotImplementedError()
+
+    def _get_cdf_implementation(self, name, delay, values):
+        assert name == self._root_name(name)
+        assert delay in self.DELAYS
+        score_pipe = self.client.pipeline()
+        num = score_pipe.zcard(name=self._predictions_name(name=name, delay=delay))
+        h = max( 10.0/num, 0.00001)*max([ abs(v) for v in values ]+[1.0])
+        for value in values:
+            score_pipe.zrangebyscore(name=self._predictions_name(name=name,delay=delay),min=value, max=value+h, start=0, num=10, withscores=False)
+        exec = score_pipe.execute()
+        prtcls = [ self._zmean_scenarios_percentile(percentile_scenarios=ex) for ex in exec ]
+        return prtcls
+
+
+    def _set_scenarios_implementation(self, name, values, write_key, delay=None, delays=None):
         """ Supply scenarios """
         if delays is None and delay is None:
             delays = self.DELAYS
@@ -986,8 +1049,10 @@ class Rediz(RedizConventions):
                         transaction_record = {"name": name, "write_code":write_code, "amount": rescaled_amount}
                         key_trans_name = self.transactions_name(write_key=write_key)
                         name_trans_name = self.transactions_name(name=name)
+                        key_name_trans_name = self.transactions_name(write_key=write_key,name=name)
                         pipe.xadd(name=key_trans_name, fields=transaction_record)
                         pipe.xadd(name=name_trans_name, fields=transaction_record)
+                        pipe.xadd(name=key_name_trans_name, fields=transaction_record)
                         pipe.expire(name=key_trans_name, time=self._TRANSACTIONS_TTL)
                         pipe.expire(name=name_trans_name, time=self._TRANSACTIONS_TTL)
 
@@ -1028,6 +1093,7 @@ class Rediz(RedizConventions):
         return percentiles
 
     def _zmean_scenarios_percentile(self, percentile_scenarios):
+        """ Each submission has an implicit z-score. Average them. """
         prctls = [self._scenario_percentile(s) for s in percentile_scenarios]
         return Rediz._zmean_percentile(prctls)
 
@@ -1213,7 +1279,7 @@ class Rediz(RedizConventions):
         report.update({"total":total})
         return report if with_report else total
 
-    def _get_from_prefixed_name(self, prefixed_name):
+    def _get_prefixed_implementation(self, prefixed_name):
         """ Interpret things like  delayed::15::air-pressure.json """
         assert self.SEP in prefixed_name, "Expecting prefixed name with "+self.SEP
         parts = prefixed_name.split(self.SEP)
@@ -1237,6 +1303,8 @@ class Rediz(RedizConventions):
                 data = self.get_history(name=parts[-1])
             elif ps == self.BALANCE:
                 data = self.get_balance(write_key=parts[-1])
+            elif ps == self.TRANSACTIONS:
+                data = self.get_transactions(write_key=parts[-1])
             else:
                 data = None
         elif len(parts) == 3:
@@ -1249,6 +1317,8 @@ class Rediz(RedizConventions):
                 data = self.get_samples(name=parts[-1], delay=int(parts[1]))
             elif ps == self.LINKS:
                 data = self.get_links(name=parts[-1], delay=int(parts[1]))
+            elif ps == self.TRANSACTIONS:
+                data = self.get_transactions(write_key=parts[1], name=parts[2])
             else:
                 data = None
         else:
@@ -1295,6 +1365,12 @@ class Rediz(RedizConventions):
                 if drop_expired:
                     history = [ h for j,h in enumerate(history) if not j in expired ]
         return history
+
+
+    def _get_transactions_implementation(self, min, max, count, write_key=None, name=None ):
+        trans_name=self.transactions_name(write_key=write_key,name=name)
+        return self.client.xrevrange(name=trans_name, min=min, max=max, count=count )
+
 
 
     def _get_links_implementation(self, name, delay=None, delays=None):

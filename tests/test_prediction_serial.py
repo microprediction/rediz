@@ -24,7 +24,7 @@ def model(rdz,target,write_key):
         x_samples = x_samples[:rdz.NUM_PREDICTIONS]
         noise     = np.random.randn(rdz.NUM_PREDICTIONS)
         jiggered  = [x+0.1*n for x,n in zip(x_samples,noise) ]
-    rdz.predict(name=target,values=jiggered,write_key=write_key,delay=rdz.DELAYS[0])
+    rdz.set_scenarios(name=target, values=jiggered, write_key=write_key, delay=rdz.DELAYS[0])
 
 def do_setup(rdz,target):
     rdz._delete_implementation(target)
@@ -36,6 +36,8 @@ def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_k
     lagged        = rdz.get_lagged(name=target)
     owners        = rdz.client.smembers(rdz._sample_owners_name(name=target,delay=1))
     predictions   = rdz.get_predictions(name=target, delay=1)
+    scenarios1    = rdz.get_scenarios(name=target,write_key=model_key1,delay=1)
+    cdf           = rdz._get_cdf_implementation(name=target,delay=1,values=[0.0, 1.0])
     links         = rdz._get_links_implementation(name=target, delay=1)
     backlinks     = rdz._get_backlinks_implementation(name=target)
     subscriptions = rdz._get_subscriptions_implementation(name=target)
@@ -58,6 +60,7 @@ def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_k
               "errors":{"owner":rdz.get_errors(write_key=target_key),
                         "model":rdz.get_errors(write_key=model_key)},
               "samples":dict( list(samples.items())[:4] ),
+              "samples1":dict( list(scenarios1.items())[:4] ),
               "owners":list(owners),
               "predictions":dict( list(predictions.items())[:4]),
               "sample_std":sample_std,
@@ -109,6 +112,7 @@ def do_serial( rdz ):
 
     # Should have promises executed by now...
     samples = rdz.get_samples(name=target,delay=1)
+
     if False:
         import matplotlib.pyplot as plt
         plt.hist(list(samples.values()))

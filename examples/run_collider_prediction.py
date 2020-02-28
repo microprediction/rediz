@@ -44,14 +44,14 @@ def model(rdz):
     if target_type=="name":
         name = random.choice(NAMES)
         scenarios = u_samples(rdz=rdz,name=name,decay=decay,method=model_method)
-        rdz.predict(name=name,values=scenarios,write_key=MODEL_write_key,delay=delay)
+        rdz.set_scenarios(name=name, values=scenarios, write_key=MODEL_write_key, delay=delay)
     elif target_type=="derived":
         dim = random.choice([1,2,3])
         delay = random.choice(rdz.DELAYS)
         names = random.sample( NAMES, dim)
         zname = rdz.zcurve_name(names=names,delay=delay)
         zscenarios = z_samples(rdz=rdz,zname=zname,method=model_method, decay=model_coef)
-        rdz.predict(name=zname, values=zscenarios, write_key=MODEL_write_key, delay=delay)
+        rdz.set_scenarios(name=zname, values=zscenarios, write_key=MODEL_write_key, delay=delay)
         name = zname
     return name, target_type
 

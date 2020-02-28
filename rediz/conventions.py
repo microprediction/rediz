@@ -209,7 +209,10 @@ class RedizConventions(object):
         return self.MESSAGES + write_key
 
     def transactions_name(self, write_key=None, name=None):
-        return self.TRANSACTIONS + write_key if write_key is not None else self.TRANSACTIONS + name
+        """ Transaction records are produced by stream, by write_key and by both together """
+        assert (write_key is not None) or (name is not None)
+        tail = self.SEP.join( [ s for s in [name,write_key] if s is not None ])
+        return self.TRANSACTIONS + tail
 
     def history_name(self, name):
         return self.HISTORY + name
@@ -310,7 +313,7 @@ class RedizConventions(object):
         return self._PROMISES + str(int(epoch_seconds))
 
     def _sample_owners_name(self, name, delay):
-        return self._OWNERS + self._SAMPLES + str(delay) + self.SEP + name
+        return self._OWNERS + self._samples_name(name=name,delay=delay)
 
     def _predictions_name(self, name, delay):
         return self._PREDICTIONS + str(delay) + self.SEP + name
@@ -395,7 +398,7 @@ class RedizConventions(object):
 
     def _cost_based_distribution_ttl(self,budget):
         """ Time to live for samples ... mostly budget independent """
-        return max(self.DELAYS)+self._DELAY_GRACE+60+budget
+        return int( max(self.DELAYS)+self._DELAY_GRACE+60+budget )
 
     # --------------------------------------------------------------------------
     #            Redis version/capability inference
@@ -548,4 +551,4 @@ class RedizConventions(object):
         ttl_seconds = int(math.ceil(SECONDS_PER_MONTH / credits_per_month))
         ttl_seconds = budget * ttl_seconds
         ttl_seconds = min(ttl_seconds, max_ttl)
-        return ttl_seconds
+        return int( ttl_seconds )

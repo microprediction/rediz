@@ -26,7 +26,7 @@ def model(rdz,target,write_key):
         noise     = np.random.randn(rdz.NUM_PREDICTIONS)
         jiggered  = [x+0.1*n for x,n in zip(x_samples,noise) ]
         delay     = rdz.DELAYS[0]
-    assert rdz.predict(name=target,values=jiggered,write_key=write_key, delay=delay)
+    assert rdz.set_scenarios(name=target, values=jiggered, write_key=write_key, delay=delay)
 
 def do_setup(rdz,target):
     rdz._delete_implementation(target)
