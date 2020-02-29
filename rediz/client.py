@@ -847,34 +847,38 @@ class Rediz(RedizConventions):
          # Copy delay promises and insert prediction promises
          move_pipe = self.client.pipeline(transaction=False)
          report = dict()
+         report['warnings']=''
+         execution_report = list()
          for value, destination, method in zip(source_values, destinations, methods):
              if method == 'copy':
                  if value is None:
-                     pass # Too late, too bad
+                     report['warnings'].append('None value found ')
                  else:
-                     delay_ttl = max(self.DELAYS)+self._DELAY_GRACE+5*60
+                     delay_ttl = int(max(self.DELAYS)+self._DELAY_GRACE+5*60)
                      move_pipe.set(name=destination,value=value,ex=delay_ttl)
+                     execution_report.append({"operation":"set","destination":destination,"value":value})
                      report[destination]=str(value)
              elif method == 'predict':
                  if len(value):
                      value_as_dict = dict(value)
-                     move_pipe.zadd(name=destination,mapping=value_as_dict)
+                     move_pipe.zadd(name=destination,mapping=value_as_dict,ch=True)
+                     execution_report.append({"operation":"zadd","destination":destination,"len":len(value_as_dict)})
                      report[destination] = str(len(value_as_dict))
                      owners  = [self._scenario_owner(ticket) for ticket in value_as_dict.keys()]
                      unique_owners = list(set(owners))
                      try:
                          move_pipe.sadd( self._OWNERS + destination, *unique_owners)
+                         execution_report.append({"operation": "sadd", "destination":self._OWNERS + destination, "value": unique_owners})
                      except DataError:
                          report[destination] = "Failed to insert predictions to " + destination
              else:
                  raise Exception("bug - missing case ")
 
-         try:
-             execut = move_pipe.execute()
-         except DataError:
-             print("admin_promises failed to move data, probably due to None value ")
+         execut = move_pipe.execute()
+         for record, ex in zip(execution_report,execut):
+             record.update({"execution_result":ex})
 
-         return sum(execut) if not with_report else report
+         return sum(execut) if not with_report else execution_report
 
     # --------------------------------------------------------------------------
     #            Implementation  (prediction and settlement)
@@ -951,7 +955,7 @@ class Rediz(RedizConventions):
             # Add to collective contemporaneous forward predictions
             for delay in delays:
                 collective_predictions_name = self._predictions_name(name, delay)
-                set_and_expire_pipe.zadd(   name=collective_predictions_name, mapping=predictions, ch=True )  # (0)
+                set_and_expire_pipe.zadd(   name=collective_predictions_name, mapping=predictions, ch=True,nx=False)  # (0)
 
             # Create obscure predictions and promise to insert them later, at different times, into different samples
             utc_epoch_now = int(time.time())

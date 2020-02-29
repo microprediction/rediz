@@ -8,8 +8,7 @@ if __name__ == '__main__':
     for name in ['cop.json']:
         predictions = rdz.get_predictions(name=name,delay=rdz.DELAYS[0])
         print("---Predictions---")
-        pprint.pprint(predictions)
-
+        pprint.pprint([ (p,v) for p,v in predictions.items() if p<'00000001' ])
 
 
 

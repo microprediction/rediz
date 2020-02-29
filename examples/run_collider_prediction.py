@@ -7,8 +7,7 @@ from rediz.samplers import exponential_bootstrap, gaussian_samples
 
 # An illustration of Rediz combining marginal and z-copula predictions from many different models
 
-SYMBOLS          = REDIZ_COLLIDER_CONFIG["symbols"]
-NAMES            = [ s+'.json' for s in SYMBOLS]
+NAMES           = REDIZ_COLLIDER_CONFIG["names"]
 NUM_PARTICIPANTS = 10
 
 def u_samples(rdz,name,method,decay):
@@ -40,10 +39,12 @@ def model(rdz):
     decay = model_coef
 
     target_type = random.choice(['name','derived'])
-
+    target_type = "name"
     if target_type=="name":
         name = random.choice(NAMES)
+        name = "cop.json"
         scenarios = u_samples(rdz=rdz,name=name,decay=decay,method=model_method)
+        scenarios = sorted( [ -27.0+0.01*np.random.randn() for _ in scenarios ])
         rdz.set_scenarios(name=name, values=scenarios, write_key=MODEL_write_key, delay=delay)
     elif target_type=="derived":
         dim = random.choice([1,2,3])
