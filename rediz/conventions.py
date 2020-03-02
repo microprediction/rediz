@@ -14,20 +14,23 @@ DelayList = List[Optional[int]]
 
 SEP = "::"
 
-REDIZ_CONVENTIONS_ARGS = ('history_len', 'lagged_len', 'delays', 'max_ttl', 'error_ttl', 'transactions_ttl','error_limit', 'num_predictions','obscurity','delay_grace','instant_recall')
+REDIZ_CONVENTIONS_ARGS = ('history_len', 'lagged_len', 'delays', 'max_ttl', 'error_ttl', 'transactions_ttl','error_limit', 'num_predictions','windows','obscurity','delay_grace','instant_recall')
 
 
 class RedizConventions(object):
 
     def __init__(self,history_len=None, lagged_len=None, delays=None, max_ttl=None, error_ttl=None, transactions_ttl=None,
-                  error_limit=None, num_predictions=None,
+                  error_limit=None, num_predictions=None, windows=None,
                   obscurity=None, delay_grace=None, instant_recall=None ):
+        if windows is None:
+            windows = [1e-4, 1e-3,  1e-2]
         self.SEP = SEP
         self.COPY_SEP = self.SEP + "copy" + self.SEP
         self.PREDICTION_SEP = self.SEP + "prediction" + self.SEP
         # User facing conventions: transparent use of prefixing
         self.ERRORS = "errors" + self.SEP
         self.DELAYED = "delayed" + self.SEP
+        self.CDF = 'cdf'+self.SEP
         self.LINKS = "links" + self.SEP
         self.BACKLINKS = "backlinks" + self.SEP
         self.MESSAGES = "messages" + self.SEP
@@ -67,7 +70,7 @@ class RedizConventions(object):
         # Other implementation config
         self._DELAY_GRACE = int(delay_grace or 5)  # Seconds beyond the schedule time when promise data expires
         self._DEFAULT_MODEL_STD = 1.0  # Noise added for self-prediction
-        self._WINDOWS = [1e-4, 1e-3,  1e-2]  # Sizes of neighbourhoods around truth used in countback ... don't make too big or it hits performance
+        self._WINDOWS = windows  # Sizes of neighbourhoods around truth used in countback ... don't make too big or it hits performance
         self._INSTANT_RECALL = instant_recall or False
         self._MAX_TTL = int( max_ttl or 60 * 60 ) # Maximum TTL, useful for testing
         self._TRANSACTIONS_TTL = int( transactions_ttl or 24 * (60 * 60) )  # How long to keep transactions stream for inactive write_keys
@@ -165,12 +168,28 @@ class RedizConventions(object):
         return threezaconventions.crypto.random_key() + '.json'
 
     @staticmethod
+    def percentile_abscissa():
+        return [-8., -5., -4, -3, -2.5, -2.0, -1.5, -1.25, -1, -0.8, -0.6, -0.4, -0.2, -0.1, -0.05, -0.02, -0.01, 0.,
+              0.01, 0.02, 0.05, 0.1, 0.2, 0.4, 0.6, 0.8, 1., 1.25, 1.5, 2.0, 2.5, 3., 4., 5., 8.]
+
+    @staticmethod
     def random_title():
         return {"name":RedizConventions.random_name(), "write_key":RedizConventions.random_key()}
 
     @staticmethod
     def hash(s):
         return threezaconventions.crypto.hash5(s)
+
+    @staticmethod
+    def vanity_key(head):
+        assert len(head)<=8 and len(head)>=4
+        assert all( [c in "0123456789abcdef-" for c in head] ),'Must be a,b,c,d,e,f or digits '
+        remaining = 100000
+        while remaining:
+            write_key = RedizConventions.random_key()
+            code = RedizConventions.hash(write_key)
+            if code[9:9+len(head)]==head:
+                return write_key
 
     @staticmethod
     def coerce_inputs(  names:Optional[NameList]=None,

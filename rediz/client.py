@@ -72,7 +72,9 @@ class Rediz(RedizConventions):
     def get_predictions(self, name, delay=None, delays=None):
         return self._get_predictions_implementation(name=name, delay=delay, delays=delays)
 
-    def get_cdf(self, name, delay, values):
+    def get_cdf(self, name, delay=None, values=None):
+        values = values or self.percentile_abscissa()
+        delay  = delay or self.DELAYS[0]
         return self._get_cdf_implementation(name=name, delay=delay, values=values )
 
     def get_reserve(self):
@@ -174,10 +176,6 @@ class Rediz(RedizConventions):
 
     def delete_scenarios(self, name, write_key, delay=None, delays=None):
         return self._delete_scenarios_implementation( name=name, write_key=write_key, delay=delay, delays=delays )
-
-    def get_cdf(self, name, delay, values ):
-        """ Return approximate cdf for a vector of values """
-        return self._get_cdf_implementation(name=name, delay=delay, values=values )
 
     # --------------------------------------------------------------------------
     #            Public interface  (subscription)
@@ -283,7 +281,7 @@ class Rediz(RedizConventions):
         for nm,v,wk in zip( names, values, write_keys ):
             if self.is_scalar_value(v):
                 for delay_ndx, delay in enumerate(self.DELAYS):
-                    if np.random.rand()<1/self.NUM_PREDICTIONS or pools[nm][delay_ndx]==0:
+                    if np.random.rand()<1/20 or pools[nm][delay_ndx]==0:
                         self._baseline_prediction( name=nm, value=v, write_key=wk, delay=delay )
 
         # Rewards, percentiles
@@ -925,12 +923,13 @@ class Rediz(RedizConventions):
         assert name == self._root_name(name)
         assert delay in self.DELAYS
         score_pipe = self.client.pipeline()
-        num = score_pipe.zcard(name=self._predictions_name(name=name, delay=delay))
-        h = max( 10.0/num, 0.00001)*max([ abs(v) for v in values ]+[1.0])
+        num = self.client.zcard(name=self._predictions_name(name=name, delay=delay))
+        h = max( 100.0/num, 0.00001)*max([ abs(v) for v in values ]+[1.0])
         for value in values:
             score_pipe.zrangebyscore(name=self._predictions_name(name=name,delay=delay),min=value, max=value+h, start=0, num=10, withscores=False)
         exec = score_pipe.execute()
-        prtcls = [ self._zmean_scenarios_percentile(percentile_scenarios=ex) for ex in exec ]
+        #
+        prtcls = [ self._zmean_scenarios_percentile(percentile_scenarios=ex) if ex else np.NaN for ex in exec]
         return prtcls
 
 
@@ -1058,9 +1057,9 @@ class Rediz(RedizConventions):
                         key_name_trans_name = self.transactions_name(write_key=recipient,name=name)
                         all_trans_name = self.transactions_name(write_key=None,name=None)
                         for tn in [all_trans_name, key_trans_name, name_trans_name, key_name_trans_name]:
-                            pipe.xdd(name=tn, fields=transaction_record )
+                            pipe.xadd(name=tn, fields=transaction_record )
                             pipe.expire(name=tn,      time=self._TRANSACTIONS_TTL)
-        pipe.execute()
+        settle_exec = pipe.execute()
 
         # Derived markets ... z's for 1-d, 2-d, 3-d market-implied z-scores and z-curves
         # By default mset() creates a derivative market for the market-implied z-scores
@@ -1284,9 +1283,9 @@ class Rediz(RedizConventions):
         return report if with_report else total
 
     def _get_prefixed_implementation(self, prefixed_name):
-        """ Interpret things like  delayed::15::air-pressure.json """
+        """ Interpret things like  delayed::15::air-pressure.json cdf::70::air-pressure.json etc """
         assert self.SEP in prefixed_name, "Expecting prefixed name with "+self.SEP
-        parts = prefixed_name.split(self.SEP)
+        parts = prefixed_name.lower().split(self.SEP)
         if len(parts)==2:
             ps = parts[0]+self.SEP
             if ps == self.BACKLINKS:
@@ -1297,6 +1296,8 @@ class Rediz(RedizConventions):
                 data = self.get_subscribers(name=parts[-1])
             elif ps == self.LAGGED_VALUES:
                 data = self.get_lagged_values(name=parts[-1])
+            elif ps == self.CDF:
+                data = self.get_cdf(name=parts[-1])
             elif ps == self.LAGGED:
                 data = self.get_lagged(name=parts[-1])
             elif ps == self.LAGGED_TIMES:
@@ -1321,6 +1322,8 @@ class Rediz(RedizConventions):
                 data = self.get_samples(name=parts[-1], delay=int(parts[1]))
             elif ps == self.LINKS:
                 data = self.get_links(name=parts[-1], delay=int(parts[1]))
+            elif ps == self.CDF:
+                data = self.get_cdf(name=parts[-1],delay=int(parts[1]))
             elif ps == self.TRANSACTIONS:
                 data = self.get_transactions(write_key=parts[1], name=parts[2])
             else:
