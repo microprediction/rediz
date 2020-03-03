@@ -46,6 +46,7 @@ class RedizConventions(object):
         self.PREDICTIONS = "predictions"+ self.SEP
         self.SAMPLES = "samples" + self.SEP
         self.BALANCE = "balance" + self.SEP
+        self.PERFORMANCE = "performance" + self.SEP
 
         # User transparent temporal config
         self.DELAYS = delays or [1, 5]  # TODO: Enlarge for production ... use a few grace seconds
@@ -227,12 +228,16 @@ class RedizConventions(object):
     def errors_name(self, write_key):
         return self.MESSAGES + write_key
 
-    def transactions_name(self, write_key=None, name=None):
+    def transactions_name(self, write_key=None, delay=None, name=None):
         """ Transaction records are produced by stream, by write_key and by both together """
+        delay     = None if delay is None else str(delay)
         key_stem  = None if write_key is None else os.path.splitext(write_key)[0]   # Sometimes name is passed as key
         name_stem = None if name is None else os.path.splitext(name)[0]
-        tail = self.SEP.join( [ s for s in [key_stem,name_stem] if s is not None ])
+        tail = self.SEP.join( [ s for s in [key_stem,delay,name_stem] if s is not None ])
         return self.TRANSACTIONS + tail + '.json'
+
+    def performance_name(self, name, delay=None):
+        return self.PERFORMANCE+name if delay is None else self.PERFORMANCE+str(delay)+self.SEP+name
 
     def history_name(self, name):
         return self.HISTORY + name

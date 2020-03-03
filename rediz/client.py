@@ -98,6 +98,9 @@ class Rediz(RedizConventions):
     def mget_balance(self, write_keys, aggregate=True):
         return self._get_balance_implementation(write_keys=write_keys, aggregate=aggregate)
 
+    def get_performance(self, name, delay=None, count=50):
+        return self._get_performance_implementation(name=name, delay=delay, count=count )
+
     def get_history(self, name, max='+', min='-', count=None, populate=True, drop_expired=True ):
         return self._get_history_implementation( name=name, max=max, min=min, count=count, populate=populate, drop_expired=drop_expired )
 
@@ -930,7 +933,7 @@ class Rediz(RedizConventions):
         exec = score_pipe.execute()
         #
         prtcls = [ self._zmean_scenarios_percentile(percentile_scenarios=ex) if ex else np.NaN for ex in exec]
-        return prtcls
+        return [ (v,p) for v,p in zip(values,prtcls) if not np.isnan(p) ]
 
 
     def _set_scenarios_implementation(self, name, values, write_key, delay=None, delays=None):
@@ -1028,8 +1031,8 @@ class Rediz(RedizConventions):
             pools = [retrieved[pools_lookup[name][delay_ndx]] for delay_ndx in range(num_delay)]
             if any(pools):
                 participant_sets = [retrieved[participants_lookup[name][delay_ndx]] for delay_ndx in range(num_delay)]
-                payments = Counter()
-                for delay_ndx, pool, participant_set in zip(range(num_delay), pools, participant_sets):
+                for delay_ndx, delay, pool, participant_set in zip(range(num_delay), self.DELAYS, pools, participant_sets):
+                    payments = Counter()
                     if pool and len(participant_set) > 1:
                         # Zoom out rewards scenarios window if we don't have a winner
                         # Possibly this should be adjusted by the number of participants to reduce wealth variance
@@ -1043,22 +1046,25 @@ class Rediz(RedizConventions):
                         game_payments = self._game_payments(pool=pool, participant_set=participant_set, rewarded_scenarios=rewarded_scenarios)
                         payments.update(game_payments)
 
-                if len(payments):
-                    pipe = self.client.pipeline()
-                    for (recipient, amount) in payments.items():
-                        # Record keeping
-                        rescaled_amount = budget * float(amount)
-                        pipe.hincrbyfloat(name=self._BALANCES, key=recipient, amount=rescaled_amount)
-                        write_code = RedizConventions.hash(write_key)
-                        recipient_code = RedizConventions.hash(recipient)
-                        transaction_record = {"settlement_time":str(datetime.datetime.now()),"stream": name, "stream_owner_code":write_code,"recipient_code":recipient_code, "amount": rescaled_amount}
-                        key_trans_name = self.transactions_name(write_key=recipient)
-                        name_trans_name = self.transactions_name(name=name)
-                        key_name_trans_name = self.transactions_name(write_key=recipient,name=name)
-                        all_trans_name = self.transactions_name(write_key=None,name=None)
-                        for tn in [all_trans_name, key_trans_name, name_trans_name, key_name_trans_name]:
-                            pipe.xadd(name=tn, fields=transaction_record )
-                            pipe.expire(name=tn,      time=self._TRANSACTIONS_TTL)
+                    if len(payments):
+                        for (recipient, amount) in payments.items():
+                            # Record keeping
+                            rescaled_amount = budget * float(amount)
+                            pipe.hincrbyfloat(name=self._BALANCES, key=recipient, amount=rescaled_amount)
+                            write_code = RedizConventions.hash(write_key)
+                            recipient_code = RedizConventions.hash(recipient)
+                            pipe.zincrby(name=self.performance_name(name=name), value=recipient_code, amount=rescaled_amount)              # Public performance on stream
+                            pipe.zincrby(name=self.performance_name(name=name,delay=delay), value=recipient_code, amount=rescaled_amount)  # Public performance on stream
+                            pipe.zincrby(name=self.performance_name(name=recipient), value=name, amount=rescaled_amount)                   # Private performance across streams
+                            transaction_record = {"settlement_time":str(datetime.datetime.now()),"stream": name, "delay":delay, "stream_owner_code":write_code,"recipient_code":recipient_code, "amount": rescaled_amount}
+                            key_trans_name = self.transactions_name(write_key=recipient)
+                            name_trans_name = self.transactions_name(name=name)
+                            key_name_trans_name = self.transactions_name(write_key=recipient,name=name)
+                            name_delay_trans_name = self.transactions_name(write_key=recipient, name=name, delay=delay )
+                            all_trans_name = self.transactions_name(write_key=None,name=None,delay=None)
+                            for tn in [all_trans_name, key_trans_name, name_trans_name, key_name_trans_name,name_delay_trans_name]:
+                                pipe.xadd(name=tn, fields=transaction_record )
+                                pipe.expire(name=tn,      time=self._TRANSACTIONS_TTL)
         settle_exec = pipe.execute()
 
         # Derived markets ... z's for 1-d, 2-d, 3-d market-implied z-scores and z-curves
@@ -1292,6 +1298,8 @@ class Rediz(RedizConventions):
                 data = self.get_backlinks(name=parts[-1])
             elif ps == self.SUBSCRIPTIONS:
                 data = self.get_subscriptions(name=parts[-1])
+            elif ps == self.PERFORMANCE:
+                data = self.get_performance(name=parts[-1])
             elif ps == self.SUBSCRIBERS:
                 data = self.get_subscribers(name=parts[-1])
             elif ps == self.LAGGED_VALUES:
@@ -1326,6 +1334,8 @@ class Rediz(RedizConventions):
                 data = self.get_cdf(name=parts[-1],delay=int(parts[1]))
             elif ps == self.TRANSACTIONS:
                 data = self.get_transactions(write_key=parts[1], name=parts[2])
+            elif ps == self.PERFORMANCE:
+                data = self.get_performance(name=parts[-1],delay=int(parts[1]))
             else:
                 data = None
         else:
@@ -1378,7 +1388,9 @@ class Rediz(RedizConventions):
         trans_name=self.transactions_name(write_key=write_key,name=name)
         return self.client.xrevrange(name=trans_name, min=min, max=max, count=count )
 
-
+    def _get_performance_implementation(self,name,delay, count):
+        pname = self.performance_name(name=name,delay=delay)
+        return list(reversed(self.client.zrange(name=pname, start=-count-1, end=-1, withscores=True)))
 
     def _get_links_implementation(self, name, delay=None, delays=None):
         """ Set of outgoing links created by name owner """
