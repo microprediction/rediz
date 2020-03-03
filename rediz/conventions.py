@@ -47,6 +47,7 @@ class RedizConventions(object):
         self.SAMPLES = "samples" + self.SEP
         self.BALANCE = "balance" + self.SEP
         self.PERFORMANCE = "performance" + self.SEP
+        self.SUMMARY = "summary" + self.SEP
 
         # User transparent temporal config
         self.DELAYS = delays or [1, 5]  # TODO: Enlarge for production ... use a few grace seconds
@@ -300,8 +301,13 @@ class RedizConventions(object):
 
     def _delay_methods(self):
         return {"delayed": self.delayed_name,
-                "links": self.links_name,
-                "participants": self._sample_owners_name}
+                "links": self.links_name}
+
+    def cdf_name(self,name,delay=None):
+        return self.CDF + name if delay==None else self.CDF+str(delay)+self.SEP+name
+
+
+
 
 
     # --------------------------------------------------------------------------

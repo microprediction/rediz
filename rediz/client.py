@@ -123,7 +123,9 @@ class Rediz(RedizConventions):
     def get_transactions(self, max='+', min='-', count=None, write_key=None, name=None):
         return self._get_transactions_implementation(max=max,min=min,count=count, write_key=write_key, name=name)
 
-
+    def get_summary(self,name):
+        assert self._root_name(name)==name
+        return self._get_summary_implementation(name)
 
     # --------------------------------------------------------------------------
     #            Permissioned get
@@ -933,7 +935,8 @@ class Rediz(RedizConventions):
         exec = score_pipe.execute()
         #
         prtcls = [ self._zmean_scenarios_percentile(percentile_scenarios=ex) if ex else np.NaN for ex in exec]
-        return [ (v,p) for v,p in zip(values,prtcls) if not np.isnan(p) ]
+        valid  = [ (v,p) for v,p in zip(values,prtcls) if not np.isnan(p) ]
+        return {"x":[v for v,p in valid], "y":[p for v,p in valid]}
 
 
     def _set_scenarios_implementation(self, name, values, write_key, delay=None, delays=None):
@@ -1296,6 +1299,8 @@ class Rediz(RedizConventions):
             ps = parts[0]+self.SEP
             if ps == self.BACKLINKS:
                 data = self.get_backlinks(name=parts[-1])
+            if ps == self.SUMMARY:
+                data = self.get_summary(name=parts[-1])
             elif ps == self.SUBSCRIPTIONS:
                 data = self.get_subscriptions(name=parts[-1])
             elif ps == self.PERFORMANCE:
@@ -1436,3 +1441,32 @@ class Rediz(RedizConventions):
                 _data = dict([(scenario, v) for (scenario, v) in distribution])
             data.append(_data)
         return data[0] if singular else data
+
+    def _get_summary_implementation(self,name):
+        def shorten(obj):
+            if isinstance(obj,list):
+                return obj[:5]
+            elif isinstance(obj,dict):
+                return dict( [ (k,shorten(v)) for k,v in obj.items() ])
+            else:
+                return obj
+        def delay_level(name,delay):
+            things = [ self.performance_name(name=name,delay=delay), self.delayed_name(name=name,delay=delay),self.links_name(name=name,delay=delay),
+                       self.cdf_name(name=name,delay=delay)]
+            return dict([(thing, shorten(self.get(thing))) for thing in things])
+
+        def top_level(name):
+            things = [name, self.lagged_values_name(name), self.lagged_times_name(name),
+                         self.backlinks_name(name), self.subscribers_name(name),
+                         self.subscriptions_name(name), self.history_name(name),
+                         self.messages_name(name), self.performance_name(name=name) ]
+            return dict( [ ( thing,shorten(self.get(thing)) ) for thing in things ])
+
+        tl = top_level(name)
+        for delay in self.DELAYS:
+            tl['delay_'+str(delay)] = delay_level(name=name,delay=delay)
+        return tl
+
+
+
+

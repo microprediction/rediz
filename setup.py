@@ -7,7 +7,7 @@ README = (HERE / "README.md").read_text()
 
 setup(
     name="rediz",
-    version="0.1.25",
+    version="0.1.32",
     description="Incentive-based prediction of live data streams using redis as transport.",
     long_description=README,
     long_description_content_type="text/markdown",

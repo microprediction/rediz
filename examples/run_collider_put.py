@@ -13,7 +13,12 @@ write_keys = [ REDIZ_COLLIDER_CONFIG['write_key'] for _ in names ]
 rdz.mset(names=names, values=values, budgets=budgets, write_keys=write_keys)
 leaderboard = rdz.get_performance(name=names[0])
 leaderboard = rdz.get_performance(name=names[0],delay=70)
-print(leaderboard)
+#print(leaderboard)
 
 cdf = rdz.get('cdf::70::cop.json')
-print(cdf)
+#print(cdf)
+
+delayed = rdz.get_delayed(name=names[0],delay=70)
+
+summary = rdz.get_summary('cop.json')
+print(summary)
