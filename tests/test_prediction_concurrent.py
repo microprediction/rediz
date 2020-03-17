@@ -94,10 +94,10 @@ def dont_test_concurrent_real():
 
 def do_concurrent(rdz):
     target_key = "target-key-6ab13c1c-b744-4d73-9fe9-5afaa3ecf427"
-    model_key  = "model-key-1e0ee756-001f-47e1-8724-898d239f7a46"
-    model_key1 = "model1-key-1e0ee756-001f-47e1-8724-898d239f7a46"
-    model_key2 = "model2-key-1e0ee756-001f-47e1-8724-898d239f7a46"
-    model_key3 = "model3-key-1e0ee756-001f-47e1-8724-898d239f7a46"
+    model_key  = "c815f60ddd89bc459b4fb112c1c581d6"
+    model_key1 = "e4fa578939bfc444fd02e54f8b5357b0"
+    model_key2 = "982c68d78151021f538ffafb7afd911a"
+    model_key3 = "3a444a839330c66ed7f98070d30366a2"
     model_keys = [model_key, model_key1, model_key2, model_key3]
     target     = "real-feed-7fb76d7c.json"
     rdz._delete_implementation(target)

@@ -36,7 +36,6 @@ def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_k
     lagged        = rdz.get_lagged(name=target)
     owners        = rdz.client.smembers(rdz._sample_owners_name(name=target,delay=1))
     predictions   = rdz.get_predictions(name=target, delay=1)
-    scenarios1    = rdz.get_scenarios(name=target,write_key=model_key1,delay=1)
     cdf           = rdz._get_cdf_implementation(name=target,delay=1,values=[0.0, 1.0])
     links         = rdz._get_links_implementation(name=target, delay=1)
     backlinks     = rdz._get_backlinks_implementation(name=target)
@@ -60,7 +59,6 @@ def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_k
               "errors":{"owner":rdz.get_errors(write_key=target_key),
                         "model":rdz.get_errors(write_key=model_key)},
               "samples":dict( list(samples.items())[:4] ),
-              "samples1":dict( list(scenarios1.items())[:4] ),
               "owners":list(owners),
               "predictions":dict( list(predictions.items())[:4]),
               "sample_std":sample_std,
@@ -84,11 +82,11 @@ def test_serial_real():
     do_serial(rdz)
 
 def do_serial( rdz ):
-    target_key = "target-key-6ab13c1c-b744-4d73-9fe9-5afaa3ecf427"
-    model_key  = "model-key-1e0ee756-001f-47e1-8724-898d239f7a46"
-    model_key1 = "model1-key-1e0ee756-001f-47e1-8724-898d239f7a46"
-    model_key2 = "model2-key-1e0ee756-001f-47e1-8724-898d239f7a46"
-    model_key3 = "model3-key-1e0ee756-001f-47e1-8724-898d239f7a46"
+    target_key = "77f9496ee9ac0316f083a8a488959441"
+    model_key  = "c051d0be8cc5b02530fc155c3d5b9c90"
+    model_key1 = "dcc0cc254121ca0aec26cbf0b82312ae"
+    model_key2 = "68d4d2f78dd0a43b274c87a673b9ed6c"
+    model_key3 = "acd32246a62661e0fb67b8f627708b5d"
     target     = "fake-feed-7fb76d7c.json"
 
     # Check that things are clean

@@ -9,10 +9,11 @@ def dump(obj,name="tmp_garbage.json"): # Debugging
 
 def test_delete_simple():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
-    title = rdz.random_title()
+    name = rdz.random_name()
+    write_key = rdz.create_key(difficulty=6)
+    title = {'name':name,'write_key':write_key}
     assert rdz.set(value="42",**title)
     dump(title)
-    name, write_key = title["name"], title["write_key"]
     v = rdz.get(name)
     assert v=="42"
     rdz.delete(**title)
@@ -21,13 +22,12 @@ def test_delete_simple():
 
 def test_expire():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
-    title = rdz.random_title()
-    assert rdz.set(value="44",**title)
-    name, write_key = title["name"], title["write_key"]
-    rdz.client.expire(name=title["name"],time=0)
+    name = rdz.random_name()
+    write_key =rdz.create_key(difficulty=6)
+    assert rdz.set(value="44",name=name,write_key=write_key)
+    rdz.client.expire(name=name,time=0)
     import time
     time.sleep(0.1)
-    name, write_key = title["name"], title["write_key"]
     assert rdz.get(name) is None
     assert rdz.client.sismember(name=rdz._NAMES, value=name)
     rdz._delete_implementation(names=[name])
@@ -44,7 +44,7 @@ def test_admin_garbage_collection(num=100):
     rdz = Rediz(**REDIZ_TEST_CONFIG)
     original_num = rdz.card()
     names      = [ rdz.random_name() for _ in range(num) ]
-    write_keys = [ rdz.random_key() for _ in range(num) ]
+    write_keys = [ rdz.create_key(difficulty=6) for _ in range(num) ]
     values = ["from test_admin_garbage_collection" for _ in write_keys ]
     budgets = [ 1 for _ in range(num) ]
     mset_res = rdz.mset(names=names,write_keys=write_keys,values=values, budgets=budgets)
@@ -79,7 +79,7 @@ def test_find_orphans_low_cardinality_test(num=20):
 
         # Create some data with short ttl
         names = [ rdz.random_name() for _ in range(num) ]
-        write_keys = [ rdz.random_key() for _ in range(num) ]
+        write_keys = [ rdz.create_key(difficulty=6) for _ in range(num) ]
         value  = "a string to store"
         values = [value for _ in write_keys ]
         budgets = [ 7 for _ in names ]

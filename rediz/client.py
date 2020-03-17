@@ -17,8 +17,6 @@ PY_REDIS_ARGS = ('host','port','db','username','password','socket_timeout','sock
                  'ssl_check_hostname', 'max_connections', 'single_connection_client','health_check_interval', 'client_name')
 FAKE_REDIS_ARGS = ('decode_responses',)
 
-
-
 class Rediz(RedizConventions):
 
     # Initialization
@@ -149,6 +147,7 @@ class Rediz(RedizConventions):
     def set( self, name, value, write_key, budget=10 ):
         """ Set name=value and initiate clearing, derived zscore market etc """
         assert RedizConventions.is_plain_name(name),"Expecting plain name"
+        assert RedizConventions.is_valid_key(write_key),"Invalid write_key"
         return self._set_implementation(name=name, value=value, write_key=write_key, return_args=None, budget=budget, with_percentiles=True )
 
     def mset(self,names:NameList, values:ValueList, write_keys:KeyList, budgets:List[int] ):
@@ -215,7 +214,6 @@ class Rediz(RedizConventions):
     def unlink(self, name, delay, write_key, target):
         """ Permissioned removal of link (either party can do this) """
         return self._unlink_implementation(name=name, delay=delay, write_key=write_key, target=target )
-
 
     # --------------------------------------------------------------------------
     #            Implementation  (client init)
@@ -350,8 +348,6 @@ class Rediz(RedizConventions):
                     rejected.append({"ndx":ndx, "name":name,"write_key":None,"value":value,"error":"invalid value of type "+str(type(value))+" was supplied"})
                 else:
                     if name is None:
-                        if write_key is None:
-                            write_key = self.random_key()
                         if not(self.is_valid_key(write_key)):
                             rejected.append({"ndx":ndx,"name":name,"write_key":None,"errror":"invalid write_key"})
                         else:
@@ -392,8 +388,6 @@ class Rediz(RedizConventions):
             new_pipe     = self.client.pipeline(transaction=False)
             for exist, ndx, name, value, write_key, budget in zip( exists, ndxs, names, values, write_keys, budgets):
                 if not(exist):
-                    if write_key is None:
-                        write_key = self.random_key()
                     if not(self.is_valid_key(write_key)):
                         rejected.append({"ndx":ndx,"name":name,"write_key":None,"errror":"invalid write_key"})
                     else:
@@ -496,7 +490,7 @@ class Rediz(RedizConventions):
         # (1) Set the actual value ... which will be overwritten by the next set() ... and a randomly named copy that survives longer
         ttl = self._cost_based_ttl(value=value,budget=budget)
         pipe.set(name=name,value=value,ex=ttl)
-        name_of_copy = self._promised_name(name)
+        name_of_copy = self._random_promised_name(name)
         promise_ttl = self._promise_ttl()
         pipe.set(name=name_of_copy, value=value, ex=promise_ttl)
 
@@ -929,14 +923,17 @@ class Rediz(RedizConventions):
         assert delay in self.DELAYS
         score_pipe = self.client.pipeline()
         num = self.client.zcard(name=self._predictions_name(name=name, delay=delay))
-        h = max( 100.0/num, 0.00001)*max([ abs(v) for v in values ]+[1.0])
-        for value in values:
-            score_pipe.zrangebyscore(name=self._predictions_name(name=name,delay=delay),min=value, max=value+h, start=0, num=10, withscores=False)
-        exec = score_pipe.execute()
-        #
-        prtcls = [ self._zmean_scenarios_percentile(percentile_scenarios=ex) if ex else np.NaN for ex in exec]
-        valid  = [ (v,p) for v,p in zip(values,prtcls) if not np.isnan(p) ]
-        return {"x":[v for v,p in valid], "y":[p for v,p in valid]}
+        if num:
+            h = max( 100.0/num, 0.00001)*max([ abs(v) for v in values ]+[1.0])
+            for value in values:
+                score_pipe.zrangebyscore(name=self._predictions_name(name=name,delay=delay),min=value, max=value+h, start=0, num=10, withscores=False)
+            exec = score_pipe.execute()
+            #
+            prtcls = [ self._zmean_scenarios_percentile(percentile_scenarios=ex) if ex else np.NaN for ex in exec]
+            valid  = [ (v,p) for v,p in zip(values,prtcls) if not np.isnan(p) ]
+            return {"x":[v for v,p in valid], "y":[p for v,p in valid]}
+        else:
+            return {"message":"No predictions."}
 
 
     def _set_scenarios_implementation(self, name, values, write_key, delay=None, delays=None):
@@ -964,7 +961,7 @@ class Rediz(RedizConventions):
 
             # Create obscure predictions and promise to insert them later, at different times, into different samples
             utc_epoch_now = int(time.time())
-            individual_predictions_name = self._promised_name(name)
+            individual_predictions_name = self._random_promised_name(name)
             set_and_expire_pipe.zadd(name=individual_predictions_name, mapping=predictions, ch=True)  # (1)
             promise_ttl = max(self.DELAYS) + self._DELAY_GRACE
             set_and_expire_pipe.expire(name=individual_predictions_name, time=promise_ttl)   # (2)
@@ -1294,9 +1291,9 @@ class Rediz(RedizConventions):
     def _get_prefixed_implementation(self, prefixed_name):
         """ Interpret things like  delayed::15::air-pressure.json cdf::70::air-pressure.json etc """
         assert self.SEP in prefixed_name, "Expecting prefixed name with "+self.SEP
-        parts = prefixed_name.lower().split(self.SEP)
+        parts = prefixed_name.split(self.SEP)
         if len(parts)==2:
-            ps = parts[0]+self.SEP
+            ps = (parts[0]+self.SEP).lower()
             if ps == self.BACKLINKS:
                 data = self.get_backlinks(name=parts[-1])
             if ps == self.SUMMARY:

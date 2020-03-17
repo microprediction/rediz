@@ -11,15 +11,15 @@ from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 
 def test_transactions_name():
     name = "barney.json"
-    write_key = "key"
 
     rdz = Rediz(**REDIZ_TEST_CONFIG)
+    write_key = rdz.create_key(difficulty=6)
 
     case1 = rdz.transactions_name(write_key=write_key,name=name)
-    assert case1=='transactions::key::barney.json'
+    assert case1=='transactions::'+write_key+'::barney.json'
 
     case2 = rdz.transactions_name(write_key=write_key)
-    assert case2 == 'transactions::key.json'
+    assert case2 == 'transactions::'+write_key+'.json'
 
     case3 = rdz.transactions_name(name=name)
     assert case3 == 'transactions::barney.json'
@@ -67,7 +67,7 @@ def random_name():
 def test_card_fake():
     rdz = Rediz()
     assert rdz.card()==0
-    title = rdz.random_title()
+    title = {'name':rdz.random_name(),'write_key':rdz.create_key(difficulty=6)}
     rdz.set(value="32",**title)
     assert rdz.card()==1
     del_count = rdz.delete(**title)
@@ -79,7 +79,7 @@ def test_card_fake():
 def test_card_real():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
     num = rdz.card()
-    title = rdz.random_title()
+    title = {'name': rdz.random_name(), 'write_key': rdz.create_key(difficulty=6)}
     rdz.set(value=143,**title)
     assert rdz.card()==num+1
     rdz.delete(**title)
@@ -87,7 +87,7 @@ def test_card_real():
 
 
 def do_test_exists_delete(rdz):
-    title = {"name":"d7ec2edb-d045-490e-acbd-7a05122d930e.json","write_key":"3e68a4e0-a827-4462-a714-676aa575802c"}
+    title = {"name":"d7ec2edb-d045-490e-acbd-7a05122d930e.json","write_key":"addae6720f4280c1c1894007854c93bc"}
     name = title["name"]
     rdz._delete_implementation(name) # In case it is left over from previous
     assert rdz.exists(name)==0
@@ -111,7 +111,7 @@ def do_test_assert_not_in_reserved(rdz):
     assert False==True
 
 def do_test__is_valid_key(rdz):
-    s = str(uuid.uuid4())
+    s = rdz.create_key(difficulty=6)
     assert rdz.is_valid_key(s), "Thought "+s+" should be valid."
     assert rdz.is_valid_key("too short")==False, "Thought "+s+" should be invalid"
 
@@ -122,19 +122,21 @@ def do_test__is_valid_name(rdz):
         assert rdz.is_valid_name(s),"Got it wrong for "+s
 
 def test_coerce_inputs():
-    names, values, write_keys, budgets = Rediz.coerce_inputs(name="dog",value="8",write_key="aslf",budget=1, names=None, values=None, write_keys=None)
+    write_key = "addae6720f4280c1c1894007854c93bc"
+    names, values, write_keys, budgets = Rediz.coerce_inputs(name="dog",value="8",write_key=write_key,budget=1, names=None, values=None, write_keys=None)
     assert names[0]=="dog"
     assert values[0]=="8"
-    names, values, write_keys, budgets = Rediz.coerce_inputs(names=["dog","cat"],value="8",write_key="aslf",name=None, values=None, write_keys=None)
+    names, values, write_keys, budgets = Rediz.coerce_inputs(names=["dog","cat"],value="8",write_key=write_key,name=None, values=None, write_keys=None)
     assert names[0]=="dog"
     assert values[1]=="8"
-    assert write_keys[1]=="aslf"
-    names, values, write_keys, budgets = Rediz.coerce_inputs(names=["dog","cat"],value="12",write_keys=["aslf","blurt"],budget=1, name=None, values=None, write_key=None)
+    assert write_keys[1]==write_key
+    two_keys = [ "e1c3937d7f2f5648a605c10d11167bef", "5f25a97a8d40720567374d229e62e5c3",""]
+    names, values, write_keys, budgets = Rediz.coerce_inputs(names=["dog","cat"],value="12",write_keys=two_keys,budget=1, name=None, values=None, write_key=None)
     assert names[0]=="dog"
     assert values[1]=="12"
-    assert write_keys[1]=="blurt"
+    assert write_keys[1]==two_keys[1]
     assert budgets[1]==1
-    names, values, write_keys, budgets = Rediz.coerce_inputs(names=[None,None],value="me",write_keys=["aslf","blurt"],name=None, values=None, write_key=None, budget=2)
+    names, values, write_keys, budgets = Rediz.coerce_inputs(names=[None,None],value="me",write_keys=two_keys,name=None, values=None, write_key=None, budget=2)
     assert names[0] is None
     assert values[1]=="me"
     assert budgets[1]==2

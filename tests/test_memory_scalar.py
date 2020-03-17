@@ -17,8 +17,8 @@ def test_real():
 
 def do_scalar(rdz):
     NAME       = 'NAME-64c-fe9.json'
-    WRITE_KEY  = "6d77759b-685a-4e25-b75b-6619bf1f1119"
-    MODEL_KEYS = ["---MODEL-1----ajaf45252525dfslakfdjlakjfla","---MODEL-2---ajaf45252525dfslakfdjlakjfla","---MODEL-3---ajaf45252525dfslakfdjlakjfla"]
+    WRITE_KEY  = "032d154c3feb97269d727e345e40b771"
+    MODEL_KEYS = ["dad6936725fdf55be16fb1418db7b697","2653ae9f6f932b29d76263bbb20d6d76","f5f860baba93161e8bbb53b851d6f753"]
     PER_SECOND = 3
     NUM       = 5*PER_SECOND
     rdz.client.flushall()

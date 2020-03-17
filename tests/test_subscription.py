@@ -30,8 +30,8 @@ def subscription_example(plural=False,instant_recall=False):
 
     PUBLISHER             = 'PUBLISQHER_plural_'+str(plural)+'3b4e229a-ffb4-4fc2-8370-c147944aa2b.json'
     SUBSCRIBER            = 'SUBSCRIIBER_plural_'+str(plural)+'ed2b4f6-c6bd-464c-a9e9-322e0c3147.json'
-    PUBLISHER_write_key   = "b0b5753b-14e6-4051-b13e-132bb13ed1a9_plural="+str(plural)
-    SUBSCRIBER_write_key  = "caa09e4a-3901-4cdf-8301-774184e584f3_plural="+str(plural)
+    PUBLISHER_write_key   = "0d81ad42277b5ace3828ef386b8c3bea" if plural else "2b8cc3064b4c50b8a1dd70aed30acdc3"
+    SUBSCRIBER_write_key  = "973d6b9b0606471b0d0e95390dca3aa0" if plural else "89cc7f5e55cdceeeab92438dc07529ae"
     rdz._delete_implementation(PUBLISHER, SUBSCRIBER)
 
     assert rdz.set( name = SUBSCRIBER, value = "some value",       write_key=SUBSCRIBER_write_key )
@@ -79,8 +79,8 @@ def subscription_example(plural=False,instant_recall=False):
     publishers = dict()
     NUM_PUBLISHERS = 50
     for k in range(NUM_PUBLISHERS):
-        source           = 'PUBLISHER_plural_'+str(plural)+'-number_'+str(k)+'__3b4e944aa2b.json'
-        write_key        = 'PUBLISHER_plural_'+str(plural)+'--'+str(k)+'3b4e944aa2b_KEY'
+        source           = 'PUBLISHER_plural_'+ (str(plural).lower())+'-number_'+str(k)+'__3b4e944aa2b.json'
+        write_key        = rdz.create_key(difficulty=6)
         publishers[source] = write_key
     sources    = list(publishers.keys())
     write_keys = list(publishers.values())
@@ -90,8 +90,8 @@ def subscription_example(plural=False,instant_recall=False):
                    value = "I am back again",
                write_key = SUBSCRIBER_write_key ) # Should trigger propagation
     budgets = [3 for _ in sources]
-    rdz.mset(names=sources,values=values, write_keys=write_keys, budgets=budgets)
-    rdz.mset( names = sources,  write_keys = write_keys, values=values, budgets=budgets )
+    rdz.mset( names=sources,  values=values, write_keys=write_keys,   budgets=budgets )
+    rdz.mset( names=sources,  values=values, write_keys = write_keys, budgets=budgets )
     values_back = rdz.mget( names = sources )
     assert all( int(v1)==int(v2) for v1,v2 in zip(values, values_back))
     m_res =  rdz.msubscribe( name = SUBSCRIBER, sources = sources, write_key=SUBSCRIBER_write_key )
@@ -101,7 +101,7 @@ def subscription_example(plural=False,instant_recall=False):
     for source, write_key in publishers.items():
         subscribers = rdz.get_subscribers(name=source )
         assert SUBSCRIBER in subscribers
-        subscribers1 = rdz.get(rdz.SUBSCRIBERS+source)
+        subscribers1 = rdz.get(rdz.SUBSCRIBERS+source)  # 'publisher_plural_true-number_0__3b4e944aa2b.json'
         assert SUBSCRIBER in subscribers1
 
 

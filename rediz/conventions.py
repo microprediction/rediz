@@ -1,10 +1,10 @@
-import re, sys, json, math, time, os
+import re, sys, json, math, time, os, uuid, muid
 import pymorton
 from itertools import zip_longest
 import numpy as np
-import threezaconventions.crypto
 from redis.client import list_or_args
 from typing import List, Union, Any, Optional
+from microprediction.conventions import MicroConventions
 
 KeyList   = List[Optional[str]]
 NameList  = List[Optional[str]]
@@ -14,19 +14,19 @@ DelayList = List[Optional[int]]
 
 SEP = "::"
 
-REDIZ_CONVENTIONS_ARGS = ('history_len', 'lagged_len', 'delays', 'max_ttl', 'error_ttl', 'transactions_ttl','error_limit', 'num_predictions','windows','obscurity','delay_grace','instant_recall')
+REDIZ_CONVENTIONS_ARGS = ('history_len', 'lagged_len', 'delays', 'max_ttl', 'error_ttl', 'transactions_ttl','error_limit', 'num_predictions','windows','obscurity','delay_grace','instant_recall','min_len','min_balance')
 
-
-class RedizConventions(object):
+class RedizConventions(MicroConventions):
 
     def __init__(self,history_len=None, lagged_len=None, delays=None, max_ttl=None, error_ttl=None, transactions_ttl=None,
                   error_limit=None, num_predictions=None, windows=None,
-                  obscurity=None, delay_grace=None, instant_recall=None ):
+                  obscurity=None, delay_grace=None, instant_recall=None, min_len=None, min_balance=None ):
         if windows is None:
             windows = [1e-4, 1e-3,  1e-2]
         self.SEP = SEP
         self.COPY_SEP = self.SEP + "copy" + self.SEP
         self.PREDICTION_SEP = self.SEP + "prediction" + self.SEP
+
         # User facing conventions: transparent use of prefixing
         self.ERRORS = "errors" + self.SEP
         self.DELAYED = "delayed" + self.SEP
@@ -49,8 +49,10 @@ class RedizConventions(object):
         self.PERFORMANCE = "performance" + self.SEP
         self.SUMMARY = "summary" + self.SEP
 
-        # User transparent temporal config
-        self.DELAYS = delays or [1, 5]  # TODO: Enlarge for production ... use a few grace seconds
+        # User transparent temporal and other config
+        self.MIN_LEN = int( min_len or 13 )             # write_key difficulty in order to create a stream unless...
+        self.MIN_BALANCE = int( min_balance or 10000 )  # write_key balance needed to create a stream
+        self.DELAYS = delays or [1, 5]
         self.ERROR_TTL = int( error_ttl or 60 * 5)  # Number of seconds that set execution error logs are persisted
         self.ERROR_LIMIT = int( error_limit or 1000)  # Number of error messages to keep per write key
         self.NUM_PREDICTIONS = int( num_predictions or 1000)  # Number of scenerios in a prediction batch
@@ -60,6 +62,7 @@ class RedizConventions(object):
         self._obscurity = (obscurity or "obscure") + self.SEP
         self._RESERVE = self._obscurity + "reserve"  # Reserve of credits fed by rare cases when all models miss wildly
         self._OWNERSHIP = self._obscurity + "ownership"  # Official map from name to write_key
+        self._BLACKLIST = self._obscurity + "blacklist"  # List of discarded keys
         self._NAMES = self._obscurity + "names"  # Redundant set of all names (needed for random sampling when collecting garbage)
         self._PROMISES = self._obscurity + "promises" + self.SEP  # Prefixes queues of operations that are indexed by epoch second
         self._POINTER = self._obscurity + "pointer"  # A convention used in history stream
@@ -77,9 +80,6 @@ class RedizConventions(object):
         self._MAX_TTL = int( max_ttl or 60 * 60 ) # Maximum TTL, useful for testing
         self._TRANSACTIONS_TTL = int( transactions_ttl or 24 * (60 * 60) )  # How long to keep transactions stream for inactive write_keys
 
-    @staticmethod
-    def sep():
-        return "::"
 
     @staticmethod
     def assert_not_in_reserved_namespace(names, *args):
@@ -87,35 +87,6 @@ class RedizConventions(object):
         if any(RedizConventions.sep() in name for name in names):
             raise Exception("Operation attempted with a name that uses " + RedizConventions.sep())
 
-    @staticmethod
-    def min_key_len():
-        return 18
-
-    @staticmethod
-    def is_plain_name(name: str):
-        return RedizConventions.is_valid_name(name) and not "~" in name
-
-    @staticmethod
-    def is_valid_name(name: str):
-        name_regex = re.compile(r'^[-a-zA-Z0-9_~.:]{1,200}\.[json,html]+$', re.IGNORECASE)
-        return (re.match(name_regex, name) is not None) and (not RedizConventions.sep() in name)
-
-    @staticmethod
-    def is_valid_value(value):
-        return isinstance(value, (str, int, float)) and sys.getsizeof(value) < 100000
-
-    @staticmethod
-    def is_small_value(value):
-        """ Somewhat arbitrary """
-        return sys.getsizeof(value) < 1200
-
-    @staticmethod
-    def is_scalar_value(value):
-        try:
-            fv = float(value)
-            return True
-        except:
-            return False
 
     @staticmethod
     def is_vector_value(value):
@@ -156,42 +127,6 @@ class RedizConventions(object):
     def to_float(values):
         # Canonical way to convert str or [str] or [[str]] to float equivalent with nan replacing None
         return np.array(values, dtype=float).tolist()
-
-    @staticmethod
-    def is_valid_key(key):
-        return isinstance(key, str) and len(key) > RedizConventions.min_key_len()
-
-    @staticmethod
-    def random_key():
-        return threezaconventions.crypto.random_key()
-
-    @staticmethod
-    def random_name():
-        return threezaconventions.crypto.random_key() + '.json'
-
-    @staticmethod
-    def percentile_abscissa():
-        return [-8., -5., -4, -3, -2.5, -2.0, -1.5, -1.25, -1, -0.8, -0.6, -0.4, -0.2, -0.1, -0.05, -0.02, -0.01, 0.,
-              0.01, 0.02, 0.05, 0.1, 0.2, 0.4, 0.6, 0.8, 1., 1.25, 1.5, 2.0, 2.5, 3., 4., 5., 8.]
-
-    @staticmethod
-    def random_title():
-        return {"name":RedizConventions.random_name(), "write_key":RedizConventions.random_key()}
-
-    @staticmethod
-    def hash(s):
-        return threezaconventions.crypto.hash5(s)
-
-    @staticmethod
-    def vanity_key(head):
-        assert len(head)<=8 and len(head)>=4
-        assert all( [c in "0123456789abcdef-" for c in head] ),'Must be a,b,c,d,e,f or digits '
-        remaining = 100000
-        while remaining:
-            write_key = RedizConventions.random_key()
-            code = RedizConventions.hash(write_key)
-            if code[9:9+len(head)]==head:
-                return write_key
 
     @staticmethod
     def coerce_inputs(  names:Optional[NameList]=None,
@@ -334,8 +269,8 @@ class RedizConventions(object):
     def _ownership_name(self):
         return self._OWNERSHIP
 
-    def _promised_name(self, name):
-        return self._PROMISED + self.random_key()[:8] + self.SEP + name[:14]
+    def _random_promised_name(self, name):
+        return self._PROMISED + str(uuid.uuid4())[:8] + self.SEP + name[:14]
 
     def _copy_promise(self, source, destination):
         return source + self.COPY_SEP + destination
@@ -359,7 +294,7 @@ class RedizConventions(object):
     def _make_scenario_obscure(self, ticket):
         """ Change write_key to a hash of write_key """
         parts = ticket.split(self.SEP)
-        return parts[0] + self.SEP + self.hash(parts[1])
+        return parts[0] + self.SEP + muid.shash(parts[1])
 
     def _scenario_percentile(self, scenario):
         """ Extract scenario percentile from scenario string """

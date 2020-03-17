@@ -15,7 +15,7 @@ def test_real():
 
 def do_scalar(rdz):
     NAME      = 'NAME-64c-fe9.json'
-    WRITE_KEY = "6d77759b-685a-4e25-b75b-6619bf1f1119"
+    WRITE_KEY = "70e86aa1be823143eb03bc9a7c8585cc"
     NUM       = 6
     rdz.client.flushall()
     rdz.delete(name=NAME,write_key=WRITE_KEY)
@@ -54,7 +54,7 @@ def do_scalar(rdz):
 
 def do_vector(rdz):
     NAME      = 'NAME-64c-fe9.json'
-    WRITE_KEY = "6d77759b-685a-4e25-b75b-6619bf1f1119"
+    WRITE_KEY = "26b3742b44f4ef5e7c3e6458cfcd68d8"
     NUM       = 5
     rdz.client.flushall()
     assert rdz.card() == 0

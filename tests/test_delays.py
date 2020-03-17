@@ -1,6 +1,7 @@
 from rediz.client import Rediz
-import json, os, uuid, random, time
+import json, time
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
+import muid
 
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_delays.py ; cat tmp_delays.json
 
@@ -23,7 +24,8 @@ def do_test_delay(rdz):
     NAME      = 'test-delay-c6bd-464c-asad-fe9.json'
     rdz._delete_implementation(NAME)
     time.sleep(0.1)
-    WRITE_KEY = "6d77759b-685a-4e25-b75b-6619bf1f1119"
+    WRITE_KEY = "b0212f052e1d4ca8ab75564cf9580b31"
+    assert muid.validate(WRITE_KEY), "MUID NOT WORKING ?! "
     prctl = rdz.set( name = NAME,  value = "living in the past",  write_key=WRITE_KEY )
     time.sleep(4)
     prctl = rdz.set( name = NAME,  value = "living in the present",  write_key=WRITE_KEY )
@@ -46,7 +48,7 @@ def do_test_lags_and_delays(rdz):
     NAME = 'test-delay-lags-c6bd-464c-fe9.json'
     rdz._delete_implementation(NAME)
     time.sleep(0.1)
-    WRITE_KEY = "6d77759b-685a-4e25-b75b-6619bf1f1119"
+    WRITE_KEY = "addae6720f4280c1c1894007854c93bc"
     prctl = rdz.set(name=NAME, value=6.0, write_key=WRITE_KEY)
     time.sleep(4)
     prctl = rdz.set(name=NAME, value=16.0, write_key=WRITE_KEY)
