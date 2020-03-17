@@ -170,9 +170,9 @@ class Rediz(RedizConventions):
 
     def set_scenarios(self, name, values, delay, write_key):
         """ Supply scenarios for scalar value taken by name
-               values :   [ float ]  len  self.NUM_PREDICTIONS
+               values :   [ float ]  len  self.num_predictions
         """
-        assert len(values)==self.NUM_PREDICTIONS
+        assert len(values)==self.num_predictions
         assert delay in self.DELAYS
         assert self.is_valid_key(write_key)
         fvalues = list(map(float,values))
@@ -883,7 +883,7 @@ class Rediz(RedizConventions):
 
     def _baseline_prediction(self, name, value, write_key, delay ):
         # As a finer point, we should really be using the delay times here and sampling by time not lag ... but it is just a lazy benchmark anyway
-        lagged_values = self._get_lagged_implementation(name, with_times=False, with_values=True, to_float=True, start=0, end=None, count=self.NUM_PREDICTIONS)
+        lagged_values = self._get_lagged_implementation(name, with_times=False, with_values=True, to_float=True, start=0, end=None, count=self.num_predictions)
         predictions = self.empirical_predictions(lagged_values=lagged_values)
         return self._set_scenarios_implementation(name=name, values=predictions, write_key=write_key, delay=delay)
 
@@ -897,7 +897,7 @@ class Rediz(RedizConventions):
             delete_pipe = self.client.pipeline(transaction=True)  # <-- Important that transaction=True
             for delay in delays:
                 collective_predictions_name = self._predictions_name(name, delay)
-                keys = [ self._format_scenario(self, write_key, k) for k in range(self.NUM_PREDICTIONS) ]
+                keys = [ self._format_scenario(self, write_key, k) for k in range(self.num_predictions) ]
                 delete_pipe.zrem( collective_predictions_name, *keys)
                 samples_name = self._samples_name(name=name, delay=delay)
                 delete_pipe.zrem(samples_name, *keys)
@@ -910,7 +910,7 @@ class Rediz(RedizConventions):
         """ Charge for this! Not encouraged as it should not be necessary, and it is inefficient to get scenarios back from the collective zset """
         assert name == self._root_name(name)
         if self.is_valid_key(write_key) and delay in self.DELAYS:
-            cursor, items = self.client.zscan(name=self._predictions_name(name=name, delay=delay),cursor=cursor,match='*'+write_key+'*',count=self.NUM_PREDICTIONS)
+            cursor, items = self.client.zscan(name=self._predictions_name(name=name, delay=delay),cursor=cursor,match='*'+write_key+'*',count=self.num_predictions)
             return {"cursor":cursor, "scenarios":dict(items)}
 
     def _get_invcdf_implementation(self, name, delay, percentiles):
@@ -943,10 +943,10 @@ class Rediz(RedizConventions):
         elif delays is None:
             delays = [ delay ]
         assert name==self._root_name(name)
-        if len(values)==self.NUM_PREDICTIONS and self.is_valid_key(write_key
+        if len(values)==self.num_predictions and self.is_valid_key(write_key
                 ) and all( [ isinstance(v,(int,float) ) for v in values] ) and all (delay in self.DELAYS for delay in delays):
             # Jigger sorted predictions
-            noise =  np.random.randn(self.NUM_PREDICTIONS).tolist()
+            noise =  np.random.randn(self.num_predictions).tolist()
             jiggered_values = [v + n*self.NOISE for v, n in zip(values, noise)]
             jiggered_values.sort()
             predictions = dict([(self._format_scenario(write_key=write_key, k=k), v) for k, v in enumerate(jiggered_values)])
@@ -974,7 +974,7 @@ class Rediz(RedizConventions):
 
             # Execute pipeline ... should not fail (!)
             execut = set_and_expire_pipe.execute()
-            anticipated_execut = [self.NUM_PREDICTIONS]*len(delays) + [ self.NUM_PREDICTIONS, True ] + [ 1, True, True ]*len(delays)
+            anticipated_execut = [self.num_predictions]*len(delays) + [ self.num_predictions, True ] + [ 1, True, True ]*len(delays)
             success = all( actual==anticipate for actual, anticipate in zip(execut, anticipated_execut) )
             return success
         else:
@@ -1111,11 +1111,11 @@ class Rediz(RedizConventions):
         game_payments = Counter(dict((p, -1.0) for p in participant_set))
 
         if len(rewarded_scenarios) == 0:
-            carryover = Counter({self._RESERVE: 1.0 * pool / self.NUM_PREDICTIONS})
+            carryover = Counter({self._RESERVE: 1.0 * pool / self.num_predictions})
             game_payments.update(carryover)
         else:
             winners = [self._scenario_owner(ticket) for ticket in rewarded_scenarios]
-            reward = (1.0 * pool / self.NUM_PREDICTIONS) / len(winners)  # Could augment this to use kernel or whatever
+            reward = (1.0 * pool / self.num_predictions) / len(winners)  # Could augment this to use kernel or whatever
             payouts = Counter(dict([(w, reward * c) for w, c in Counter(winners).items()]))
 
             game_payments.update(payouts)

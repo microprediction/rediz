@@ -14,13 +14,17 @@ DelayList = List[Optional[int]]
 
 SEP = "::"
 
-REDIZ_CONVENTIONS_ARGS = ('history_len', 'lagged_len', 'delays', 'max_ttl', 'error_ttl', 'transactions_ttl','error_limit', 'num_predictions','windows','obscurity','delay_grace','instant_recall','min_len','min_balance')
+REDIZ_CONVENTIONS_ARGS = ('history_len', 'lagged_len', 'delays', 'max_ttl', 'error_ttl', 'transactions_ttl','error_limit', 'num_predictions','windows','obscurity','delay_grace','instant_recall')
+MICRO_CONVENTIONS_ARGS = ('min_len','min_balance')
 
 class RedizConventions(MicroConventions):
 
     def __init__(self,history_len=None, lagged_len=None, delays=None, max_ttl=None, error_ttl=None, transactions_ttl=None,
                   error_limit=None, num_predictions=None, windows=None,
                   obscurity=None, delay_grace=None, instant_recall=None, min_len=None, min_balance=None ):
+
+        super().__init__(min_len=min_len,min_balance=min_balance,num_predictions=num_predictions)
+
         if windows is None:
             windows = [1e-4, 1e-3,  1e-2]
         self.SEP = SEP
@@ -50,12 +54,12 @@ class RedizConventions(MicroConventions):
         self.SUMMARY = "summary" + self.SEP
 
         # User transparent temporal and other config
-        self.MIN_LEN = int( min_len or 13 )             # write_key difficulty in order to create a stream unless...
-        self.MIN_BALANCE = int( min_balance or 10000 )  # write_key balance needed to create a stream
+        self.MIN_LEN = int(self.min_len)                     # FIXME: Get rid of MIN_LEN
+        self.MIN_BALANCE = int(self.min_balance)             # FIXME: Get rid of MIN_BALANCE
+        self.NUM_PREDICTIONS = int(self.num_predictions)     # Number of scenerios in a prediction batch
         self.DELAYS = delays or [1, 5]
         self.ERROR_TTL = int( error_ttl or 60 * 5)  # Number of seconds that set execution error logs are persisted
         self.ERROR_LIMIT = int( error_limit or 1000)  # Number of error messages to keep per write key
-        self.NUM_PREDICTIONS = int( num_predictions or 1000)  # Number of scenerios in a prediction batch
         self.NOISE = 0.3 / self.NUM_PREDICTIONS  # Tie-breaking / smoothing noise added to predictions
 
         # Implementation details: private reserved redis keys and prefixes.

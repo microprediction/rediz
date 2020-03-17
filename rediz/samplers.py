@@ -1,13 +1,13 @@
 
 # Examples of scenario generation
+# Also used for default scenario generation by stream sponsors
 import random, bisect
 import numpy as np
 
 # --------------------------------------------------------------------------
 #          Recency bootstrappy things
 # --------------------------------------------------------------------------
-# Easy to understand benchmarks. Lots of bootstrap out there, for example:
-# https://arch.readthedocs.io/en/latest/bootstrap/timeseries-bootstraps.html
+# Easy to understand benchmarks. Feel free to contribute more.
 
 
 def exponential_bootstrap( lagged, decay, num, as_process=None):
