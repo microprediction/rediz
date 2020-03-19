@@ -1,6 +1,8 @@
 
-# Examples of scenario generation
+# Examples of baseline scenario generation
+# You can do better !
 # Also used for default scenario generation by stream sponsors
+
 import random, bisect
 import numpy as np
 

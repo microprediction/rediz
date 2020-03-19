@@ -8,7 +8,7 @@ if __name__ == '__main__':
     for name in ['cop.json']:
 
         #prctls = rdz.get_cdf(name=name)
-        prctls = rdz.get('cdf::'+name)
+        prctls = rdz.get_cdf(name)
         import matplotlib.pyplot as plt
         plt.plot(rdz.percentile_abscissa(),prctls)
         plt.title('CDF')

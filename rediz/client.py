@@ -1,4 +1,4 @@
-import fakeredis, sys, math, json, redis, time, random, itertools, datetime
+import fakeredis, sys, math, json, redis, time, random, itertools, datetime, muid
 import numpy as np
 from collections import Counter
 from typing import List, Union, Any, Optional
@@ -67,6 +67,9 @@ class Rediz(RedizConventions):
     def get_samples(self, name, delay=None, delays=None):
         return self._get_samples_implementation(name=name, delay=delay, delays=delays)
 
+    def get_index(self):
+        return self._get_index_implementation()
+
     def get_predictions(self, name, delay=None, delays=None):
         return self._get_predictions_implementation(name=name, delay=delay, delays=delays)
 
@@ -110,6 +113,9 @@ class Rediz(RedizConventions):
 
     def get_errors(self, write_key, start=0, end=-1):
         return self.client.lrange(name=self.errors_name(write_key=write_key), start=start, end=end)
+
+    def get_confirms(self, write_key, start=0, end=-1):
+        return self.client.lrange(name=self.confirms_name(write_key=write_key), start=start, end=end)
 
     def get_links(self, name, delay=None, delays=None ):
         assert not self.SEP in name, "Intent is to provide delay variable"
@@ -258,7 +264,6 @@ class Rediz(RedizConventions):
         names = list_or_args(names,args)
         return self.client.hmget(self._ownership_name(),*names)
 
-
     # --------------------------------------------------------------------------
     #            Implementation  (set)
     # --------------------------------------------------------------------------
@@ -310,6 +315,15 @@ class Rediz(RedizConventions):
             for title in titles:
                 if title["name"] in prctls:
                     title.update( {"percentiles":prctls[title["name"]]} )
+
+        # Write to confirmation log
+        cnfrms = self.confirms_name(write_key=write_keys[0])
+        confirm_pipe = self.client.pipeline(transaction=False)
+        confirm_pipe.lpush(cnfrms, json.dumps(titles[:10]))
+        confirm_pipe.expire(cnfrms, self.CONFIRMS_TTL)
+        confirm_pipe.ltrim(cnfrms, start=0, end=self.CONFIRMS_MAX)
+        confirm_pipe.execute(raise_on_error=True)
+
         return titles[0] if singular else titles
 
 
@@ -1420,6 +1434,12 @@ class Rediz(RedizConventions):
 
     def _get_samples_implementation(self, name, delay=None, delays=None, obscure=True):
         return self._get_distribution( namer=self._samples_name, name=name, delay=delay, delays=delays, obscure=obscure )
+
+    def _get_index_implementation(self):
+        ownership = list(self.client.hgetall(self._OWNERSHIP))
+        obscured = [(name, muid.animal(key)) for name, key in ownership.items()]
+        obscured.sort(key=lambda t: len(t[1]))
+        return obscured
 
     def _get_distribution(self, namer, name, delay=None, delays=None, obscure=True):
         """ Get predictions or samples and obfuscate (hash) the write keys """

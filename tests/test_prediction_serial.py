@@ -41,6 +41,7 @@ def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_k
     backlinks     = rdz._get_backlinks_implementation(name=target)
     subscriptions = rdz._get_subscriptions_implementation(name=target)
     subscribers   = rdz._get_subscribers_implementation(name=target)
+    confirms     = rdz.get_confirms(write_key=target_key)
 
     if len(list(samples.values())):
         sample_std = np.nanstd(list(samples.values()))
@@ -66,7 +67,8 @@ def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_k
               "links":links,
               "backlinks":backlinks,
               "subscriptions":subscriptions,
-              "subscribers":subscribers
+              "subscribers":subscribers,
+              "confirms":confirms
               }
 
     dump( report )

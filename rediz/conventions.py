@@ -52,14 +52,18 @@ class RedizConventions(MicroConventions):
         self.BALANCE = "balance" + self.SEP
         self.PERFORMANCE = "performance" + self.SEP
         self.SUMMARY = "summary" + self.SEP
+        self.CONFIRMS = "confirms" + self.SEP
 
         # User transparent temporal and other config
         self.MIN_LEN = int(self.min_len)                     # FIXME: Get rid of MIN_LEN
         self.MIN_BALANCE = int(self.min_balance)             # FIXME: Get rid of MIN_BALANCE
         self.NUM_PREDICTIONS = int(self.num_predictions)     # Number of scenerios in a prediction batch
         self.DELAYS = delays or [1, 5]
-        self.ERROR_TTL = int( error_ttl or 60 * 5)  # Number of seconds that set execution error logs are persisted
+        self.ERROR_TTL = int( error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
+        self.CONFIRMS_TTL = int(error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
         self.ERROR_LIMIT = int( error_limit or 1000)  # Number of error messages to keep per write key
+        self.CONFIRMS_LIMIT = int(error_limit or 1000)  # Number of error messages to keep per write key
+        self.CONFIRMS_MAX = 5  # Maximum number of confirmations when using mset()
         self.NOISE = 0.3 / self.NUM_PREDICTIONS  # Tie-breaking / smoothing noise added to predictions
 
         # Implementation details: private reserved redis keys and prefixes.
@@ -164,6 +168,9 @@ class RedizConventions(MicroConventions):
 
     def messages_name(self, name):
         return self.MESSAGES + name
+
+    def confirms_name(self, write_key):
+        return self.CONFIRMS + write_key
 
     def errors_name(self, write_key):
         return self.MESSAGES + write_key
