@@ -991,14 +991,24 @@ class Rediz(RedizConventions):
             anticipated_execut = [self.num_predictions]*len(delays) + [ self.num_predictions, True ] + [ 1, True, True ]*len(delays)
             success = all( actual==anticipate for actual, anticipate in zip(execut, anticipated_execut) )
 
-            # Confirmation log
-            cnfrms = self.confirms_name(write_key=write_key)
-            confirmation = {'type':'prediction','success':success,'name':name,'delays':delays,'values':values[:5]}
-            confirm_pipe = self.client.pipeline(transaction=False)
-            confirm_pipe.lpush(cnfrms, json.dumps(confirmation))
-            confirm_pipe.expire(cnfrms, self.CONFIRMS_TTL)
-            confirm_pipe.ltrim(cnfrms, start=0, end=self.CONFIRMS_MAX)
-            confirm_pipe.execute(raise_on_error=True)
+            if success:
+                # Confirmation log
+                cnfrms = self.confirms_name(write_key=write_key)
+                confirmation = {'type':'prediction','success':success,'name':name,'delays':delays,'values':values[:5]}
+                confirm_pipe = self.client.pipeline(transaction=False)
+                confirm_pipe.lpush(cnfrms, json.dumps(confirmation))
+                confirm_pipe.expire(cnfrms, self.CONFIRMS_TTL)
+                confirm_pipe.ltrim(cnfrms, start=0, end=self.CONFIRMS_MAX)
+                confirm_pipe.execute(raise_on_error=True)
+            else:
+                rrs = self.errors_name(write_key=write_key)
+                error_report = {'type': 'prediction', 'success': success, 'name': name, 'delays': delays,
+                                'values': values[:5],'anticipated_execut':anticipated_execut,'actual_execut':execut}
+                error_pipe = self.client.pipeline(transaction=False)
+                error_pipe.lpush(rrs, json.dumps(error_report))
+                error_pipe.expire(rrs, self.ERROR_TTL)
+                error_pipe.ltrim(rrs, start=0, end=self.ERROR_LIMIT)
+                error_pipe.execute(raise_on_error=True)
 
             return success
         else:
