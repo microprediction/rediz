@@ -990,6 +990,16 @@ class Rediz(RedizConventions):
             execut = set_and_expire_pipe.execute()
             anticipated_execut = [self.num_predictions]*len(delays) + [ self.num_predictions, True ] + [ 1, True, True ]*len(delays)
             success = all( actual==anticipate for actual, anticipate in zip(execut, anticipated_execut) )
+
+            # Confirmation log
+            cnfrms = self.confirms_name(write_key=write_key)
+            confirmation = {'type':'prediction','success':success,'name':name,'delays':delays,'values':values[:5]}
+            confirm_pipe = self.client.pipeline(transaction=False)
+            confirm_pipe.lpush(cnfrms, json.dumps(confirmation))
+            confirm_pipe.expire(cnfrms, self.CONFIRMS_TTL)
+            confirm_pipe.ltrim(cnfrms, start=0, end=self.CONFIRMS_MAX)
+            confirm_pipe.execute(raise_on_error=True)
+
             return success
         else:
             # TODO: Log failed prediction attempt to write_key log
