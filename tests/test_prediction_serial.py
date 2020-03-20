@@ -51,11 +51,11 @@ def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_k
         predictions_std = 0.0
 
     report = {"promises_delivered":num_exec,
-              "balances":{"owner":rdz.get_balance(write_key=target_key),
-                          "model":rdz.get_balance(write_key=model_key),
-                          "model1": rdz.get_balance(write_key=model_key1),
-                          "model2": rdz.get_balance(write_key=model_key2),
-                          "model3": rdz.get_balance(write_key=model_key3),
+              "balances":{"owner":rdz.get_performance(write_key=target_key),
+                          "model":rdz.get_performance(write_key=model_key),
+                          "model1": rdz.get_performance(write_key=model_key1),
+                          "model2": rdz.get_performance(write_key=model_key2),
+                          "model3": rdz.get_performance(write_key=model_key3),
                           "reserve":rdz.get_reserve()},
               "errors":{"owner":rdz.get_errors(write_key=target_key),
                         "model":rdz.get_errors(write_key=model_key)},

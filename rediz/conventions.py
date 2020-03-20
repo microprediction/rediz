@@ -51,6 +51,7 @@ class RedizConventions(MicroConventions):
         self.SAMPLES = "samples" + self.SEP
         self.BALANCE = "balance" + self.SEP
         self.PERFORMANCE = "performance" + self.SEP
+        self.LEADERBOARD = "leaderboard" + self.SEP
         self.SUMMARY = "summary" + self.SEP
         self.CONFIRMS = "confirms" + self.SEP
 
@@ -170,21 +171,31 @@ class RedizConventions(MicroConventions):
         return self.MESSAGES + name
 
     def confirms_name(self, write_key):
-        return self.CONFIRMS + write_key
+        return self.CONFIRMS + write_key + '.json'
 
     def errors_name(self, write_key):
-        return self.MESSAGES + write_key
+        return self.MESSAGES + write_key + '.json'
 
-    def transactions_name(self, write_key=None, delay=None, name=None):
-        """ Transaction records are produced by stream, by write_key and by both together """
+    def transactions_name(self, write_key=None, name=None, delay=None ):
+        """ Stream name """
         delay     = None if delay is None else str(delay)
-        key_stem  = None if write_key is None else os.path.splitext(write_key)[0]   # Sometimes name is passed as key
+        key_stem  = None if write_key is None else os.path.splitext(write_key)[0]
         name_stem = None if name is None else os.path.splitext(name)[0]
         tail = self.SEP.join( [ s for s in [key_stem,delay,name_stem] if s is not None ])
         return self.TRANSACTIONS + tail + '.json'
 
-    def performance_name(self, name, delay=None):
-        return self.PERFORMANCE+name if delay is None else self.PERFORMANCE+str(delay)+self.SEP+name
+    def performance_name(self, write_key):
+        return self.PERFORMANCE + write_key + '.json'
+
+    def performance_key(self, name, delay):
+        name_stem = os.path.splitext(name)[0]
+        return name_stem + self.SEP + delay
+
+    def leaderboard_name(self, name=None, delay=None):
+        if name is None and delay is None:
+            return self.LEADERBOARD[:-2]+'.json'
+        else:
+            return self.LEADERBOARD+name if delay is None else self.LEADERBOARD+str(delay)+self.SEP+name
 
     def history_name(self, name):
         return self.HISTORY + name
@@ -281,7 +292,8 @@ class RedizConventions(MicroConventions):
         return self._OWNERSHIP
 
     def _random_promised_name(self, name):
-        return self._PROMISED + str(uuid.uuid4())[:8] + self.SEP + name[:14]
+        name_stem = os.path.splitext(name)[0]
+        return self._PROMISED + str(uuid.uuid4())[:8] + self.SEP + name_stem + '.json'
 
     def _copy_promise(self, source, destination):
         return source + self.COPY_SEP + destination

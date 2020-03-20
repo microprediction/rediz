@@ -93,14 +93,11 @@ class Rediz(RedizConventions):
     def get_lagged_times(self, name, start=0, end=None, count=None, to_float=True):
         return self._get_lagged_implementation(name, start=start, end=end, count=count, with_values=False, with_times=True, to_float=to_float)
 
-    def get_balance(self, write_key ):
-        return self._get_balance_implementation(write_key=write_key)
+    def get_performance(self, write_key, name=None, delay=None):
+        return self._get_performance_implementation(write_key=write_key, name=name, delay=delay)
 
-    def mget_balance(self, write_keys, aggregate=True):
-        return self._get_balance_implementation(write_keys=write_keys, aggregate=aggregate)
-
-    def get_performance(self, name, delay=None, count=50):
-        return self._get_performance_implementation(name=name, delay=delay, count=count )
+    def get_leaderboard(self, name, delay=None, count=50):
+        return self._get_leaderboard_implementation(name=name, delay=delay, count=count)
 
     def get_history(self, name, max='+', min='-', count=None, populate=True, drop_expired=True ):
         return self._get_history_implementation( name=name, max=max, min=min, count=count, populate=populate, drop_expired=drop_expired )
@@ -117,6 +114,12 @@ class Rediz(RedizConventions):
     def get_confirms(self, write_key, start=0, end=-1):
         return self.client.lrange(name=self.confirms_name(write_key=write_key), start=start, end=end)
 
+    def get_balance(self, write_key):
+        return self.client.hget(name=self._BALANCES, key=write_key)
+
+    def get_performance(self, write_key):
+        return self.client.hgetall(name=self.performance_name(write_key=write_key))
+
     def get_links(self, name, delay=None, delays=None ):
         assert not self.SEP in name, "Intent is to provide delay variable"
         return self._get_links_implementation(name=name, delay=delay, delays=delays )
@@ -124,8 +127,8 @@ class Rediz(RedizConventions):
     def get_backlinks(self, name ):
         return self._get_backlinks_implementation(name=name )
 
-    def get_transactions(self, max='+', min='-', count=None, write_key=None, name=None):
-        return self._get_transactions_implementation(max=max,min=min,count=count, write_key=write_key, name=name)
+    def get_transactions(self, max='+', min='-', count=None, write_key=None, name=None, delay=None):
+        return self._get_transactions_implementation(max=max,min=min,count=count, write_key=write_key, name=name, delay=delay)
 
     def get_summary(self,name):
         assert self._root_name(name)==name
@@ -863,7 +866,7 @@ class Rediz(RedizConventions):
          for value, destination, method in zip(source_values, destinations, methods):
              if method == 'copy':
                  if value is None:
-                     report['warnings'].append('None value found ')
+                     report['warnings'] = report['warnings'] + ' None value found '
                  else:
                      delay_ttl = int(max(self.DELAYS)+self._DELAY_GRACE+5*60)
                      move_pipe.set(name=destination,value=value,ex=delay_ttl)
@@ -963,6 +966,7 @@ class Rediz(RedizConventions):
             noise =  np.random.randn(self.num_predictions).tolist()
             jiggered_values = [v + n*self.NOISE for v, n in zip(values, noise)]
             jiggered_values.sort()
+            assert len(set(jiggered_values))==len(jiggered_values),"coincidence??"
             predictions = dict([(self._format_scenario(write_key=write_key, k=k), v) for k, v in enumerate(jiggered_values)])
 
             # Open pipeline
@@ -971,11 +975,12 @@ class Rediz(RedizConventions):
             # Add to collective contemporaneous forward predictions
             for delay in delays:
                 collective_predictions_name = self._predictions_name(name, delay)
-                set_and_expire_pipe.zadd(   name=collective_predictions_name, mapping=predictions, ch=True,nx=False)  # (0)
+                set_and_expire_pipe.zadd(  name=collective_predictions_name, mapping=predictions, ch=True,nx=False)  # (0)
 
             # Create obscure predictions and promise to insert them later, at different times, into different samples
             utc_epoch_now = int(time.time())
             individual_predictions_name = self._random_promised_name(name)
+            set_and_expire_pipe.delete(individual_predictions_name)
             set_and_expire_pipe.zadd(name=individual_predictions_name, mapping=predictions, ch=True)  # (1)
             promise_ttl = max(self.DELAYS) + self._DELAY_GRACE
             set_and_expire_pipe.expire(name=individual_predictions_name, time=promise_ttl)   # (2)
@@ -988,8 +993,12 @@ class Rediz(RedizConventions):
 
             # Execute pipeline ... should not fail (!)
             execut = set_and_expire_pipe.execute()
-            anticipated_execut = [self.num_predictions]*len(delays) + [ self.num_predictions, True ] + [ 1, True, True ]*len(delays)
-            success = all( actual==anticipate for actual, anticipate in zip(execut, anticipated_execut) )
+            anticipated_execut = [1, self.num_predictions]*len(delays) + [ self.num_predictions, True ] + [ 1, True, True ]*len(delays)
+
+            def _close(a1,a2):
+                return a1==a2 or ( isinstance(a1,int) and a1>20 and ((a1-a2)/self.num_predictions)<0.05 )
+
+            success = all( _close(actual,anticipate) for actual, anticipate in zip(execut, anticipated_execut) )
 
             if success:
                 # Confirmation log
@@ -1085,20 +1094,20 @@ class Rediz(RedizConventions):
                             # Record keeping
                             rescaled_amount = budget * float(amount)
                             pipe.hincrbyfloat(name=self._BALANCES, key=recipient, amount=rescaled_amount)
-                            write_code = RedizConventions.hash(write_key)
-                            recipient_code = RedizConventions.hash(recipient)
-                            pipe.zincrby(name=self.performance_name(name=name), value=recipient_code, amount=rescaled_amount)              # Public performance on stream
-                            pipe.zincrby(name=self.performance_name(name=name,delay=delay), value=recipient_code, amount=rescaled_amount)  # Public performance on stream
-                            pipe.zincrby(name=self.performance_name(name=recipient), value=name, amount=rescaled_amount)                   # Private performance across streams
+                            from muid import shash
+                            write_code = muid.shash(write_key)
+                            recipient_code = muid.shash(recipient)
+                            # Leaderboards: overall, by stream, by stream and horizon
+                            for lb in [self.leaderboard_name(), self.leaderboard_name(name=name), self.leaderboard_name(name=name,delay=delay) ]:
+                                pipe.zincrby(name=lb, value=recipient_code, amount=rescaled_amount)
+                            # Performance: custom report for the recipient
+                            pipe.zincrby(name=self.performance_name(write_key=recipient), value=self.performance_key(name=name,delay=delay), amount=rescaled_amount)
+                            # Transactions logs:
                             transaction_record = {"settlement_time":str(datetime.datetime.now()),"stream": name, "delay":delay, "stream_owner_code":write_code,"recipient_code":recipient_code, "amount": rescaled_amount}
-                            key_trans_name = self.transactions_name(write_key=recipient)
-                            name_trans_name = self.transactions_name(name=name)
-                            key_name_trans_name = self.transactions_name(write_key=recipient,name=name)
-                            name_delay_trans_name = self.transactions_name(write_key=recipient, name=name, delay=delay )
-                            all_trans_name = self.transactions_name(write_key=None,name=None,delay=None)
-                            for tn in [all_trans_name, key_trans_name, name_trans_name, key_name_trans_name,name_delay_trans_name]:
-                                pipe.xadd(name=tn, fields=transaction_record )
-                                pipe.expire(name=tn,      time=self._TRANSACTIONS_TTL)
+                            log_names = [ self.transactions_name(), self.transactions_name(write_key=recipient ),  self.transactions_name(write_key=recipient, name=name ), self.transactions_name(write_key=recipient, name=name, delay=delay ) ]
+                            for ln in log_names:
+                                pipe.xadd(name=ln ,   fields=transaction_record )
+                                pipe.expire(name=ln,  time=self._TRANSACTIONS_TTL)
         settle_exec = pipe.execute()
 
         # Derived markets ... z's for 1-d, 2-d, 3-d market-implied z-scores and z-curves
@@ -1240,12 +1249,6 @@ class Rediz(RedizConventions):
     #            Implementation  (getters)
     # --------------------------------------------------------------------------
 
-    def _get_balance_implementation(self, write_key=None, write_keys=None, aggregate=True):
-        write_keys = write_keys or [ write_key ]
-        balances   = self.client.hmget(self._BALANCES, *write_keys)
-        fixed_balances = [ float( b or "0") for b in balances ]
-        return np.nansum( fixed_balances ) if aggregate else fixed_balances
-
     def _get_lagged_implementation(self, name, with_times, with_values, to_float, start=0, end=None, count=100 ):
         count = count or self.LAGGED_LEN
         end = end or start + count
@@ -1351,7 +1354,7 @@ class Rediz(RedizConventions):
             elif ps == self.HISTORY:
                 data = self.get_history(name=parts[-1])
             elif ps == self.BALANCE:
-                data = self.get_balance(write_key=parts[-1])
+                data = self.get_performance(write_key=parts[-1])
             elif ps == self.TRANSACTIONS:
                 data = self.get_transactions(write_key=parts[-1])
             else:
@@ -1420,13 +1423,17 @@ class Rediz(RedizConventions):
         return history
 
 
-    def _get_transactions_implementation(self, min, max, count, write_key=None, name=None ):
-        trans_name=self.transactions_name(write_key=write_key,name=name)
-        return self.client.xrevrange(name=trans_name, min=min, max=max, count=count )
+    def _get_transactions_implementation(self, min, max, count, write_key=None, name=None, delay=None ):
+        trnsctns =self.transactions_name(write_key=write_key,name=name,delay=delay)
+        return self.client.xrevrange(name=trnsctns, min=min, max=max, count=count )
 
-    def _get_performance_implementation(self,name,delay, count):
+    def _get_leaderboard_implementation(self, name, delay, count):
         pname = self.performance_name(name=name,delay=delay)
-        return list(reversed(self.client.zrange(name=pname, start=-count-1, end=-1, withscores=True)))
+        leaderboard = list(reversed(self.client.zrange(name=pname, start=-count-1, end=-1, withscores=True)))
+        return leaderboard
+
+    def _get_performance_implementation(self, write_key ):
+        return self.client.hgetall(self.performance_name(write_key=write_key ))
 
     def _get_links_implementation(self, name, delay=None, delays=None):
         """ Set of outgoing links created by name owner """
