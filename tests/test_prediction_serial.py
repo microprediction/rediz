@@ -11,6 +11,9 @@ def dump(obj,name="tmp_prediction.json"): # Debugging
 def feed(rdz,target, write_key):
     value = 0.1*np.random.randn()*math.exp(np.random.randn())
     rdz.set(name=target,write_key=write_key,value=value)
+    time.sleep(1)
+    rdz.touch(name=target, write_key=write_key)
+
 
 def model(rdz,target,write_key):
     ### Empirical distribution
@@ -24,7 +27,7 @@ def model(rdz,target,write_key):
         x_samples = x_samples[:rdz.NUM_PREDICTIONS]
         noise     = np.random.randn(rdz.NUM_PREDICTIONS)
         jiggered  = [x+0.1*n for x,n in zip(x_samples,noise) ]
-    rdz.set_scenarios(name=target, values=jiggered, write_key=write_key, delay=rdz.DELAYS[0])
+    set_res = rdz.set_scenarios(name=target, values=jiggered, write_key=write_key, delay=rdz.DELAYS[0])
 
 def do_setup(rdz,target):
     rdz._delete_implementation(target)
@@ -41,7 +44,7 @@ def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_k
     backlinks     = rdz._get_backlinks_implementation(name=target)
     subscriptions = rdz._get_subscriptions_implementation(name=target)
     subscribers   = rdz._get_subscribers_implementation(name=target)
-    confirms     = rdz.get_confirms(write_key=target_key)
+    confirms      = rdz.get_confirms(write_key=target_key)
 
     if len(list(samples.values())):
         sample_std = np.nanstd(list(samples.values()))

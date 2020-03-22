@@ -93,9 +93,6 @@ class Rediz(RedizConventions):
     def get_lagged_times(self, name, start=0, end=None, count=None, to_float=True):
         return self._get_lagged_implementation(name, start=start, end=end, count=count, with_values=False, with_times=True, to_float=to_float)
 
-    def get_performance(self, write_key, name=None, delay=None):
-        return self._get_performance_implementation(write_key=write_key, name=name, delay=delay)
-
     def get_leaderboard(self, name, delay=None, count=50):
         return self._get_leaderboard_implementation(name=name, delay=delay, count=count)
 
@@ -111,14 +108,23 @@ class Rediz(RedizConventions):
     def get_errors(self, write_key, start=0, end=-1):
         return self.client.lrange(name=self.errors_name(write_key=write_key), start=start, end=end)
 
+    def delete_errors(self, write_key):
+        return self.client.delete(self.errors_name(write_key=write_key))
+
     def get_confirms(self, write_key, start=0, end=-1):
         return self.client.lrange(name=self.confirms_name(write_key=write_key), start=start, end=end)
 
+    def delete_confirms(self, write_key):
+        return self.client.delete(self.confirms_name(write_key=write_key))
+
     def get_balance(self, write_key):
-        return self.client.hget(name=self._BALANCES, key=write_key)
+        return int(self.client.hget(name=self._BALANCES, key=write_key) or 0)
 
     def get_performance(self, write_key):
         return self.client.hgetall(name=self.performance_name(write_key=write_key))
+
+    def delete_performance(self, write_key):
+        return self.client.delete(self.performance_name(write_key=write_key))
 
     def get_links(self, name, delay=None, delays=None ):
         assert not self.SEP in name, "Intent is to provide delay variable"
@@ -147,11 +153,12 @@ class Rediz(RedizConventions):
     #            Public interface  (set/delete streams)
     # --------------------------------------------------------------------------
 
-    def mtouch(self, names, budgets):
-        return self._touch_implementation(names=names, budgets=budgets)
+    def mtouch(self, names, write_key, budgets=None):
+        budgets = budgets or [ 1 for _ in names ]
+        return self._mtouch_implementation(names=names, write_key=write_key, budgets=budgets)
 
-    def touch(self, name, budget=1):
-        return self._touch_implementation(name=name,budget=budget)
+    def touch(self, name, write_key, budget=1):
+        return self._touch_implementation(name=name,write_key=write_key,budget=budget)
 
     def set( self, name, value, write_key, budget=10 ):
         """ Set name=value and initiate clearing, derived zscore market etc """
@@ -159,11 +166,24 @@ class Rediz(RedizConventions):
         assert RedizConventions.is_valid_key(write_key),"Invalid write_key"
         return self._set_implementation(name=name, value=value, write_key=write_key, return_args=None, budget=budget, with_percentiles=True )
 
-    def mset(self,names:NameList, values:ValueList, write_keys:KeyList, budgets:List[int] ):
-        """ Apply set() for multiple names and values """
-        assert all( (RedizConventions.is_plain_name(name) for name in names) ),"Plain names only"
-        with_copulas = sum(budgets)>=len(names)**3
-        return self._set_implementation(names=names, values=values, write_keys=write_keys, return_args=None, budgets=budgets, with_percentiles=True, with_copulas=with_copulas )
+    def cset(self, names:NameList, values:ValueList, budgets:List[int], write_key=None, write_keys=None):
+        return self.mset(names=names, values=values, budgets=budgets, write_key=write_key,write_keys=write_keys,with_copulas=True)
+
+    def mset(self,names:NameList, values:ValueList, budgets:List[int], write_key=None, write_keys=None, with_copulas=False ):
+        """ Apply set() for multiple names and values, with copula derived streams optionally """
+        is_plain = [ RedizConventions.is_plain_name(name) for name in names ]
+        if not len(names)==len(values):
+            error_data = {'names':names,'values':values,'error':'Names and values have different lengths'}
+            self._error(write_key=write_key, data=error_data)
+            raise Exception(json.dumps(error_data))
+        if not all( is_plain ):
+            culprits = [ n for n,isp in zip(names,is_plain) if not(isp) ]
+            error_data = {'culprits':culprits,'error':'One or more names are not considered plain names. See MicroConvention.is_plain_name '}
+            self._error(write_key=write_key,data=error_data )
+            raise Exception(json.dumps(error_data))
+        else:
+            write_keys = write_keys or [ write_key for _ in names ]
+            return self._set_implementation(names=names, values=values, write_keys=write_keys, return_args=None, budgets=budgets, with_percentiles=True, with_copulas=with_copulas )
 
     def delete(self, name, write_key):
         """ Delete/expire all artifacts associated with name (links, subs, markets etc) """
@@ -320,12 +340,7 @@ class Rediz(RedizConventions):
                     title.update( {"percentiles":prctls[title["name"]]} )
 
         # Write to confirmation log
-        cnfrms = self.confirms_name(write_key=write_keys[0])
-        confirm_pipe = self.client.pipeline(transaction=False)
-        confirm_pipe.lpush(cnfrms, json.dumps(titles[:10]))
-        confirm_pipe.expire(cnfrms, self.CONFIRMS_TTL)
-        confirm_pipe.ltrim(cnfrms, start=0, end=self.CONFIRMS_MAX)
-        confirm_pipe.execute(raise_on_error=True)
+        self._confirm(write_key=write_keys[0], operation='set', count=len(titles or []), examples=titles[:2])
 
         return titles[0] if singular else titles
 
@@ -669,19 +684,59 @@ class Rediz(RedizConventions):
      #            Implementation  (touch)
      # --------------------------------------------------------------------------
 
-    def _touch_implementation(self, name=None, budget=1, names=None, budgets=None):
-        """ Prevents death """
-        names = names or [ name ]
-        budgets = budgets or [ budget for _ in names ]
-        ttl = self._cost_based_ttl(value=6.0,budget=budget)
+    def _log_to_list(self, log_name, ttl, limit, data=None, **kwargs):
+        """ Append to list style log """
+        log_entry = {'time': str(datetime.datetime.now()),'epoch_time':time.time()}
+        if data:
+            log_entry.update(data)
+        log_entry.update(**kwargs)
+        logging_pipe = self.client.pipeline(transaction=False)
+        logging_pipe.lpush(log_name, json.dumps(log_entry))
+        logging_pipe.expire(log_name, ttl)
+        logging_pipe.ltrim(log_name, start=0, end=limit)
+        logging_pipe.execute(raise_on_error=True)
+
+    def _confirm(self, write_key, data=None, **kwargs):
+        self._log_to_list(log_name = self.confirms_name(write_key=write_key), ttl = self.CONFIRMS_TTL,
+                          limit  = self.CONFIRMS_LIMIT, data=data, **kwargs)
+
+    def _error(self, write_key, data=None, **kwargs):
+        self._log_to_list(log_name=self.errors_name(write_key=write_key), ttl=self.ERROR_TTL,
+                          limit=self.ERROR_LIMIT, data=data, **kwargs)
+
+    def _warn(self, write_key, data=None, **kwargs):
+        self._log_to_list(log_name=self.warnings_name(write_key=write_key), ttl=self.WARNINGS_TTL,
+                          limit=self.WARNINGS_LIMIT, data=data, **kwargs)
+
+    def _touch_implementation(self, name, write_key, budget, example_value=3.145):
+        """ Extend life of stream """
+        exec   = self.client.expire(name=name,time=self._cost_based_ttl(value=example_value,budget=budget) )
+        self._confirm(write_key=write_key, operation='touch', name=name, execution=exec)
+        if not exec:
+            self._warn(write_key=write_key, operation='touch', error='expiry not set ... names may not exist', name=name, exec=exec )
+        return exec
+
+    def _mtouch_implementation(self, names, write_key, budgets, example_value=3.145 ):
+        """ Extend life of multiple streams """
+        ttls = [self._cost_based_ttl(value=example_value, budget=b) for b in budgets]
+
         expire_pipe = self.client.pipeline()
-        for name in names:
+        for name, ttl in zip(names, ttls):
             dn = self.derived_names(name=name)
             pdn = self._private_derived_names(name=name)
-            for nm in [name]+list(dn.values())+list(pdn.values()):
-                expire_pipe.expire(name=nm,time=ttl)
-        expire_pipe.execute()
+            all_names = [name] + list(dn.values()) + list(pdn.values())
+            for nm in all_names:
+                expire_pipe.expire(name=nm, time=ttl)
+        exec = expire_pipe.execute()
+        report = dict( zip(all_names,exec) )
+        self._confirm(write_key=write_key, operation='mtouch', count=sum(exec) )
+        if not all(exec):
+            self._warn(write_key=write_key, operation='mtouch', error='expiry not set ... names may not exist', data=report, ttls=ttls )
+        return report
 
+
+    def _copula_touch_implementation(self, names, budgets):
+        return False  # TODO
 
     # --------------------------------------------------------------------------
      #            Implementation  (subscribe)
@@ -975,15 +1030,14 @@ class Rediz(RedizConventions):
             # Add to collective contemporaneous forward predictions
             for delay in delays:
                 collective_predictions_name = self._predictions_name(name, delay)
-                set_and_expire_pipe.zadd(  name=collective_predictions_name, mapping=predictions, ch=True,nx=False)  # (0)
+                set_and_expire_pipe.zadd(  name=collective_predictions_name, mapping=predictions, ch=True,nx=False)  # [num]*len(delays)
 
             # Create obscure predictions and promise to insert them later, at different times, into different samples
             utc_epoch_now = int(time.time())
             individual_predictions_name = self._random_promised_name(name)
-            set_and_expire_pipe.delete(individual_predictions_name)
-            set_and_expire_pipe.zadd(name=individual_predictions_name, mapping=predictions, ch=True)  # (1)
+            set_and_expire_pipe.zadd(name=individual_predictions_name, mapping=predictions, ch=True)  # num
             promise_ttl = max(self.DELAYS) + self._DELAY_GRACE
-            set_and_expire_pipe.expire(name=individual_predictions_name, time=promise_ttl)   # (2)
+            set_and_expire_pipe.expire(name=individual_predictions_name, time=promise_ttl)   # true
             for delay_seconds in delays:
                 promise_queue = self._promise_queue_name( utc_epoch_now + delay_seconds )
                 promise       = self._prediction_promise(target=name, delay=delay_seconds, predictions_name=individual_predictions_name)
@@ -993,31 +1047,18 @@ class Rediz(RedizConventions):
 
             # Execute pipeline ... should not fail (!)
             execut = set_and_expire_pipe.execute()
-            anticipated_execut = [1, self.num_predictions]*len(delays) + [ self.num_predictions, True ] + [ 1, True, True ]*len(delays)
+            anticipated_execut = [self.num_predictions]*len(delays) + [ self.num_predictions, True ] + [ 1, True, True ]*len(delays)
 
             def _close(a1,a2):
                 return a1==a2 or ( isinstance(a1,int) and a1>20 and ((a1-a2)/self.num_predictions)<0.05 )
-
-            success = all( _close(actual,anticipate) for actual, anticipate in zip(execut, anticipated_execut) )
+            success = all( _close(actual,anticipate) for actual, anticipate in itertools.zip_longest(execut, anticipated_execut) )
+            warn    = not( all( a1==a2) for a1,a2 in itertools.zip_longest(execut,anticipated_execut))
 
             if success:
-                # Confirmation log
-                cnfrms = self.confirms_name(write_key=write_key)
-                confirmation = {'type':'prediction','success':success,'name':name,'delays':delays,'values':values[:5]}
-                confirm_pipe = self.client.pipeline(transaction=False)
-                confirm_pipe.lpush(cnfrms, json.dumps(confirmation))
-                confirm_pipe.expire(cnfrms, self.CONFIRMS_TTL)
-                confirm_pipe.ltrim(cnfrms, start=0, end=self.CONFIRMS_MAX)
-                confirm_pipe.execute(raise_on_error=True)
-            else:
-                rrs = self.errors_name(write_key=write_key)
-                error_report = {'type': 'prediction', 'success': success, 'name': name, 'delays': delays,
-                                'values': values[:5],'anticipated_execut':anticipated_execut,'actual_execut':execut}
-                error_pipe = self.client.pipeline(transaction=False)
-                error_pipe.lpush(rrs, json.dumps(error_report))
-                error_pipe.expire(rrs, self.ERROR_TTL)
-                error_pipe.ltrim(rrs, start=0, end=self.ERROR_LIMIT)
-                error_pipe.execute(raise_on_error=True)
+                self._confirm(write_key=write_key,name=name, operation='submit',success=success,warn=warn,delays=delays,some_values=values[:5] )
+
+            if not(success) or warn:
+                self._error(write_key=write_key,name=name, operation='submit',success=success,warn=warn,delays=delays,some_values=values[:5], anticipated_execut=anticipated_execut, actual_execut=execut)
 
             return success
         else:
@@ -1097,11 +1138,11 @@ class Rediz(RedizConventions):
                             from muid import shash
                             write_code = muid.shash(write_key)
                             recipient_code = muid.shash(recipient)
-                            # Leaderboards: overall, by stream, by stream and horizon
+                            # Leaderboards: Sorted sets
                             for lb in [self.leaderboard_name(), self.leaderboard_name(name=name), self.leaderboard_name(name=name,delay=delay) ]:
                                 pipe.zincrby(name=lb, value=recipient_code, amount=rescaled_amount)
-                            # Performance: custom report for the recipient
-                            pipe.zincrby(name=self.performance_name(write_key=recipient), value=self.performance_key(name=name,delay=delay), amount=rescaled_amount)
+                            # Performance: Custom hash
+                            pipe.hincrbyfloat(name=self.performance_name(write_key=recipient), key=self.performance_key(name=name,delay=delay), amount=rescaled_amount)
                             # Transactions logs:
                             transaction_record = {"settlement_time":str(datetime.datetime.now()),"stream": name, "delay":delay, "stream_owner_code":write_code,"recipient_code":recipient_code, "amount": rescaled_amount}
                             log_names = [ self.transactions_name(), self.transactions_name(write_key=recipient ),  self.transactions_name(write_key=recipient, name=name ), self.transactions_name(write_key=recipient, name=name, delay=delay ) ]
@@ -1428,12 +1469,10 @@ class Rediz(RedizConventions):
         return self.client.xrevrange(name=trnsctns, min=min, max=max, count=count )
 
     def _get_leaderboard_implementation(self, name, delay, count):
-        pname = self.performance_name(name=name,delay=delay)
+        pname = self.leaderboard_name(name=name,delay=delay)
         leaderboard = list(reversed(self.client.zrange(name=pname, start=-count-1, end=-1, withscores=True)))
         return leaderboard
 
-    def _get_performance_implementation(self, write_key ):
-        return self.client.hgetall(self.performance_name(write_key=write_key ))
 
     def _get_links_implementation(self, name, delay=None, delays=None):
         """ Set of outgoing links created by name owner """
@@ -1487,6 +1526,29 @@ class Rediz(RedizConventions):
         return data[0] if singular else data
 
     def _get_summary_implementation(self,name):
+
+        def get_json_safe(thing):
+            data = self.get(thing)
+            if has_nan(data):
+                return None
+            else:
+                try:
+                    json.dumps(data)
+                    return shorten(data)
+                except:
+                    return None
+
+        def has_nan(obj):
+            if isinstance(obj,list):
+                return any( map( has_nan, obj ) )
+            elif isinstance(obj,dict):
+                return has_nan(list(obj.values())) or has_nan(list(obj.keys()))
+            else:
+                try:
+                    return np.isnan(obj)
+                except:
+                    return False
+
         def shorten(obj):
             if isinstance(obj,list):
                 return obj[:5]
@@ -1495,15 +1557,16 @@ class Rediz(RedizConventions):
             else:
                 return obj
         def delay_level(name,delay):
-            things = [ self.performance_name(name=name,delay=delay), self.delayed_name(name=name,delay=delay),self.links_name(name=name,delay=delay),
+            things = [ self.leaderboard_name(name=name,delay=delay), self.delayed_name(name=name,delay=delay),self.links_name(name=name,delay=delay),
                        self.cdf_name(name=name,delay=delay)]
-            return dict([(thing, shorten(self.get(thing))) for thing in things])
+            return dict([(thing, get_json_safe(thing) ) for thing in things])
 
         def top_level(name):
             things = [name, self.lagged_values_name(name), self.lagged_times_name(name),
+                         self.leaderboard_name(name=name),
                          self.backlinks_name(name), self.subscribers_name(name),
                          self.subscriptions_name(name), self.history_name(name),
-                         self.messages_name(name), self.performance_name(name=name) ]
+                         self.messages_name(name)]
             return dict( [ ( thing,shorten(self.get(thing)) ) for thing in things ])
 
         tl = top_level(name)

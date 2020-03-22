@@ -32,7 +32,6 @@ class RedizConventions(MicroConventions):
         self.PREDICTION_SEP = self.SEP + "prediction" + self.SEP
 
         # User facing conventions: transparent use of prefixing
-        self.ERRORS = "errors" + self.SEP
         self.DELAYED = "delayed" + self.SEP
         self.CDF = 'cdf'+self.SEP
         self.LINKS = "links" + self.SEP
@@ -53,17 +52,24 @@ class RedizConventions(MicroConventions):
         self.PERFORMANCE = "performance" + self.SEP
         self.LEADERBOARD = "leaderboard" + self.SEP
         self.SUMMARY = "summary" + self.SEP
+
+        # Logging
         self.CONFIRMS = "confirms" + self.SEP
+        self.WARNINGS = "warnings" + self.SEP
+        self.ERRORS   = "errors" + self.SEP
+        self.WARNINGS_TTL = int(60 * 60)  # TODO: allow configuation
+        self.WARNINGS_LIMIT = 1000
+        self.CONFIRMS_TTL = int(error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
+        self.ERROR_TTL = int(error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
+        self.CONFIRMS_TTL = int(error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
+        self.ERROR_LIMIT = int(error_limit or 1000)  # Number of error messages to keep per write key
+        self.CONFIRMS_LIMIT = int(error_limit or 1000)  # Number of error messages to keep per write key
 
         # User transparent temporal and other config
         self.MIN_LEN = int(self.min_len)                     # FIXME: Get rid of MIN_LEN
         self.MIN_BALANCE = int(self.min_balance)             # FIXME: Get rid of MIN_BALANCE
         self.NUM_PREDICTIONS = int(self.num_predictions)     # Number of scenerios in a prediction batch
         self.DELAYS = delays or [1, 5]
-        self.ERROR_TTL = int( error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
-        self.CONFIRMS_TTL = int(error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
-        self.ERROR_LIMIT = int( error_limit or 1000)  # Number of error messages to keep per write key
-        self.CONFIRMS_LIMIT = int(error_limit or 1000)  # Number of error messages to keep per write key
         self.CONFIRMS_MAX = 5  # Maximum number of confirmations when using mset()
         self.NOISE = 0.3 / self.NUM_PREDICTIONS  # Tie-breaking / smoothing noise added to predictions
 
@@ -176,6 +182,9 @@ class RedizConventions(MicroConventions):
     def errors_name(self, write_key):
         return self.MESSAGES + write_key + '.json'
 
+    def warnings_name(self, write_key):
+        return self.WARNINGS + write_key + '.json'
+
     def transactions_name(self, write_key=None, name=None, delay=None ):
         """ Stream name """
         delay     = None if delay is None else str(delay)
@@ -189,7 +198,7 @@ class RedizConventions(MicroConventions):
 
     def performance_key(self, name, delay):
         name_stem = os.path.splitext(name)[0]
-        return name_stem + self.SEP + delay
+        return name_stem + self.SEP + str(delay)
 
     def leaderboard_name(self, name=None, delay=None):
         if name is None and delay is None:

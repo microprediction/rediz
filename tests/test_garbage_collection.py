@@ -44,7 +44,7 @@ def test_admin_garbage_collection(num=100):
     rdz = Rediz(**REDIZ_TEST_CONFIG)
     original_num = rdz.card()
     names      = [ rdz.random_name() for _ in range(num) ]
-    write_keys = [ rdz.create_key(difficulty=6) for _ in range(num) ]
+    write_keys = [ 'c02b61c97bcb61688c1098c7ab3f76f6' for _ in names ]
     values = ["from test_admin_garbage_collection" for _ in write_keys ]
     budgets = [ 1 for _ in range(num) ]
     mset_res = rdz.mset(names=names,write_keys=write_keys,values=values, budgets=budgets)
@@ -79,11 +79,11 @@ def test_find_orphans_low_cardinality_test(num=20):
 
         # Create some data with short ttl
         names = [ rdz.random_name() for _ in range(num) ]
-        write_keys = [ rdz.create_key(difficulty=6) for _ in range(num) ]
+        write_key = 'c02b61c97bcb61688c1098c7ab3f76f6'
         value  = "a string to store"
-        values = [value for _ in write_keys ]
+        values = [value for _ in names ]
         budgets = [ 7 for _ in names ]
-        title = rdz.mset(names=names,write_keys=write_keys,values=values, budgets=budgets)
+        title = rdz.mset(names=names,write_key=write_key,values=values, budgets=budgets)
         assert rdz.client.exists(*names)==len(names), "Names were not created as expected."
         for name in names:
             rdz.client.expire(name=name,time=5*60)
