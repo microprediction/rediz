@@ -7,7 +7,7 @@ README = (HERE / "README.md").read_text()
 
 setup(
     name="rediz",
-    version="0.2.15",
+    version="0.2.16",
     description="Open access to competing prediction algorithms",
     long_description=README,
     long_description_content_type="text/markdown",

@@ -118,7 +118,7 @@ class Rediz(RedizConventions):
         return self.client.delete(self.confirms_name(write_key=write_key))
 
     def get_balance(self, write_key):
-        return int(self.client.hget(name=self._BALANCES, key=write_key) or 0)
+        return float(self.client.hget(name=self._BALANCES, key=write_key) or 0)
 
     def get_performance(self, write_key):
         return self.client.hgetall(name=self.performance_name(write_key=write_key))
@@ -732,7 +732,7 @@ class Rediz(RedizConventions):
         self._confirm(write_key=write_key, operation='mtouch', count=sum(exec) )
         if not all(exec):
             self._warn(write_key=write_key, operation='mtouch', error='expiry not set ... names may not exist', data=report, ttls=ttls )
-        return report
+        return sum(exec)
 
 
     def _copula_touch_implementation(self, names, budgets):
