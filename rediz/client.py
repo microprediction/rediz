@@ -5,6 +5,7 @@ from typing import List, Union, Any, Optional
 from redis.client import list_or_args
 from redis.exceptions import DataError
 from .conventions import RedizConventions, REDIZ_CONVENTIONS_ARGS, KeyList, NameList, ValueList
+from rediz.utilities import get_json_safe, has_nan, shorten, stem
 
 # REDIZ
 # -----
@@ -108,6 +109,9 @@ class Rediz(RedizConventions):
     def get_errors(self, write_key, start=0, end=-1):
         return self.client.lrange(name=self.errors_name(write_key=write_key), start=start, end=end)
 
+    def get_warnings(self, write_key, start=0, end=-1):
+        return self.client.lrange(name=self.warnings_name(write_key=write_key), start=start, end=end)
+
     def delete_errors(self, write_key):
         return self.client.delete(self.errors_name(write_key=write_key))
 
@@ -153,6 +157,9 @@ class Rediz(RedizConventions):
     def get_summary(self,name):
         assert self._root_name(name)==name
         return self._get_summary_implementation(name)
+
+    def get_home(self,write_key):
+        return self._get_home_implementation(write_key=write_key)
 
     # --------------------------------------------------------------------------
     #            Permissioned get
@@ -1406,15 +1413,15 @@ class Rediz(RedizConventions):
             elif ps == self.LAGGED_TIMES:
                 data = self.get_lagged_times(name=parts[-1])
             elif ps == self.ERRORS:
-                data = self.get_errors(write_key=parts[-1])
+                data = self.get_errors(write_key=stem(parts[-1]))
             elif ps == self.HISTORY:
                 data = self.get_history(name=parts[-1])
             elif ps == self.BALANCE:
-                data = self.get_performance(write_key=parts[-1])
+                data = self.get_balance(write_key=stem(parts[-1]))
             elif ps == self.BUDGET:
                 data = self.get_budget(name=parts[-1])
             elif ps == self.TRANSACTIONS:
-                data = self.get_transactions(write_key=parts[-1])
+                data = self.get_transactions(write_key=stem(parts[-1]))
             elif ps == self.LEADERBOARD:
                 data = self.get_leaderboard(name=parts[-1])
             else:
@@ -1546,40 +1553,11 @@ class Rediz(RedizConventions):
         return data[0] if singular else data
 
     def _get_summary_implementation(self,name):
-
-        def get_json_safe(thing):
-            data = self.get(thing)
-            if has_nan(data):
-                return None
-            else:
-                try:
-                    json.dumps(data)
-                    return shorten(data)
-                except:
-                    return None
-
-        def has_nan(obj):
-            if isinstance(obj,list):
-                return any( map( has_nan, obj ) )
-            elif isinstance(obj,dict):
-                return has_nan(list(obj.values())) or has_nan(list(obj.keys()))
-            else:
-                try:
-                    return np.isnan(obj)
-                except:
-                    return False
-
-        def shorten(obj):
-            if isinstance(obj,list):
-                return obj[:5]
-            elif isinstance(obj,dict):
-                return dict( [ (k,shorten(v)) for k,v in obj.items() ])
-            else:
-                return obj
+        " Stream summary "
         def delay_level(name,delay):
             things = [ self.leaderboard_name(name=name,delay=delay), self.delayed_name(name=name,delay=delay),self.links_name(name=name,delay=delay),
                        self.cdf_name(name=name,delay=delay)]
-            return dict([(thing, get_json_safe(thing) ) for thing in things])
+            return dict([(thing, get_json_safe(thing=thing,getter=self.get) ) for thing in things])
 
         def top_level(name):
             things = [name, self.lagged_values_name(name), self.lagged_times_name(name),
@@ -1594,6 +1572,18 @@ class Rediz(RedizConventions):
             tl['delay_'+str(delay)] = delay_level(name=name,delay=delay)
         return tl
 
+    def _get_home_implementation(self, write_key):
 
+        def top_level(write_key):
+            things = {'code':muid.shash(write_key),'animal':muid.animal(write_key),
+                       self.balance_name(write_key=write_key):self.get_balance(write_key=write_key),
+                       self.performance_name(write_key=write_key):self.get_performance(write_key=write_key),
+                       self.confirms_name(write_key=write_key):self.get_confirms(write_key=write_key),
+                       self.errors_name(write_key=write_key):self.get_errors(write_key=write_key),
+                       self.warnings_name(write_key=write_key):self.get_warnings(write_key=write_key),
+                       self.transactions_name(write_key=write_key):self.get_transactions(write_key=write_key)}
+            return dict( [ ( thing, shorten(value) ) for thing,value in things.items() ])
+
+        return top_level(write_key=write_key)
 
 

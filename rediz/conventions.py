@@ -198,6 +198,9 @@ class RedizConventions(MicroConventions):
     def performance_name(self, write_key):
         return self.PERFORMANCE + write_key + '.json'
 
+    def balance_name(self, write_key):
+        return self.BALANCE + write_key + '.json'
+
     def performance_key(self, name, delay):
         name_stem = os.path.splitext(name)[0]
         return name_stem + self.SEP + str(delay)
