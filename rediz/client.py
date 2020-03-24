@@ -93,7 +93,7 @@ class Rediz(RedizConventions):
     def get_lagged_times(self, name, start=0, end=None, count=None, to_float=True):
         return self._get_lagged_implementation(name, start=start, end=end, count=count, with_values=False, with_times=True, to_float=to_float)
 
-    def get_leaderboard(self, name, delay=None, count=50):
+    def get_leaderboard(self, name=None, delay=None, count=50):
         return self._get_leaderboard_implementation(name=name, delay=delay, count=count)
 
     def get_history(self, name, max='+', min='-', count=None, populate=True, drop_expired=True ):
@@ -122,6 +122,20 @@ class Rediz(RedizConventions):
 
     def get_performance(self, write_key):
         return self.client.hgetall(name=self.performance_name(write_key=write_key))
+
+    def get_budget(self, name):
+        return self.client.hget(name=self.BUDGETS,key=name)
+
+    def get_budgets(self):
+        budgets =  list(self.client.hgetall(name=self.BUDGETS).items())
+        budgets.sort( key=lambda t: t[1],reverse=True)
+        return budgets
+
+    def get_sponsors(self):
+        ownership = self.client.hgetall(self._OWNERSHIP)
+        obscured = [(name, muid.animal(key)) for name, key in ownership.items()]
+        obscured.sort(key=lambda t: len(t[1]))
+        return obscured
 
     def delete_performance(self, write_key):
         return self.client.delete(self.performance_name(write_key=write_key))
@@ -1055,10 +1069,10 @@ class Rediz(RedizConventions):
             warn    = not( all( a1==a2) for a1,a2 in itertools.zip_longest(execut,anticipated_execut))
 
             if success:
-                self._confirm(write_key=write_key,name=name, operation='submit',success=success,warn=warn,delays=delays,some_values=values[:5] )
+                self._confirm(write_key=write_key, operation='submit',name=name, success=success,warn=warn,delays=delays,some_values=values[:5] )
 
             if not(success) or warn:
-                self._error(write_key=write_key,name=name, operation='submit',success=success,warn=warn,delays=delays,some_values=values[:5], anticipated_execut=anticipated_execut, actual_execut=execut)
+                self._error(write_key=write_key, operation='submit', name=name, success=success,warn=warn,delays=delays,some_values=values[:5], anticipated_execut=anticipated_execut, actual_execut=execut)
 
             return success
         else:
@@ -1111,6 +1125,7 @@ class Rediz(RedizConventions):
 
         # Rewards
         pipe = self.client.pipeline()
+        pipe.hmset(name=self.BUDGETS, mapping=dict(zip(names,budgets)))
         for name, budget, write_key in zip(names, budgets, write_keys):
             pools = [retrieved[pools_lookup[name][delay_ndx]] for delay_ndx in range(num_delay)]
             if any(pools):
@@ -1173,7 +1188,7 @@ class Rediz(RedizConventions):
                 for selection in selections:
                     selected_names   = [ names[o] for o in selection ]
                     dim              = len(selection)
-                    z_budget         = int( math.ceil( sum( [ budgets[o] for o in selection ] ) / (dim**3) ) )
+                    z_budget         = sum( [ budgets[o] for o in selection ] ) / (dim**3)   # FIXME: Why int?
                     selected_prctls  = [ percentiles1[o] for o in selection ]
                     zcurve_value     = self.to_zcurve(selected_prctls)
                     zname            = self.zcurve_name(selected_names, delay)
@@ -1215,7 +1230,7 @@ class Rediz(RedizConventions):
               ** deprecated in favour of _msettle()   TODO: Run comparisons and eliminate this
         """
 
-        percentile_budget = int(math.ceil(0.5 * budget / len(self.DELAYS)))
+        percentile_budget = int(math.ceil(0.5 * budget / len(self.DELAYS)))   # FIXME MAYBE: Why int?
 
         retrieve_pipe = self.client.pipeline()
         num_delay   = len(self.DELAYS)
@@ -1227,7 +1242,7 @@ class Rediz(RedizConventions):
             retrieve_pipe.smembers( self._sample_owners_name(name=name, delay=delay) )          # List of owners
             for window_ndx, window in enumerate(self._WINDOWS):
                 scenarios_lookup[delay_ndx][window_ndx] = len(retrieve_pipe)                    # Robust to insertion of new instructions in the pipeline
-                retrieve_pipe.zrangebyscore( name=samples_name, min=value-window,  max=value+window,  withscores=False)
+                retrieve_pipe.zrangebyscore( name=samples_name, min=value-window,  max=value+window,  withscores=False, start=0, num=50)
 
         # Execute pipeline and re-arrange results
         K = 2 + len(self._WINDOWS)
@@ -1468,11 +1483,10 @@ class Rediz(RedizConventions):
         trnsctns =self.transactions_name(write_key=write_key,name=name,delay=delay)
         return self.client.xrevrange(name=trnsctns, min=min, max=max, count=count )
 
-    def _get_leaderboard_implementation(self, name, delay, count):
+    def _get_leaderboard_implementation(self, name, delay, count, readable=True):
         pname = self.leaderboard_name(name=name,delay=delay)
         leaderboard = list(reversed(self.client.zrange(name=pname, start=-count-1, end=-1, withscores=True)))
-        return leaderboard
-
+        return dict([(muid.search(code),score) for code,score in leaderboard]) if readable else dict(leaderboard)
 
     def _get_links_implementation(self, name, delay=None, delays=None):
         """ Set of outgoing links created by name owner """

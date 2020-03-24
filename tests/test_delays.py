@@ -1,7 +1,7 @@
 from rediz.client import Rediz
 import json, time
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
-import muid
+import muid, pprint
 
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_delays.py ; cat tmp_delays.json
 
@@ -12,6 +12,7 @@ def test_delay_real():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
     do_test_delay(rdz)
     do_test_lags_and_delays(rdz)
+
 
 def test_delay_fake():
     rdz = Rediz()
@@ -35,6 +36,10 @@ def do_test_delay(rdz):
     assert delayed_value=="living in the present"
     delayed_value = rdz.client.get( name=rdz.DELAYED+"5"+rdz.SEP+NAME )
     assert delayed_value=="living in the past"
+
+    budgets = rdz.get_budgets()
+    budget = rdz.get_budget(name=NAME)
+    pprint.pprint(budgets)
 
     # Test market
 
