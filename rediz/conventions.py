@@ -51,7 +51,7 @@ class RedizConventions(MicroConventions):
         self.BALANCE = "balance" + self.SEP
         self.PERFORMANCE = "performance" + self.SEP
         self.LEADERBOARD = "leaderboard" + self.SEP
-        self.BUDGETS = "budgets" + self.SEP
+        self.BUDGET = "budget" + self.SEP
         self.VOLUMES = "volumes" + self.SEP
         self.SUMMARY = "summary" + self.SEP
 

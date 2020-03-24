@@ -124,10 +124,10 @@ class Rediz(RedizConventions):
         return self.client.hgetall(name=self.performance_name(write_key=write_key))
 
     def get_budget(self, name):
-        return self.client.hget(name=self.BUDGETS,key=name)
+        return self.client.hget(name=self.BUDGET, key=name)
 
     def get_budgets(self):
-        budgets =  list(self.client.hgetall(name=self.BUDGETS).items())
+        budgets =  list(self.client.hgetall(name=self.BUDGET).items())
         budgets.sort( key=lambda t: t[1],reverse=True)
         return budgets
 
@@ -1125,7 +1125,7 @@ class Rediz(RedizConventions):
 
         # Rewards
         pipe = self.client.pipeline()
-        pipe.hmset(name=self.BUDGETS, mapping=dict(zip(names,budgets)))
+        pipe.hmset(name=self.BUDGET, mapping=dict(zip(names, budgets)))
         for name, budget, write_key in zip(names, budgets, write_keys):
             pools = [retrieved[pools_lookup[name][delay_ndx]] for delay_ndx in range(num_delay)]
             if any(pools):
@@ -1411,8 +1411,12 @@ class Rediz(RedizConventions):
                 data = self.get_history(name=parts[-1])
             elif ps == self.BALANCE:
                 data = self.get_performance(write_key=parts[-1])
+            elif ps == self.BUDGET:
+                data = self.get_budget(name=parts[-1])
             elif ps == self.TRANSACTIONS:
                 data = self.get_transactions(write_key=parts[-1])
+            elif ps == self.LEADERBOARD:
+                data = self.get_leaderboard(name=parts[-1])
             else:
                 data = None
         elif len(parts) == 3:
@@ -1431,6 +1435,8 @@ class Rediz(RedizConventions):
                 data = self.get_transactions(write_key=parts[1], name=parts[2])
             elif ps == self.PERFORMANCE:
                 data = self.get_performance(name=parts[-1],delay=int(parts[1]))
+            elif ps == self.LEADERBOARD:
+                data = self.get_leaderboard(name=parts[-1],delay=int(parts[1]))
             else:
                 data = None
         else:
