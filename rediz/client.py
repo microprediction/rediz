@@ -1401,8 +1401,6 @@ class Rediz(RedizConventions):
                 data = self.get_summary(name=parts[-1])
             elif ps == self.SUBSCRIPTIONS:
                 data = self.get_subscriptions(name=parts[-1])
-            elif ps == self.PERFORMANCE:
-                data = self.get_performance(name=parts[-1])
             elif ps == self.SUBSCRIBERS:
                 data = self.get_subscribers(name=parts[-1])
             elif ps == self.LAGGED_VALUES:
@@ -1415,6 +1413,8 @@ class Rediz(RedizConventions):
                 data = self.get_lagged_times(name=parts[-1])
             elif ps == self.ERRORS:
                 data = self.get_errors(write_key=stem(parts[-1]))
+            elif ps == self.PERFORMANCE:
+                data = self.get_performance(write_key=stem(parts[-1]))
             elif ps == self.HISTORY:
                 data = self.get_history(name=parts[-1])
             elif ps == self.BALANCE:

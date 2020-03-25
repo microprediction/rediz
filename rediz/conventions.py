@@ -68,8 +68,8 @@ class RedizConventions(MicroConventions):
         self.CONFIRMS_LIMIT = int(error_limit or 1000)  # Number of error messages to keep per write key
 
         # User transparent temporal and other config
-        self.MIN_LEN = int(self.min_len)                     # FIXME: Get rid of MIN_LEN
-        self.MIN_BALANCE = int(self.min_balance)             # FIXME: Get rid of MIN_BALANCE
+        self.MIN_LEN = int(self.min_len)                     # FIXME: Get rid of MIN_LEN and use min_len instead
+        self.MIN_BALANCE = int(self.min_balance)             # FIXME: Get rid of MIN_BALANCE and use min_balance instead
         self.NUM_PREDICTIONS = int(self.num_predictions)     # Number of scenerios in a prediction batch
         self.DELAYS = delays or [1, 5]
         self.CONFIRMS_MAX = 5  # Maximum number of confirmations when using mset()
