@@ -86,13 +86,13 @@ class Rediz(RedizConventions):
     def get_delayed(self, name, delay=None, delays=None, to_float=True):
         return self._get_delayed_implementation( name=name, delay=delay, delays=delays, to_float=to_float)
 
-    def get_lagged(self, name, start=0, end=None, count=None, to_float=True ):
+    def get_lagged(self, name, start=0, end=None, count=1000, to_float=True ):
         return self._get_lagged_implementation(name, start=start, end=end, count=count, with_values=True, with_times=True, to_float=to_float)
 
-    def get_lagged_values(self, name, start=0, end=None, count=None, to_float=True):
+    def get_lagged_values(self, name, start=0, end=None, count=1000, to_float=True):
         return self._get_lagged_implementation(name, start=start, end=end, count=count, with_values=True, with_times=False, to_float=to_float)
 
-    def get_lagged_times(self, name, start=0, end=None, count=None, to_float=True):
+    def get_lagged_times(self, name, start=0, end=None, count=1000, to_float=True):
         return self._get_lagged_implementation(name, start=start, end=end, count=count, with_values=False, with_times=True, to_float=to_float)
 
     def get_leaderboard(self, name=None, delay=None, count=50):
@@ -1313,7 +1313,7 @@ class Rediz(RedizConventions):
     #            Implementation  (getters)
     # --------------------------------------------------------------------------
 
-    def _get_lagged_implementation(self, name, with_times, with_values, to_float, start=0, end=None, count=100 ):
+    def _get_lagged_implementation(self, name, with_times, with_values, to_float, start=0, end=None, count=1000 ):
         count = count or self.LAGGED_LEN
         end = end or start + count
         get_pipe = self.client.pipeline()
