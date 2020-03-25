@@ -75,7 +75,8 @@ class Rediz(RedizConventions):
         return self._get_predictions_implementation(name=name, delay=delay, delays=delays)
 
     def get_cdf(self, name, delay=None, values=None):
-        values = values or self.percentile_abscissa()
+        lags   = self.get_lagged_values(name=name,count=10)
+        values = values or sorted(list(set( self.percentile_abscissa() + (lags or []) )))
         delay  = delay or self.DELAYS[0]
         return self._get_cdf_implementation(name=name, delay=delay, values=values )
 
@@ -97,7 +98,7 @@ class Rediz(RedizConventions):
     def get_leaderboard(self, name=None, delay=None, count=50):
         return self._get_leaderboard_implementation(name=name, delay=delay, count=count)
 
-    def get_history(self, name, max='+', min='-', count=None, populate=True, drop_expired=True ):
+    def get_history(self, name, max='+', min='-', count=100, populate=True, drop_expired=True ):
         return self._get_history_implementation( name=name, max=max, min=min, count=count, populate=populate, drop_expired=drop_expired )
 
     def get_subscriptions(self, name ):
@@ -133,13 +134,13 @@ class Rediz(RedizConventions):
     def get_budgets(self):
         budgets =  list(self.client.hgetall(name=self.BUDGET).items())
         budgets.sort( key=lambda t: t[1],reverse=True)
-        return budgets
+        return dict(budgets)
 
     def get_sponsors(self):
         ownership = self.client.hgetall(self._OWNERSHIP)
         obscured = [(name, muid.animal(key)) for name, key in ownership.items()]
         obscured.sort(key=lambda t: len(t[1]))
-        return obscured
+        return dict(obscured)
 
     def delete_performance(self, write_key):
         return self.client.delete(self.performance_name(write_key=write_key))
@@ -151,7 +152,7 @@ class Rediz(RedizConventions):
     def get_backlinks(self, name ):
         return self._get_backlinks_implementation(name=name )
 
-    def get_transactions(self, max='+', min='-', count=None, write_key=None, name=None, delay=None):
+    def get_transactions(self, max='+', min='-', count=50, write_key=None, name=None, delay=None):
         return self._get_transactions_implementation(max=max,min=min,count=count, write_key=write_key, name=name, delay=delay)
 
     def get_summary(self,name):
@@ -1105,7 +1106,7 @@ class Rediz(RedizConventions):
                 retrieve_pipe.smembers(self._sample_owners_name(name=name, delay=delay))    # List of owners
                 for window_ndx, window in enumerate(self._WINDOWS):
                     scenarios_lookup[name][delay_ndx][window_ndx] = len(retrieve_pipe)
-                    retrieve_pipe.zrangebyscore(name=samples_name, min=value - window, max=value + window, withscores=False)
+                    retrieve_pipe.zrangebyscore(name=samples_name, min=value - window, max=value + window, withscores=False, start=0, num=15)
 
         retrieved = retrieve_pipe.execute()
 
@@ -1249,7 +1250,7 @@ class Rediz(RedizConventions):
             retrieve_pipe.smembers( self._sample_owners_name(name=name, delay=delay) )          # List of owners
             for window_ndx, window in enumerate(self._WINDOWS):
                 scenarios_lookup[delay_ndx][window_ndx] = len(retrieve_pipe)                    # Robust to insertion of new instructions in the pipeline
-                retrieve_pipe.zrangebyscore( name=samples_name, min=value-window,  max=value+window,  withscores=False, start=0, num=50)
+                retrieve_pipe.zrangebyscore( name=samples_name, min=value-window,  max=value+window,  withscores=False, start=0, num=15)
 
         # Execute pipeline and re-arrange results
         K = 2 + len(self._WINDOWS)
