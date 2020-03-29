@@ -1,6 +1,6 @@
 import fakeredis, sys, math, json, redis, time, random, itertools, datetime, muid
 import numpy as np
-from collections import Counter
+from collections import Counter, OrderedDict
 from typing import List, Union, Any, Optional
 from redis.client import list_or_args
 from redis.exceptions import DataError
@@ -48,6 +48,34 @@ class Rediz(RedizConventions):
     def _size(self, name, with_report=False):
         return self._size_implementation(name=name, with_report=with_report, with_private=True)
 
+    def get_donation_password(self):
+        return muid.shash(self._obscurity)
+
+    def donate(self,write_key, password, donor=None, verbose=True):
+        official_password = self.get_donation_password()
+        donor = donor or 'anonymous'
+        if password==official_password:
+            len = muid.difficulty(write_key)
+            if len>=self.MIN_LEN:
+                if self.client.sadd(self.donation_name(len=len),write_key):
+                    importance = 16**(len-self.MIN_LEN)
+                    self.client.hincrby(name=self.donors_name(),key=donor.lower(),amount=importance)
+                return {"operation":"donation","success":True,"message":"Thanks, you can view it at","url":self.base_url+"donations/all".replace('//','/')} if verbose else 1
+            else:
+                return {"operation":"donation","success":False,"message":"Invalid write key or not long enough"} if verbose else 0
+        else:
+            return {"operation":"donation","success":False,"message":"Invalid password","hint":"Ends with "+str(official_password[-4:])} if verbose else 0
+
+    def get_donors(self):
+        donors = self.client.hgetall(self.donors_name())
+        return dict( sorted(donors.items(), key = lambda e:int(e[1]),reverse=True ) )
+
+    def get_donations(self, len=None):
+        if len is None:
+            return [ muid.animal(write_key)  for difficulty in range(17,11,-1)  for write_key in self.get_donations(len=difficulty) ]
+        else:
+            return self.client.smembers(self.donation_name(len=len))
+
     def get(self, name, as_json=False, **kwargs ):
         """ Unified getter expecting prefixed name - used by web application """
         parts = name.split(self.SEP)
@@ -74,11 +102,17 @@ class Rediz(RedizConventions):
     def get_predictions(self, name, delay=None, delays=None):
         return self._get_predictions_implementation(name=name, delay=delay, delays=delays)
 
-    def get_cdf(self, name, delay=None, values=None):
-        lags   = self.get_lagged_values(name=name,count=10)
+    def get_cdf(self, name, delay=None, values=None, top=5, min_balance=0):
+        """
+        :param values:   Abscissa for CDF
+        :param top:      Number of top participants to use
+        :return:
+        """
+        lags   = self.get_lagged_values(name=name,count=20)
         values = values or sorted(list(set( self.percentile_abscissa() + (lags or []) )))
+
         delay  = delay or self.DELAYS[0]
-        return self._get_cdf_implementation(name=name, delay=delay, values=values )
+        return self._get_cdf_implementation(name=name, delay=delay, values=values,top=top, min_balance=min_balance)
 
     def get_reserve(self):
         return float(self.client.hget(self._BALANCES, self._RESERVE) or 0)
@@ -1012,20 +1046,35 @@ class Rediz(RedizConventions):
         # Requires maintenance of a sketch which is left for future work
         raise NotImplementedError()
 
-    def _get_cdf_implementation(self, name, delay, values):
-        assert name == self._root_name(name)
-        assert delay in self.DELAYS
+    def _get_cdf_implementation(self, name, delay, values, top, min_balance ):
+        assert name == self._root_name(name),"get_cdf expects root name"
+        assert delay in self.DELAYS,"delay is not a valid choice of delay"
+
+        # We only use the top three performers on the leaderboard to estimate the inverse CDF
         score_pipe = self.client.pipeline()
         num = self.client.zcard(name=self._predictions_name(name=name, delay=delay))
+        lb  = self._get_leaderboard_implementation(name=name,delay=delay,readable=False,count=top)
+        included = [ write_key for write_key,balance in lb.items() if balance>min_balance ]
         if num:
             h = max( 100.0/num, 0.00001)*max([ abs(v) for v in values ]+[1.0])
             for value in values:
                 score_pipe.zrangebyscore(name=self._predictions_name(name=name,delay=delay),min=value, max=value+h, start=0, num=10, withscores=False)
             exec = score_pipe.execute()
-            #
-            prtcls = [ self._zmean_scenarios_percentile(percentile_scenarios=ex) if ex else np.NaN for ex in exec]
-            valid  = [ (v,p) for v,p in zip(values,prtcls) if not np.isnan(p) ]
-            return {"x":[v for v,p in valid], "y":[p for v,p in valid]}
+
+            prtcls = [self._zmean_scenarios_percentile(percentile_scenarios=ex, included_codes=included) if ex else np.NaN for ex in exec]
+            valid  = [ (v,p) for v,p in zip(values,prtcls) if not np.isnan(p) and abs(p-0.5)>1e-6 ]
+
+            # Make CDF monotone using avg of min and max envelopes running from each direction
+            ys1     = [p for v,p in valid]
+            ys2     = list(reversed( [p for v, p in valid] ))
+            xs      = [v for v,p in valid]
+            if ys1:
+                ys_monotone_1 = list( np.maximum.accumulate(np.array(ys1)))
+                ys_monotone_2 = list( np.minimum.accumulate(np.array(ys2)))
+                ys_monotone   = [ 0.5*(y1+y2) for y1,y2 in zip(ys_monotone_1,reversed(ys_monotone_2)) ]
+                return {"x":xs,"y":ys_monotone}
+            else:
+                return {"x":xs, "y":ys1}
         else:
             return {"message":"No predictions."}
 
@@ -1162,7 +1211,7 @@ class Rediz(RedizConventions):
                             write_code = muid.shash(write_key)
                             recipient_code = muid.shash(recipient)
                             # Leaderboards: Sorted sets
-                            for lb in [self.leaderboard_name(), self.leaderboard_name(name=name), self.leaderboard_name(name=name,delay=delay) ]:
+                            for lb in [self.leaderboard_name(), self.leaderboard_name(name=name), self.leaderboard_name(name=None,delay=delay), self.leaderboard_name(name=name,delay=delay) ]:
                                 pipe.zincrby(name=lb, value=recipient_code, amount=rescaled_amount)
                             # Performance: Custom hash
                             pipe.hincrbyfloat(name=self.performance_name(write_key=recipient), key=self.performance_key(name=name,delay=delay), amount=rescaled_amount)
@@ -1208,10 +1257,23 @@ class Rediz(RedizConventions):
                 self._set_implementation(budgets=z_budgets, names=z_names, values=z_curves, write_keys=z_write_keys, with_percentiles=False, with_copulas=False )
         return percentiles
 
-    def _zmean_scenarios_percentile(self, percentile_scenarios):
+    def _zmean_scenarios_percentile(self, percentile_scenarios, included_codes=None):
         """ Each submission has an implicit z-score. Average them. """
-        prctls = [self._scenario_percentile(s) for s in percentile_scenarios]
-        return Rediz._zmean_percentile(prctls)
+        if included_codes:
+            owners_prctls = dict([ (self._scenario_owner(s),self._scenario_percentile(s)) for s in percentile_scenarios if muid.shash(self._scenario_owner(s)) in included_codes])
+        else:
+            owners_prctls = dict([ (self._scenario_owner(s),self._scenario_percentile(s)) for s in percentile_scenarios ])
+        prctls = [ p for o,p in owners_prctls.items() ]
+        mean_prctl = Rediz._zmean_percentile(prctls)
+
+        if prctls and included_codes is not None and len(prctls)<len(included_codes) and abs(mean_prctl-0.5)>1e-6:
+            if True:
+                E = math.exp(8.0*(mean_prctl-0.5))
+                missing_prctl = ( E / (E+1) )
+                prctls = prctls + [missing_prctl]*(len(included_codes)-len(prctls))
+            return Rediz._zmean_percentile(prctls)
+        else:
+            return mean_prctl
 
 
     def _game_payments(self, pool, participant_set, rewarded_scenarios ):
@@ -1499,8 +1561,8 @@ class Rediz(RedizConventions):
 
     def _get_leaderboard_implementation(self, name, delay, count, readable=True):
         pname = self.leaderboard_name(name=name,delay=delay)
-        leaderboard = list(reversed(self.client.zrange(name=pname, start=-count-1, end=-1, withscores=True)))
-        return dict([(muid.search(code),score) for code,score in leaderboard]) if readable else dict(leaderboard)
+        leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
+        return OrderedDict([(muid.search(code),score) for code,score in leaderboard]) if readable else dict(leaderboard)
 
     def _get_links_implementation(self, name, delay=None, delays=None):
         """ Set of outgoing links created by name owner """

@@ -88,6 +88,9 @@ class RedizConventions(MicroConventions):
         self._OWNERS = "owners" + self.SEP  # Prefix to a redundant listing of contemporaneous prediction owners by horizon. Must be private as this contains write_keys
         self._SAMPLES = self._obscurity + self.SAMPLES  # Prefix to delayed predictions by horizon. Contain write_keys !
         self._PROMISED = "promised" + self.SEP  # Prefixes temporary values referenced by the promise queue
+        self._DONATIONS = "donations" + self.SEP  # Write key donations
+        self._DONATION_PASSWORD = muid.shash(self._obscurity)  # Write key donation password
+        self._DONORS = "donors"
 
         # Other implementation config
         self._DELAY_GRACE = int(delay_grace or 5)  # Seconds beyond the schedule time when promise data expires
@@ -169,6 +172,12 @@ class RedizConventions(MicroConventions):
     def percentile_name(self, name, delay):
         return self.zcurve_name(names=[name],delay=delay)
 
+    def donation_name(self,len):
+        return self._DONATIONS + str(len)
+
+    def donors_name(self):
+        return self._DONORS
+
     def identity(self, name):
         return name
 
@@ -208,6 +217,8 @@ class RedizConventions(MicroConventions):
     def leaderboard_name(self, name=None, delay=None):
         if name is None and delay is None:
             return self.LEADERBOARD[:-2]+'.json'
+        elif name is None:
+            return self.LEADERBOARD+str(delay)+'.json'
         else:
             return self.LEADERBOARD+name if delay is None else self.LEADERBOARD+str(delay)+self.SEP+name
 
