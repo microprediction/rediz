@@ -1088,6 +1088,9 @@ class Rediz(RedizConventions):
         assert name==self._root_name(name)
         if len(values)==self.num_predictions and self.is_valid_key(write_key
                 ) and all( [ isinstance(v,(int,float) ) for v in values] ) and all (delay in self.DELAYS for delay in delays):
+            # Ensure sorted ... TODO: force this on the algorithm?
+            values = sorted(values)
+
             # Jigger sorted predictions
             noise =  np.random.randn(self.num_predictions).tolist()
             jiggered_values = [v + n*self.NOISE for v, n in zip(values, noise)]
