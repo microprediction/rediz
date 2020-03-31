@@ -11,7 +11,7 @@ from rediz.utilities import get_json_safe, has_nan, shorten, stem
 # REDIZ
 # -----
 # Implements a write-permissioned shared REDIS value store with subscription, history, prediction, clearing
-# and delay mechanisms. Intended for collectivized short term (e.g. 1 minute or 5 minutes) prediction.
+# and delay mechanisms. Intended for collectivized short term (e.g. 1 minute or 15 minutes) prediction.
 
 PY_REDIS_ARGS = ('host','port','db','username','password','socket_timeout','socket_keepalive','socket_keepalive_options',
                  'connection_pool', 'unix_socket_path','encoding', 'encoding_errors', 'charset', 'errors',
@@ -51,21 +51,6 @@ class Rediz(RedizConventions):
 
     def get_donation_password(self):
         return muid.shash(self._obscurity)
-
-    def donate(self,write_key, password, donor=None, verbose=True):
-        official_password = self.get_donation_password()
-        donor = donor or 'anonymous'
-        if password==official_password:
-            len = muid.difficulty(write_key)
-            if len>=self.MIN_LEN:
-                if self.client.sadd(self.donation_name(len=len),write_key):
-                    importance = 16**(len-self.MIN_LEN)
-                    self.client.hincrby(name=self.donors_name(),key=donor.lower(),amount=importance)
-                return {"operation":"donation","success":True,"message":"Thanks, you can view it at","url":self.base_url+"donations/all".replace('//','/')} if verbose else 1
-            else:
-                return {"operation":"donation","success":False,"message":"Invalid write key or not long enough"} if verbose else 0
-        else:
-            return {"operation":"donation","success":False,"message":"Invalid password","hint":"Ends with "+str(official_password[-4:])} if verbose else 0
 
     def get_donors(self):
         donors = self.client.hgetall(self.donors_name())
@@ -160,21 +145,25 @@ class Rediz(RedizConventions):
     def get_balance(self, write_key):
         return float(self.client.hget(name=self._BALANCES, key=write_key) or 0)
 
+    @staticmethod
+    def _nice_and_ordered(d):
+        """ Present redis hashes as dict in decending order of value """
+        d_tuples = list( [ (ky,float(val)) for ky,val in d.items() ] )
+        d_tuples.sort(  key=lambda t: t[1],reverse=True )
+        return OrderedDict(d_tuples)
+
     def get_performance(self, write_key):
-        return self.client.hgetall(name=self.performance_name(write_key=write_key))
+        performance = self.client.hgetall(name=self.performance_name(write_key=write_key))
+        return self._nice_and_ordered(performance)
 
     def get_budget(self, name):
         return self.client.hget(name=self.BUDGETS, key=name)
 
     def get_budgets(self):
-        budgets =  list(self.client.hgetall(name=self.BUDGETS).items())
-        budgets.sort( key=lambda t: float(t[1]),reverse=True)
-        return OrderedDict(budgets)
+        return self._nice_and_ordered( self.client.hgetall(name=self.BUDGETS) )
 
     def get_volumes(self):
-        volumes = list(self.client.hgetall(name=self.VOLUMES).items())
-        volumes.sort(key=lambda t: float(t[1]), reverse=True)
-        return OrderedDict(volumes)
+        return self._nice_and_ordered( self.client.hgetall(name=self.VOLUMES) )
 
     def get_sponsors(self):
         ownership = self.client.hgetall(self._OWNERSHIP)
@@ -226,7 +215,7 @@ class Rediz(RedizConventions):
         """ Set name=value and initiate clearing, derived zscore market etc """
         assert RedizConventions.is_plain_name(name),"Expecting plain name"
         assert RedizConventions.is_valid_key(write_key),"Invalid write_key"
-        return self._set_implementation(name=name, value=value, write_key=write_key, return_args=None, budget=budget, with_percentiles=True )
+        return self._mset_implementation(name=name, value=value, write_key=write_key, return_args=None, budget=budget, with_percentiles=True)
 
     def cset(self, names:NameList, values:ValueList, budgets:List[int], write_key=None, write_keys=None):
         return self.mset(names=names, values=values, budgets=budgets, write_key=write_key,write_keys=write_keys,with_copulas=True)
@@ -245,7 +234,7 @@ class Rediz(RedizConventions):
             raise Exception(json.dumps(error_data))
         else:
             write_keys = write_keys or [ write_key for _ in names ]
-            return self._set_implementation(names=names, values=values, write_keys=write_keys, return_args=None, budgets=budgets, with_percentiles=True, with_copulas=with_copulas )
+            return self._mset_implementation(names=names, values=values, write_keys=write_keys, return_args=None, budgets=budgets, with_percentiles=True, with_copulas=with_copulas)
 
     def delete(self, name, write_key):
         """ Delete/expire all artifacts associated with name (links, subs, markets etc) """
@@ -264,17 +253,45 @@ class Rediz(RedizConventions):
                values :   [ float ]  len  self.num_predictions
         """
         assert len(values)==self.num_predictions
-        assert delay in self.DELAYS
-        assert self.is_valid_key(write_key)
-        fvalues = list(map(float,values))
-        return self._set_scenarios_implementation(name=name, values=fvalues, delay=delay, write_key=write_key)
+        assert int(delay) in self.DELAYS,"Invalid choice of delay"
+        assert self.is_valid_key(write_key),"Invalid write_key"
+        if self.bankrupt(write_key=write_key):
+            self._error(write_key=write_key,data={'operation':'submit','success':False,'reason':'bankruptcy','name':name})
+            return False
+        else:
+            fvalues = list(map(float,values))
+            return self._set_scenarios_implementation(name=name, values=fvalues, delay=delay, write_key=write_key)
 
     def delete_scenarios(self, name, write_key, delay=None, delays=None):
         return self._delete_scenarios_implementation( name=name, write_key=write_key, delay=delay, delays=delays )
 
     # --------------------------------------------------------------------------
+    #            Donations of MUIDs
+    # --------------------------------------------------------------------------
+
+    def donate(self, write_key, password, donor=None, verbose=True):
+        official_password = self.get_donation_password()
+        donor = donor or 'anonymous'
+        if password == official_password:
+            len = muid.difficulty(write_key)
+            if len >= self.MIN_LEN:
+                if self.client.sadd(self.donation_name(len=len), write_key):
+                    importance = 16 ** (len - self.MIN_LEN)
+                    self.client.hincrby(name=self.donors_name(), key=donor.lower(), amount=importance)
+                return {"operation": "donation", "success": True, "message": "Thanks, you can view it at",
+                        "url": self.base_url + "donations/all".replace('//', '/')} if verbose else 1
+            else:
+                return {"operation": "donation", "success": False,
+                        "message": "Invalid write key or not long enough"} if verbose else 0
+        else:
+            return {"operation": "donation", "success": False, "message": "Invalid password",
+                    "hint": "Ends with " + str(official_password[-4:])} if verbose else 0
+
+    # --------------------------------------------------------------------------
     #            Public interface  (subscription)
     # --------------------------------------------------------------------------
+
+
 
     def subscribe(self, name, write_key, source ):
         """ Permissioned subscribe """
@@ -353,9 +370,9 @@ class Rediz(RedizConventions):
     #            Implementation  (set)
     # --------------------------------------------------------------------------
 
-    def _set_implementation(self,   names:Optional[NameList]=None,values:Optional[ValueList]=None, write_keys:Optional[KeyList]=None,budgets: Optional[List[int]] = None,
-                                    name:Optional[str]=None,value:Optional[Any]=None, write_key:Optional[str]=None, budget:Optional[int]=None,
-                                    return_args:Optional[List[str]]=None, with_percentiles=False, with_copulas=False):
+    def _mset_implementation(self, names:Optional[NameList]=None, values:Optional[ValueList]=None, write_keys:Optional[KeyList]=None, budgets: Optional[List[int]] = None,
+                             name:Optional[str]=None, value:Optional[Any]=None, write_key:Optional[str]=None, budget:Optional[int]=None,
+                             return_args:Optional[List[str]]=None, with_percentiles=False, with_copulas=False):
 
         if return_args is None:
             return_args = ['name','write_key','value','percentile']
@@ -884,6 +901,30 @@ class Rediz(RedizConventions):
     #      Implementation  (Admministrative - garbage collection )
     # --------------------------------------------------------------------------
 
+    def bankruptcy(self,write_key_len):
+        return -1.0*( abs(self.min_balance)*(16**(write_key_len-8)) )
+
+    def bankrupt(self,write_key):
+        return self.distance_to_bankruptcy(write_key=write_key) < 0
+
+    def distance_to_bankruptcy(self,write_key):
+        level   = self.bankruptcy( muid.difficulty(write_key) )
+        balance = self.get_balance(write_key=write_key)
+        return balance - level
+
+    def admin_bankruptcy(self,with_report=False):
+        """ Remove scenarios from bankrupt owners """
+        name = self.client.srandmember(self._NAMES)
+        delay = random.choice(self.DELAYS)
+        write_keys = self._get_sample_owners(name,delay)
+        discards = list()
+        for write_key in write_keys:
+            if self.bankrupt(write_key=write_key):
+                self.delete_scenarios(name=name,write_key=write_key,delay=delay)
+                self._confirm(write_key=write_key,data={"operation":"bankruptcy","name":name})
+                discards.append((name,write_key))
+        return len(discards) if not with_report else {"discards":discards}
+
     def admin_garbage_collection(self, fraction=0.1, with_report=False ):
         """ Randomized search and destroy for expired data """
         num_keys     = self.client.scard(self._NAMES)
@@ -1255,7 +1296,7 @@ class Rediz(RedizConventions):
                     z_curves.append(zcurve_value)
                     z_write_keys.append(write_key)
             if z_names:
-                self._set_implementation(budgets=z_budgets, names=z_names, values=z_curves, write_keys=z_write_keys, with_percentiles=False, with_copulas=False )
+                self._mset_implementation(budgets=z_budgets, names=z_names, values=z_curves, write_keys=z_write_keys, with_percentiles=False, with_copulas=False)
         return percentiles
 
     def _zmean_scenarios_percentile(self, percentile_scenarios, included_codes=None):

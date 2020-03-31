@@ -47,6 +47,8 @@ def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_k
     confirms      = rdz.get_confirms(write_key=target_key)
     volumes       = rdz.get_volumes()
 
+    bankruptcy_report = rdz.admin_bankruptcy(with_report=True)
+
     if len(list(samples.values())):
         sample_std = np.nanstd(list(samples.values()))
         predictions_std = np.nanstd(list(predictions.values()))
