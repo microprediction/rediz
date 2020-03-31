@@ -1609,6 +1609,7 @@ class Rediz(RedizConventions):
         def top_level(write_key):
             things = {'code':muid.shash(write_key),'animal':muid.animal(write_key),
                        self.balance_name(write_key=write_key):self.get_balance(write_key=write_key),
+                       'distance_to_bankruptcy':self.distance_to_bankruptcy(write_key=write_key),
                        self.performance_name(write_key=write_key):self.get_performance(write_key=write_key),
                        self.confirms_name(write_key=write_key):self.get_confirms(write_key=write_key),
                        self.errors_name(write_key=write_key):self.get_errors(write_key=write_key),
