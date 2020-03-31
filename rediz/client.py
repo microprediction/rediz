@@ -168,12 +168,12 @@ class Rediz(RedizConventions):
 
     def get_budgets(self):
         budgets =  list(self.client.hgetall(name=self.BUDGETS).items())
-        budgets.sort( key=lambda t: t[1],reverse=True)
+        budgets.sort( key=lambda t: float(t[1]),reverse=True)
         return OrderedDict(budgets)
 
     def get_volumes(self):
         volumes = list(self.client.hgetall(name=self.VOLUMES).items())
-        volumes.sort(key=lambda t: t[1], reverse=True)
+        volumes.sort(key=lambda t: float(t[1]), reverse=True)
         return OrderedDict(volumes)
 
     def get_sponsors(self):
