@@ -1071,7 +1071,12 @@ class Rediz(RedizConventions):
                 owners_name = self._sample_owners_name(name=name,delay=delay)
                 delete_pipe.srem(owners_name,write_key)
             exec = delete_pipe.execute()
-            return sum(exec)
+            expected_exec = [ self.num_predictions, self.num_predictions, 1]
+            if not all( ex==exp_ex for ex,exp_ex in zip(exec,expected_exec)):
+                self._error(write_key=write_key,data={'operation':'cancel','success':False,'reason':'execution mismatch','exec':exec,'expected_exec':expected_exec})
+                return False
+            else:
+                return True
 
     def _get_scenarios_implementation(self, name, write_key, delay, cursor=0):
         """ Charge for this! Not encouraged as it should not be necessary, and it is inefficient to get scenarios back from the collective zset """
@@ -1469,10 +1474,8 @@ class Rediz(RedizConventions):
                 data = self.get_cdf(name=parts[-1],delay=int(parts[1]))
             elif ps == self.TRANSACTIONS:
                 data = self.get_transactions(write_key=parts[1], name=parts[2])
-            elif ps == self.PERFORMANCE:
-                data = self.get_performance(name=parts[-1],delay=int(parts[1]))
             elif ps == self.LEADERBOARD:
-                data = self.get_leaderboard(name=parts[-1],delay=int(parts[1]))
+                data = self.get_leaderboard(name=parts[1]+'.json',delay=int(stem(parts[2])))
             else:
                 data = None
         else:

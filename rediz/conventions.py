@@ -219,8 +219,10 @@ class RedizConventions(MicroConventions):
             return self.LEADERBOARD[:-2]+'.json'
         elif name is None:
             return self.LEADERBOARD+str(delay)+'.json'
+        elif delay is None:
+            return self.LEADERBOARD+str(name)+'.json'
         else:
-            return self.LEADERBOARD+name if delay is None else self.LEADERBOARD+str(delay)+self.SEP+name
+            return self.LEADERBOARD+self.performance_key(name=name,delay=delay)+'.json'
 
     def history_name(self, name):
         return self.HISTORY + name

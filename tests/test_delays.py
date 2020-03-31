@@ -38,8 +38,7 @@ def do_test_delay(rdz):
     assert delayed_value=="living in the past"
 
     budgets = rdz.get_budgets()
-    budget = rdz.get_budget(name=NAME)
-    pprint.pprint(budgets)
+    budget  = rdz.get_budget(name=NAME)
 
     # Test market
 
