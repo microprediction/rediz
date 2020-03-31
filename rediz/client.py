@@ -4,6 +4,7 @@ from collections import Counter, OrderedDict
 from typing import List, Union, Any, Optional
 from redis.client import list_or_args
 from redis.exceptions import DataError
+from muid import shash
 from .conventions import RedizConventions, REDIZ_CONVENTIONS_ARGS, KeyList, NameList, ValueList
 from rediz.utilities import get_json_safe, has_nan, shorten, stem
 
@@ -163,18 +164,23 @@ class Rediz(RedizConventions):
         return self.client.hgetall(name=self.performance_name(write_key=write_key))
 
     def get_budget(self, name):
-        return self.client.hget(name=self.BUDGET, key=name)
+        return self.client.hget(name=self.BUDGETS, key=name)
 
     def get_budgets(self):
-        budgets =  list(self.client.hgetall(name=self.BUDGET).items())
+        budgets =  list(self.client.hgetall(name=self.BUDGETS).items())
         budgets.sort( key=lambda t: t[1],reverse=True)
-        return dict(budgets)
+        return OrderedDict(budgets)
+
+    def get_volumes(self):
+        volumes = list(self.client.hgetall(name=self.VOLUMES).items())
+        volumes.sort(key=lambda t: t[1], reverse=True)
+        return OrderedDict(volumes)
 
     def get_sponsors(self):
         ownership = self.client.hgetall(self._OWNERSHIP)
         obscured = [(name, muid.animal(key)) for name, key in ownership.items()]
         obscured.sort(key=lambda t: len(t[1]))
-        return dict(obscured)
+        return OrderedDict(obscured)
 
     def delete_performance(self, write_key):
         return self.client.delete(self.performance_name(write_key=write_key))
@@ -373,19 +379,11 @@ class Rediz(RedizConventions):
 
         # Rewards, percentiles ... but only for scalar floats
         # Settlement also triggers the derived market for zscores
-        if False and len(names)==1:
-            # TODO: Remove this special case after testing against _msettle(), which should replace it entirely
-            if self.is_scalar_value(values[0]):
-                prctls = [self._settle(name=name, value=float(values[0]), budget=budgets[0], with_percentiles=with_percentiles, write_key=write_keys[0])]
-            else:
-                prctls = None
+        if all( self.is_scalar_value(v) for v in values ):
+            fvalues = list(map(float, values))
+            prctls = self._msettle(names=names, values=fvalues, budgets=budgets, with_percentiles=with_percentiles, write_keys=write_keys, with_copulas=with_copulas)
         else:
-            # TODO: Allow a mix of valid/invalid here
-            if all( self.is_scalar_value(v) for v in values ):
-                fvalues = list(map(float, values))
-                prctls = self._msettle(names=names, values=fvalues, budgets=budgets, with_percentiles=with_percentiles, write_keys=write_keys, with_copulas=with_copulas)
-            else:
-                prctls = None
+            prctls = None
 
         # Coerce execution log and maybe add percentiles
         exec_args = [ arg for arg in return_args if arg in ['name','write_key','value']]
@@ -1185,7 +1183,7 @@ class Rediz(RedizConventions):
 
         # Rewards
         pipe = self.client.pipeline()
-        pipe.hmset(name=self.BUDGET, mapping=dict(zip(names, budgets)))
+        pipe.hmset(name=self.BUDGETS, mapping=dict(zip(names, budgets)))
         for name, budget, write_key in zip(names, budgets, write_keys):
             pools = [retrieved[pools_lookup[name][delay_ndx]] for delay_ndx in range(num_delay)]
             if any(pools):
@@ -1210,7 +1208,7 @@ class Rediz(RedizConventions):
                             # Record keeping
                             rescaled_amount = budget * float(amount)
                             pipe.hincrbyfloat(name=self._BALANCES, key=recipient, amount=rescaled_amount)
-                            from muid import shash
+                            pipe.hincrbyfloat(name=self.VOLUMES, key=self.performance_key(name=name, delay=delay),amount=abs(rescaled_amount))
                             write_code = muid.shash(write_key)
                             recipient_code = muid.shash(recipient)
                             # Leaderboards: Sorted sets
@@ -1297,86 +1295,6 @@ class Rediz(RedizConventions):
             raise Exception("Leakage in zero sum game")
         return game_payments
 
-
-    def _settle(self, name, value, budget, with_percentiles, write_key ):
-        """ Reward closest guesses and also compute statistical percentile estimate
-              ** deprecated in favour of _msettle()   TODO: Run comparisons and eliminate this
-        """
-        return self._msettle(names=[name],values=[value],budgets=[budget],with_percentiles=with_percentiles,write_key=write_key,with_copulas=False)
-
-
-        oldcode = """
-        percentile_budget = int(math.ceil(0.5 * budget / len(self.DELAYS)))   # FIXME MAYBE: Why int?
-
-        retrieve_pipe = self.client.pipeline()
-        num_delay   = len(self.DELAYS)
-        num_windows = len(self._WINDOWS)
-        scenarios_lookup = dict( [ (delay_ndx,dict()) for delay_ndx in range(num_delay) ] )
-        for delay_ndx, delay in enumerate(self.DELAYS):
-            samples_name = self._samples_name(name=name, delay=delay)
-            retrieve_pipe.zcard(samples_name)                                                   # Total number of entries
-            retrieve_pipe.smembers( self._sample_owners_name(name=name, delay=delay) )          # List of owners
-            for window_ndx, window in enumerate(self._WINDOWS):
-                scenarios_lookup[delay_ndx][window_ndx] = len(retrieve_pipe)                    # Robust to insertion of new instructions in the pipeline
-                retrieve_pipe.zrangebyscore( name=samples_name, min=value-window,  max=value+window,  withscores=False, start=0, num=15)
-
-        # Execute pipeline and re-arrange results
-        K = 2 + len(self._WINDOWS)
-        assert num_delay*K==len(retrieve_pipe), "Indexing thrown off by change in pipeline"
-        retrieved = retrieve_pipe.execute()
-        pools            = retrieved[0::K]
-        assert all( ( isinstance(p, (int,float)) for p in pools ))
-        participant_sets = retrieved[1::K]
-        assert all( isinstance(s,set) for s in participant_sets )
-
-        # Select winners in neighbourhood, trying hard for at least one
-        if any(pools):
-            payments = Counter()
-            percentiles = dict()
-            for delay_ndx, pool, participant_set in zip( range(num_delay), pools, participant_sets ):
-                if pool and len(participant_set)>1:
-                    # Choose a window for percentiles
-                    percentile_scenarios = list()
-                    for window_ndx in range(num_windows):
-                        if len(percentile_scenarios) < 10:
-                            _ndx = scenarios_lookup[delay_ndx][window_ndx]
-                            percentile_scenarios = retrieved[_ndx]
-                    percentiles[delay_ndx] = self._zmean_scenarios_percentile(percentile_scenarios=percentile_scenarios)
-
-                    # Choose window for rewards
-                    rewarded_scenarios=list()
-                    for window_ndx in range(num_windows):
-                        if len(rewarded_scenarios)==0:
-                            _ndx = scenarios_lookup[delay_ndx][window_ndx]
-                            rewarded_scenarios = retrieved[_ndx]
-
-                    game_payments = self._game_payments(pool=pool, participant_set=participant_set, rewarded_scenarios=rewarded_scenarios)
-                    payments.update(game_payments)
-
-            if with_percentiles and percentiles:
-                for delay_ndx, delay in enumerate(self.DELAYS):
-                    if delay_ndx in percentiles:
-                        prctl = percentiles[delay_ndx]
-                        prctl_name = self.percentile_name(name=name,delay=delay)
-                        self._set_implementation(budget=percentile_budget, name=prctl_name, value=prctl, write_key=write_key, with_percentiles=False)
-
-            if len(payments):
-                pipe = self.client.pipeline()
-                for (recipient, amount) in payments.items():
-                    rescaled_amount = budget*float(amount)
-                    pipe.hincrbyfloat(name=self._BALANCES, key=recipient, amount=rescaled_amount)
-                    transaction_record = {"name":name, "amount":rescaled_amount}
-                    pipe.xadd(name=self.transactions_name(write_key=recipient),fields=transaction_record)
-                    pipe.expire(name=self.transactions_name(recipient),time=self._TRANSACTIONS_TTL)
-                pay_exec = pipe.execute()
-            else:
-                pay_exec = []
-            if with_percentiles:
-                return percentiles
-            else:
-                return len(pay_exec)
-        return None
-"""
 
     # --------------------------------------------------------------------------
     #            Implementation  (getters)
@@ -1488,7 +1406,7 @@ class Rediz(RedizConventions):
                 data = self.get_history(name=parts[-1])
             elif ps == self.BALANCE:
                 data = self.get_balance(write_key=stem(parts[-1]))
-            elif ps == self.BUDGET:
+            elif ps == self.BUDGETS:
                 data = self.get_budget(name=parts[-1])
             elif ps == self.TRANSACTIONS:
                 data = self.get_transactions(write_key=stem(parts[-1]))
