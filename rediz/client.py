@@ -371,9 +371,9 @@ class Rediz(RedizConventions):
                     if np.random.rand()<1/20 or pools[nm][delay_ndx]==0:
                         self._baseline_prediction( name=nm, value=v, write_key=wk, delay=delay )
 
-        # Rewards, percentiles
+        # Rewards, percentiles ... but only for scalar floats
         # Settlement also triggers the derived market for zscores
-        if len(names)==1:
+        if False and len(names)==1:
             # TODO: Remove this special case after testing against _msettle(), which should replace it entirely
             if self.is_scalar_value(values[0]):
                 prctls = [self._settle(name=name, value=float(values[0]), budget=budgets[0], with_percentiles=with_percentiles, write_key=write_keys[0])]
@@ -1025,7 +1025,7 @@ class Rediz(RedizConventions):
             delete_pipe = self.client.pipeline(transaction=True)  # <-- Important that transaction=True
             for delay in delays:
                 collective_predictions_name = self._predictions_name(name, delay)
-                keys = [ self._format_scenario(self, write_key, k) for k in range(self.num_predictions) ]
+                keys = [ self._format_scenario( write_key, k) for k in range(self.num_predictions) ]
                 delete_pipe.zrem( collective_predictions_name, *keys)
                 samples_name = self._samples_name(name=name, delay=delay)
                 delete_pipe.zrem(samples_name, *keys)
@@ -1302,7 +1302,10 @@ class Rediz(RedizConventions):
         """ Reward closest guesses and also compute statistical percentile estimate
               ** deprecated in favour of _msettle()   TODO: Run comparisons and eliminate this
         """
+        return self._msettle(names=[name],values=[value],budgets=[budget],with_percentiles=with_percentiles,write_key=write_key,with_copulas=False)
 
+
+        oldcode = """
         percentile_budget = int(math.ceil(0.5 * budget / len(self.DELAYS)))   # FIXME MAYBE: Why int?
 
         retrieve_pipe = self.client.pipeline()
@@ -1373,6 +1376,7 @@ class Rediz(RedizConventions):
             else:
                 return len(pay_exec)
         return None
+"""
 
     # --------------------------------------------------------------------------
     #            Implementation  (getters)
