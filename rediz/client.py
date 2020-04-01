@@ -1475,7 +1475,7 @@ class Rediz(RedizConventions):
             elif ps == self.TRANSACTIONS:
                 data = self.get_transactions(write_key=parts[1], name=parts[2])
             elif ps == self.LEADERBOARD:
-                data = self.get_leaderboard(name=parts[1]+'.json',delay=int(stem(parts[2])))
+                data = self.get_leaderboard(name=parts[2],delay=int(parts[1]))
             else:
                 data = None
         else:

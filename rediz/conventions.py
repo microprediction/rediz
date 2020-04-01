@@ -14,8 +14,8 @@ DelayList = List[Optional[int]]
 
 SEP = "::"
 
-REDIZ_CONVENTIONS_ARGS = ('history_len', 'lagged_len', 'delays', 'max_ttl', 'error_ttl', 'transactions_ttl','error_limit', 'num_predictions','windows','obscurity','delay_grace','instant_recall')
-MICRO_CONVENTIONS_ARGS = ('min_len','min_balance')
+REDIZ_CONVENTIONS_ARGS = ('history_len', 'lagged_len', 'max_ttl', 'error_ttl', 'transactions_ttl','error_limit', 'num_predictions','windows','obscurity','delay_grace','instant_recall')
+MICRO_CONVENTIONS_ARGS = ('num_predictions','min_len','min_balance','delays')
 
 class RedizConventions(MicroConventions):
 
@@ -211,8 +211,7 @@ class RedizConventions(MicroConventions):
         return self.BALANCE + write_key + '.json'
 
     def performance_key(self, name, delay):
-        name_stem = os.path.splitext(name)[0]
-        return name_stem + self.SEP + str(delay)
+        return str(delay)+self.SEP + name
 
     def leaderboard_name(self, name=None, delay=None):
         if name is None and delay is None:
@@ -220,9 +219,9 @@ class RedizConventions(MicroConventions):
         elif name is None:
             return self.LEADERBOARD+str(delay)+'.json'
         elif delay is None:
-            return self.LEADERBOARD+str(name)+'.json'
+            return self.LEADERBOARD+str(name)
         else:
-            return self.LEADERBOARD+self.performance_key(name=name,delay=delay)+'.json'
+            return self.LEADERBOARD+str(delay)+name
 
     def history_name(self, name):
         return self.HISTORY + name
