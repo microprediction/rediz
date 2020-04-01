@@ -221,7 +221,7 @@ class RedizConventions(MicroConventions):
         elif delay is None:
             return self.LEADERBOARD+str(name)
         else:
-            return self.LEADERBOARD+str(delay)+name
+            return self.LEADERBOARD+str(delay)+self.SEP+name
 
     def history_name(self, name):
         return self.HISTORY + name
