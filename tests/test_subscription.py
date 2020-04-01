@@ -1,6 +1,7 @@
 from rediz.client import Rediz
 import json, os, uuid, random, time
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
+from rediz.rediz_test_config_private import BELLEHOOD_BAT, TASTEABLE_BEE, SHOOTABLE_CAT, BABLOH_CATTLE
 
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_subscription.py ; cat tmp_subscription.json
 def dump(obj,name="tmp_subscription.json"): # Debugging
@@ -30,8 +31,8 @@ def subscription_example(plural=False,instant_recall=False):
 
     PUBLISHER             = 'PUBLISQHER_plural_'+str(plural)+'3b4e229a-ffb4-4fc2-8370-c147944aa2b.json'
     SUBSCRIBER            = 'SUBSCRIIBER_plural_'+str(plural)+'ed2b4f6-c6bd-464c-a9e9-322e0c3147.json'
-    PUBLISHER_write_key   = "0d81ad42277b5ace3828ef386b8c3bea" if plural else "2b8cc3064b4c50b8a1dd70aed30acdc3"
-    SUBSCRIBER_write_key  = "973d6b9b0606471b0d0e95390dca3aa0" if plural else "89cc7f5e55cdceeeab92438dc07529ae"
+    PUBLISHER_write_key   = BELLEHOOD_BAT if plural else TASTEABLE_BEE
+    SUBSCRIBER_write_key  = SHOOTABLE_CAT if plural else BABLOH_CATTLE
     rdz._delete_implementation(PUBLISHER, SUBSCRIBER)
 
     assert rdz.set( name = SUBSCRIBER, value = "some value",       write_key=SUBSCRIBER_write_key )

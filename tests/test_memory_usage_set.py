@@ -3,6 +3,7 @@ import json
 import time
 import sys
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
+from rediz.rediz_test_config_private import BELLEHOOD_BAT
 import numpy as np
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_memory_usage_set.py ; cat tmp_memory_set.json
 
@@ -15,7 +16,7 @@ def test_real():
 
 def do_scalar(rdz):
     NAME      = 'NAME-64c-fe9.json'
-    WRITE_KEY = "70e86aa1be823143eb03bc9a7c8585cc"
+    WRITE_KEY = BELLEHOOD_BAT
     NUM       = 6
     rdz.client.flushall()
     rdz.delete(name=NAME,write_key=WRITE_KEY)
@@ -54,7 +55,7 @@ def do_scalar(rdz):
 
 def do_vector(rdz):
     NAME      = 'NAME-64c-fe9.json'
-    WRITE_KEY = "26b3742b44f4ef5e7c3e6458cfcd68d8"
+    WRITE_KEY = BELLEHOOD_BAT
     NUM       = 5
     rdz.client.flushall()
     assert rdz.card() == 0

@@ -3,6 +3,7 @@ import json, os, uuid, random, time
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 import numpy as np
 import math
+from rediz.rediz_test_config_private import BELLEHOOD_BAT
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_prediction_serial.py ; cat tmp_prediction.json
 
 def dump(obj,name="tmp_prediction.json"): # Debugging
@@ -13,7 +14,6 @@ def feed(rdz,target, write_key):
     rdz.set(name=target,write_key=write_key,value=value)
     time.sleep(1)
     rdz.touch(name=target, write_key=write_key)
-
 
 def model(rdz,target,write_key):
     ### Empirical distribution
@@ -46,6 +46,10 @@ def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_k
     subscribers   = rdz._get_subscribers_implementation(name=target)
     confirms      = rdz.get_confirms(write_key=target_key)
     volumes       = rdz.get_volumes()
+    active        = rdz.get_active(write_key=model_key1)
+    rdz.delete_all_scenarios(write_key=model_key1)
+    rdz.delete_all_scenarios(write_key=model_key1)
+    rdz.delete_all_scenarios(write_key=model_key1)
 
     bankruptcy_report = rdz.admin_bankruptcy(with_report=True)
 
@@ -90,7 +94,7 @@ def test_serial_real():
     do_serial(rdz)
 
 def do_serial( rdz ):
-    target_key = "77f9496ee9ac0316f083a8a488959441"
+    target_key = BELLEHOOD_BAT
     model_key  = "c051d0be8cc5b02530fc155c3d5b9c90"
     model_key1 = "dcc0cc254121ca0aec26cbf0b82312ae"
     model_key2 = "68d4d2f78dd0a43b274c87a673b9ed6c"

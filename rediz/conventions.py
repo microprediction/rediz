@@ -14,7 +14,7 @@ DelayList = List[Optional[int]]
 
 SEP = "::"
 
-REDIZ_CONVENTIONS_ARGS = ('history_len', 'lagged_len', 'max_ttl', 'error_ttl', 'transactions_ttl','error_limit', 'num_predictions','windows','obscurity','delay_grace','instant_recall')
+REDIZ_CONVENTIONS_ARGS = ('history_len', 'delays','lagged_len', 'max_ttl', 'error_ttl', 'transactions_ttl','error_limit', 'num_predictions','windows','obscurity','delay_grace','instant_recall')
 MICRO_CONVENTIONS_ARGS = ('num_predictions','min_len','min_balance','delays')
 
 class RedizConventions(MicroConventions):
@@ -210,8 +210,21 @@ class RedizConventions(MicroConventions):
     def balance_name(self, write_key):
         return self.BALANCE + write_key + '.json'
 
-    def performance_key(self, name, delay):
+    def horizon_name(self, name, delay):
+        """ Convention is used for performance and other hashes """  # Move to MicroConventions
         return str(delay)+self.SEP + name
+
+    def split_horizon_name(self, key):
+        spl = key.split(self.SEP)
+        name = spl[1]
+        delay = int(spl[0])
+        return name, delay
+
+    def split_horizon_names(self, keys):
+        names_delays = [self.split_horizon_name(key) for key in keys]
+        names = [n for n, _ in names_delays]
+        delays = [d for _, d in names_delays]
+        return names, delays
 
     def leaderboard_name(self, name=None, delay=None):
         if name is None and delay is None:
@@ -221,7 +234,7 @@ class RedizConventions(MicroConventions):
         elif delay is None:
             return self.LEADERBOARD+str(name)
         else:
-            return self.LEADERBOARD+str(delay)+self.SEP+name
+            return self.LEADERBOARD+self.horizon_name(name=name,delay=delay)
 
     def history_name(self, name):
         return self.HISTORY + name

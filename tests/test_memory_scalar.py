@@ -4,6 +4,7 @@ import time
 import sys
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 import numpy as np
+from rediz.rediz_test_config_private import BELLEHOOD_BAT
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_memory_scalar.py ; cat tmp_memory_scalar.json; cat tmp_error_log.json
 
 def dump(obj,name="tmp_memory_scalar.json"): # Debugging
@@ -17,7 +18,7 @@ def test_real():
 
 def do_scalar(rdz):
     NAME       = 'NAME-64c-fe9.json'
-    WRITE_KEY  = "032d154c3feb97269d727e345e40b771"
+    WRITE_KEY  = BELLEHOOD_BAT
     MODEL_KEYS = ["dad6936725fdf55be16fb1418db7b697","2653ae9f6f932b29d76263bbb20d6d76","f5f860baba93161e8bbb53b851d6f753"]
     PER_SECOND = 3
     NUM       = 5*PER_SECOND

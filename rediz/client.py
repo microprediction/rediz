@@ -215,10 +215,20 @@ class Rediz(RedizConventions):
         """ Set name=value and initiate clearing, derived zscore market etc """
         assert RedizConventions.is_plain_name(name),"Expecting plain name"
         assert RedizConventions.is_valid_key(write_key),"Invalid write_key"
-        return self._mset_implementation(name=name, value=value, write_key=write_key, return_args=None, budget=budget, with_percentiles=True)
+        if muid.difficulty(write_key)<self.min_len:
+            reason = "Write key isn't sufficiently rare to create or update a stream. Must be difficulty "+str(self.min_len)
+            self._error(write_key=write_key,operation='set',success=False,reason=reason)
+            return False
+        else:
+            return self._mset_implementation(name=name, value=value, write_key=write_key, return_args=None, budget=budget, with_percentiles=True)
 
     def cset(self, names:NameList, values:ValueList, budgets:List[int], write_key=None, write_keys=None):
-        return self.mset(names=names, values=values, budgets=budgets, write_key=write_key,write_keys=write_keys,with_copulas=True)
+        if muid.difficulty(write_key) < self.min_len+1:
+            reason = "Write key isn't sufficiently rare to request joint distributions. Must be difficulty " + str(self.min_len+1)
+            self._error(write_key=write_key, operation='set', success=False, reason=reason)
+            return False
+        else:
+            return self.mset(names=names, values=values, budgets=budgets, write_key=write_key,write_keys=write_keys,with_copulas=True)
 
     def mset(self,names:NameList, values:ValueList, budgets:List[int], write_key=None, write_keys=None, with_copulas=False ):
         """ Apply set() for multiple names and values, with copula derived streams optionally """
@@ -261,6 +271,16 @@ class Rediz(RedizConventions):
         else:
             fvalues = list(map(float,values))
             return self._set_scenarios_implementation(name=name, values=fvalues, delay=delay, write_key=write_key)
+
+    def delete_all_scenarios(self, write_key):
+        active = self.get_active(write_key=write_key)
+        limit  = 5
+        for horizon, active in active.items():
+            if active and limit:
+                name, delay = self.split_horizon_name(horizon)
+                self._delete_scenarios_implementation(name=name,write_key=write_key,delay=delay)
+                limit = limit-1
+        return limit>0
 
     def delete_scenarios(self, name, write_key, delay=None, delays=None):
         return self._delete_scenarios_implementation( name=name, write_key=write_key, delay=delay, delays=delays )
@@ -1254,14 +1274,14 @@ class Rediz(RedizConventions):
                             # Record keeping
                             rescaled_amount = budget * float(amount)
                             pipe.hincrbyfloat(name=self._BALANCES, key=recipient, amount=rescaled_amount)
-                            pipe.hincrbyfloat(name=self.VOLUMES, key=self.performance_key(name=name, delay=delay),amount=abs(rescaled_amount))
+                            pipe.hincrbyfloat(name=self.VOLUMES, key=self.horizon_name(name=name, delay=delay), amount=abs(rescaled_amount))
                             write_code = muid.shash(write_key)
                             recipient_code = muid.shash(recipient)
                             # Leaderboards: Sorted sets
                             for lb in [self.leaderboard_name(), self.leaderboard_name(name=name), self.leaderboard_name(name=None,delay=delay), self.leaderboard_name(name=name,delay=delay) ]:
                                 pipe.zincrby(name=lb, value=recipient_code, amount=rescaled_amount)
                             # Performance: Custom hash
-                            pipe.hincrbyfloat(name=self.performance_name(write_key=recipient), key=self.performance_key(name=name,delay=delay), amount=rescaled_amount)
+                            pipe.hincrbyfloat(name=self.performance_name(write_key=recipient), key=self.horizon_name(name=name, delay=delay), amount=rescaled_amount)
                             # Transactions logs:
                             transaction_record = {"settlement_time":str(datetime.datetime.now()),"stream": name, "delay":delay, "stream_owner_code":write_code,"recipient_code":recipient_code, "amount": rescaled_amount}
                             log_names = [ self.transactions_name(), self.transactions_name(write_key=recipient ),  self.transactions_name(write_key=recipient, name=name ), self.transactions_name(write_key=recipient, name=name, delay=delay ) ]
@@ -1523,10 +1543,34 @@ class Rediz(RedizConventions):
                     history = [ h for j,h in enumerate(history) if not j in expired ]
         return history
 
-
     def _get_transactions_implementation(self, min, max, count, write_key=None, name=None, delay=None ):
         trnsctns =self.transactions_name(write_key=write_key,name=name,delay=delay)
         return self.client.xrevrange(name=trnsctns, min=min, max=max, count=count )
+
+    def get_names(self):
+        return list( self.client.smembers(self._NAMES) )
+
+    @staticmethod
+    def _flatten(list_of_lists):
+        return [item for sublist in list_of_lists for item in sublist]
+
+    def get_horizon_names(self):
+        names  = self._flatten([self.get_names()] * len(self.DELAYS))
+        delays = self._flatten([self.DELAYS] * len(self._NAMES))
+        return [self.horizon_name(name=name, delay=delay) for name, delay in zip(names, delays)]
+
+    def get_active(self,write_key):
+        keys   = self.get_horizon_names()
+        names, delays = self.split_horizon_names(keys)
+        active = self.is_active(write_key=write_key, names=names, delays=delays )
+        return dict( zip(keys,active) )
+
+    def is_active(self, write_key, names, delays ):
+        assert len(names)==len(delays),"names/delays length mismatch ... maybe use get_active(write_key) instead"
+        pipe = self.client.pipeline()
+        for name,delay in zip(names,delays):
+            pipe.sismember(self._sample_owners_name(name=name,delay=delay),write_key)
+        return pipe.execute()
 
     def _get_leaderboard_implementation(self, name, delay, count, readable=True):
         pname = self.leaderboard_name(name=name,delay=delay)
@@ -1610,6 +1654,7 @@ class Rediz(RedizConventions):
             things = {'code':muid.shash(write_key),'animal':muid.animal(write_key),
                        self.balance_name(write_key=write_key):self.get_balance(write_key=write_key),
                        'distance_to_bankruptcy':self.distance_to_bankruptcy(write_key=write_key),
+                       'activity':self.get_active(write_key=write_key),
                        self.performance_name(write_key=write_key):self.get_performance(write_key=write_key),
                        self.confirms_name(write_key=write_key):self.get_confirms(write_key=write_key),
                        self.errors_name(write_key=write_key):self.get_errors(write_key=write_key),

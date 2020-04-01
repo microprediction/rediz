@@ -1,5 +1,6 @@
 from rediz.client import Rediz
 import json, os, uuid, time
+from rediz.rediz_test_config_private import BELLEHOOD_BAT, TASTEABLE_BEE
 
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 # pip install -e ; python -m pytest tests/test_links.py ; cat tmp_links.json
@@ -21,8 +22,8 @@ def do_test_link(rdz):
     assert 1 in rdz.DELAYS
     assert 5 in rdz.DELAYS
     TARGET              = "target7-db77f1c0d75f.json"
-    SOURCE_write_key    = "7306f5935d47c45a71b742335ae8da37"
-    TARGET_write_key    = "c6a5cd193c746b9f88a599494db49efc"
+    SOURCE_write_key    = BELLEHOOD_BAT
+    TARGET_write_key    = TASTEABLE_BEE
     assert rdz.is_valid_key(TARGET_write_key)
     assert rdz.is_valid_key(SOURCE_write_key)
 

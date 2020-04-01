@@ -2,6 +2,7 @@ from rediz.client import Rediz
 from threezaconventions.crypto import random_key
 import json, os, uuid
 import numpy as np
+from rediz.rediz_test_config_private import BELLEHOOD_BAT
 
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 # python -m pytest tests/test_helpers.py ; cat tmp_helpers.json
@@ -16,7 +17,7 @@ def test_transactions_name():
     name = "barney.json"
 
     rdz = Rediz(**REDIZ_TEST_CONFIG)
-    write_key = rdz.create_key(difficulty=6)
+    write_key = BELLEHOOD_BAT
 
     case1 = rdz.transactions_name(write_key=write_key,name=name)
     assert case1=='transactions::'+write_key+'::barney.json'
@@ -70,7 +71,7 @@ def random_name():
 def test_card_fake():
     rdz = Rediz()
     assert rdz.card()==0
-    title = {'name':rdz.random_name(),'write_key':rdz.create_key(difficulty=6)}
+    title = {'name':rdz.random_name(),'write_key':BELLEHOOD_BAT}
     rdz.set(value="32",**title)
     assert rdz.card()==1
     del_count = rdz.delete(**title)
@@ -82,7 +83,7 @@ def test_card_fake():
 def test_card_real():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
     num = rdz.card()
-    title = {'name': rdz.random_name(), 'write_key': rdz.create_key(difficulty=6)}
+    title = {'name': rdz.random_name(), 'write_key': BELLEHOOD_BAT}
     rdz.set(value=143,**title)
     assert rdz.card()==num+1
     rdz.delete(**title)
@@ -90,7 +91,7 @@ def test_card_real():
 
 
 def do_test_exists_delete(rdz):
-    title = {"name":"d7ec2edb-d045-490e-acbd-7a05122d930e.json","write_key":"addae6720f4280c1c1894007854c93bc"}
+    title = {"name":"d7ec2edb-d045-490e-acbd-7a05122d930e.json","write_key":BELLEHOOD_BAT}
     name = title["name"]
     rdz._delete_implementation(name) # In case it is left over from previous
     assert rdz.exists(name)==0
@@ -125,7 +126,7 @@ def do_test__is_valid_name(rdz):
         assert rdz.is_valid_name(s),"Got it wrong for "+s
 
 def test_coerce_inputs():
-    write_key = "addae6720f4280c1c1894007854c93bc"
+    write_key =  BELLEHOOD_BAT
     names, values, write_keys, budgets = Rediz.coerce_inputs(name="dog",value="8",write_key=write_key,budget=1, names=None, values=None, write_keys=None)
     assert names[0]=="dog"
     assert values[0]=="8"
