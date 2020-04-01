@@ -191,7 +191,7 @@ class RedizConventions(MicroConventions):
         return self.CONFIRMS + write_key + '.json'
 
     def errors_name(self, write_key):
-        return self.MESSAGES + write_key + '.json'
+        return self.ERRORS + write_key + '.json'
 
     def warnings_name(self, write_key):
         return self.WARNINGS + write_key + '.json'
