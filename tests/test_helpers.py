@@ -7,7 +7,6 @@ from rediz.rediz_test_config_private import BELLEHOOD_BAT
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 # python -m pytest tests/test_helpers.py ; cat tmp_helpers.json
 
-
 def test_donation():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
     pw  = rdz.get_donation_password()

@@ -211,27 +211,33 @@ class Rediz(RedizConventions):
     def touch(self, name, write_key, budget=1):
         return self._touch_implementation(name=name,write_key=write_key,budget=budget)
 
+    def muid_difficulty(self, write_key):
+        try:
+            return muid.difficulty(write_key)
+        except:
+            return 0 
+
     def set( self, name, value, write_key, budget=10 ):
         """ Set name=value and initiate clearing, derived zscore market etc """
         assert RedizConventions.is_plain_name(name),"Expecting plain name"
         assert RedizConventions.is_valid_key(write_key),"Invalid write_key"
-        if muid.difficulty(write_key)<self.min_len:
+        if self.muid_difficulty(write_key)<self.min_len:
             reason = "Write key isn't sufficiently rare to create or update a stream. Must be difficulty "+str(self.min_len)
             self._error(write_key=write_key,operation='set',success=False,reason=reason)
             return False
         else:
             return self._mset_implementation(name=name, value=value, write_key=write_key, return_args=None, budget=budget, with_percentiles=True)
 
-    def cset(self, names:NameList, values:ValueList, budgets:List[int], write_key=None, write_keys=None):
-        if muid.difficulty(write_key) < self.min_len+1:
+    def cset(self, names:NameList, values:ValueList, budgets:List[int], write_key):
+        if self.muid_difficulty(write_key) < self.min_len+1:
             reason = "Write key isn't sufficiently rare to request joint distributions. Must be difficulty " + str(self.min_len+1)
             self._error(write_key=write_key, operation='set', success=False, reason=reason)
             return False
         else:
-            return self.mset(names=names, values=values, budgets=budgets, write_key=write_key,write_keys=write_keys,with_copulas=True)
+            return self.mset(names=names, values=values, budgets=budgets, write_key=write_key,with_copulas=True)
 
     def mset(self,names:NameList, values:ValueList, budgets:List[int], write_key=None, write_keys=None, with_copulas=False ):
-        """ Apply set() for multiple names and values, with copula derived streams optionally """
+        """ Apply set() for multiple names and values, with copula derived streams optionally """ # Todo: disallow calling with multiple write_keys
         is_plain = [ RedizConventions.is_plain_name(name) for name in names ]
         if not len(names)==len(values):
             error_data = {'names':names,'values':values,'error':'Names and values have different lengths'}
@@ -275,11 +281,10 @@ class Rediz(RedizConventions):
     def delete_all_scenarios(self, write_key):
         active = self.get_active(write_key=write_key)
         limit  = 5
-        for horizon, active in active.items():
-            if active and limit:
-                name, delay = self.split_horizon_name(horizon)
-                self._delete_scenarios_implementation(name=name,write_key=write_key,delay=delay)
-                limit = limit-1
+        for horizon in active:
+            name, delay = self.split_horizon_name(horizon)
+            self._delete_scenarios_implementation(name=name,write_key=write_key,delay=delay)
+            limit = limit-1
         return limit>0
 
     def delete_scenarios(self, name, write_key, delay=None, delays=None):
@@ -293,7 +298,7 @@ class Rediz(RedizConventions):
         official_password = self.get_donation_password()
         donor = donor or 'anonymous'
         if password == official_password:
-            len = muid.difficulty(write_key)
+            len = self.muid_difficulty(write_key)
             if len >= self.MIN_LEN:
                 if self.client.sadd(self.donation_name(len=len), write_key):
                     importance = 16 ** (len - self.MIN_LEN)
@@ -928,7 +933,7 @@ class Rediz(RedizConventions):
         return self.distance_to_bankruptcy(write_key=write_key) < 0
 
     def distance_to_bankruptcy(self,write_key):
-        level   = self.bankruptcy( muid.difficulty(write_key) )
+        level   = self.bankruptcy(self.muid_difficulty(write_key))
         balance = self.get_balance(write_key=write_key)
         return balance - level
 
@@ -1556,14 +1561,14 @@ class Rediz(RedizConventions):
 
     def get_horizon_names(self):
         names  = self._flatten([self.get_names()] * len(self.DELAYS))
-        delays = self._flatten([self.DELAYS] * len(self._NAMES))
+        delays = self._flatten([self.DELAYS] * len(names))
         return [self.horizon_name(name=name, delay=delay) for name, delay in zip(names, delays)]
 
     def get_active(self,write_key):
         keys   = self.get_horizon_names()
         names, delays = self.split_horizon_names(keys)
         active = self.is_active(write_key=write_key, names=names, delays=delays )
-        return dict( zip(keys,active) )
+        return [k for k,a in zip(keys,active) if a]
 
     def is_active(self, write_key, names, delays ):
         assert len(names)==len(delays),"names/delays length mismatch ... maybe use get_active(write_key) instead"

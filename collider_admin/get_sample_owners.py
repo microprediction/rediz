@@ -6,9 +6,9 @@ import pprint
 if __name__ == '__main__':
     rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
     for name in ['cop.json']:
-        predictions = rdz.get_samples(name=name,delay=rdz.DELAYS[0])
-        print("---Samples---")
-        pprint.pprint([ (p,v) for p,v in predictions.items() ])
+        owners = rdz._get_sample_owners(name=name,delay=rdz.DELAYS[1])
+        print("---Owners---")
+        pprint.pprint(owners)
 
 
 

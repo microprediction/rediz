@@ -15,7 +15,6 @@ def test_delay_real():
     do_test_delay_string(rdz)
     do_test_lags_and_delays(rdz)
 
-
 def test_delay_fake():
     rdz = Rediz()
     do_test_delay_string(rdz)

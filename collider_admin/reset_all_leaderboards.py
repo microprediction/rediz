@@ -5,6 +5,7 @@ import pprint
 
 if __name__ == '__main__':
     rdz     = Rediz(**REDIZ_COLLIDER_CONFIG)
+
     streams = list(rdz.client.smembers(rdz._NAMES))
     rdz.client.delete(rdz.leaderboard_name(name=None))
     pipe = rdz.client.pipeline()
