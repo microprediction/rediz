@@ -1085,20 +1085,21 @@ class Rediz(RedizConventions):
         elif delays is None:
             delays = [ delay ]
         assert name==self._root_name(name)
-        if self.is_valid_key(write_key ) and all(delay in self.DELAYS for delay in delays):
-            delete_pipe = self.client.pipeline(transaction=True)  # <-- Important that transaction=True
+        if self.is_valid_key(write_key ) and all(d in self.DELAYS for d in delays):
+            delete_pipe = self.client.pipeline(transaction=True)  # <-- Important that transaction=True lest submissions and owners get out of sync
             for delay in delays:
                 collective_predictions_name = self._predictions_name(name, delay)
                 keys = [ self._format_scenario( write_key, k) for k in range(self.num_predictions) ]
-                delete_pipe.zrem( collective_predictions_name, *keys)
+                delete_pipe.zrem( collective_predictions_name, *keys)         # 1000
                 samples_name = self._samples_name(name=name, delay=delay)
-                delete_pipe.zrem(samples_name, *keys)
+                delete_pipe.zrem(samples_name, *keys)                         # 1000
                 owners_name = self._sample_owners_name(name=name,delay=delay)
-                delete_pipe.srem(owners_name,write_key)
+                delete_pipe.srem(owners_name,write_key)                       # 1
             exec = delete_pipe.execute()
             expected_exec = [ self.num_predictions, self.num_predictions, 1]
-            if not all( ex==exp_ex for ex,exp_ex in zip(exec,expected_exec)):
-                self._error(write_key=write_key,data={'operation':'cancel','success':False,'reason':'execution mismatch','exec':exec,'expected_exec':expected_exec})
+            alt_expected_exec = [ 0, self.num_predictions, 1]
+            if not ( all( ex==exp_ex for ex,exp_ex in zip(exec,expected_exec)) or all( ex==exp_ex for ex,exp_ex in zip(exec,alt_expected_exec))):
+                self._error(write_key=write_key,data={'operation':'cancel','name':name,'write_key':write_key,'example_key':keys[0],'delays':delays,'success':False,'reason':'execution mismatch','exec':exec,'expected_exec':expected_exec})
                 return False
             else:
                 return True
@@ -1659,13 +1660,13 @@ class Rediz(RedizConventions):
             things = {'code':muid.shash(write_key),'animal':muid.animal(write_key),
                        self.balance_name(write_key=write_key):self.get_balance(write_key=write_key),
                        'distance_to_bankruptcy':self.distance_to_bankruptcy(write_key=write_key),
-                       'activity':self.get_active(write_key=write_key),
+                       '/active/'+write_key:self.get_active(write_key=write_key),
                        self.performance_name(write_key=write_key):self.get_performance(write_key=write_key),
                        self.confirms_name(write_key=write_key):self.get_confirms(write_key=write_key),
                        self.errors_name(write_key=write_key):self.get_errors(write_key=write_key),
                        self.warnings_name(write_key=write_key):self.get_warnings(write_key=write_key),
                        self.transactions_name(write_key=write_key):self.get_transactions(write_key=write_key)}
-            return dict( [ ( thing, shorten(value) ) for thing,value in things.items() ])
+            return dict( [ ( thing, shorten(value,num=10) ) for thing,value in things.items() ])
 
         return top_level(write_key=write_key)
 
