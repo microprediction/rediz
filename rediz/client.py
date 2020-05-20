@@ -56,11 +56,19 @@ class Rediz(RedizConventions):
         donors = self.client.hgetall(self.donors_name())
         return dict( sorted(donors.items(), key = lambda e:int(e[1]),reverse=True ) )
 
-    def get_donations(self, len=None):
+    def _get_donations(self, len=None):
         if len is None:
-            return [ muid.animal(write_key)  for difficulty in range(17,11,-1)  for write_key in self.get_donations(len=difficulty) ]
+            len = 12
+        return [ (write_key, muid.animal(write_key))  for difficulty in range(17,11,-1)  for write_key in self.get_donations(len=difficulty) ]
+
+    def get_donations(self, len=None, with_key=False ):
+        if len is None:
+            len = 12
+        if with_key:
+            return [ (write_key,muid.animal(write_key)) for difficulty in range(17, 11, -1) for write_key in self.client.smembers(self.donation_name(len=len))]
         else:
-            return self.client.smembers(self.donation_name(len=len))
+            return [ muid.animal(write_key)  for difficulty in range(17,11,-1)  for write_key in self.client.smembers(self.donation_name(len=len)) ]
+
 
     def get(self, name, as_json=False, **kwargs ):
         """ Unified getter expecting prefixed name - used by web application """
@@ -1561,11 +1569,14 @@ class Rediz(RedizConventions):
         return [item for sublist in list_of_lists for item in sublist]
 
     def get_horizon_names(self):
-        names  = self._flatten([self.get_names()] * len(self.DELAYS))
-        delays = self._flatten([self.DELAYS] * len(names))
-        return [self.horizon_name(name=name, delay=delay) for name, delay in zip(names, delays)]
+        horizons = list()
+        for name in self.get_names():
+            for delay in self.DELAYS:
+                horizons.append( self.horizon_name(name=name,delay=delay) )
+        return horizons
 
     def get_active(self,write_key):
+        # FIXME: MUST PIPELINE THIS
         keys   = self.get_horizon_names()
         names, delays = self.split_horizon_names(keys)
         active = self.is_active(write_key=write_key, names=names, delays=delays )
