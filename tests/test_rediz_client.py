@@ -1,7 +1,7 @@
 from rediz.client import Rediz
 from threezaconventions.crypto import random_key
 import json, os, uuid, time
-from rediz.rediz_test_config_credentials import BELLEHOOD_BAT, TASTEABLE_BEE
+from rediz.rediz_test_config_private import BELLEHOOD_BAT, TASTEABLE_BEE
 
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_rediz_client.py ; cat tmp_rediz_client.json
 

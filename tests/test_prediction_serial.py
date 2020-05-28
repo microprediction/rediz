@@ -3,7 +3,7 @@ import json, os, uuid, random, time
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 import numpy as np
 import math
-from rediz.rediz_test_config_credentials import BELLEHOOD_BAT
+from rediz.rediz_test_config_private import BELLEHOOD_BAT
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_prediction_serial.py ; cat tmp_prediction.json
 
 def dump(obj,name="tmp_prediction.json"): # Debugging

@@ -4,7 +4,7 @@ import time
 import sys
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 import numpy as np
-from rediz.rediz_test_config_credentials import BELLEHOOD_BAT
+from rediz.rediz_test_config_private import BELLEHOOD_BAT
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_memory_scalar.py ; cat tmp_memory_scalar.json; cat tmp_error_log.json
 
 def dump(obj,name="tmp_memory_scalar.json"): # Debugging

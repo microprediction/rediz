@@ -1,7 +1,7 @@
 from rediz.client import Rediz
 import json, random, time
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
-from rediz.rediz_test_config_credentials import BELLEHOOD_BAT
+from rediz.rediz_test_config_private import BELLEHOOD_BAT
 
 # # rm tmp*.json; pip install -e . ; python -m pytest tests/test_garbage_collection.py ; cat tmp_garbage.json
 
