@@ -3,7 +3,7 @@ import json
 import time
 import sys
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
-from rediz.rediz_test_config_private import BELLEHOOD_BAT
+from rediz.rediz_test_config_credentials import BELLEHOOD_BAT
 import numpy as np
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_memory_usage_set.py ; cat tmp_memory_set.json
 

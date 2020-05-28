@@ -1,6 +1,6 @@
 from rediz.client import Rediz
 import json, os, uuid, time
-from rediz.rediz_test_config_private import BELLEHOOD_BAT, TASTEABLE_BEE
+from rediz.rediz_test_config_credentials import BELLEHOOD_BAT, TASTEABLE_BEE
 
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 # pip install -e ; python -m pytest tests/test_links.py ; cat tmp_links.json
