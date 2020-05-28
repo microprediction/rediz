@@ -54,31 +54,53 @@ def do_test_lags_and_delays(rdz):
     rdz._delete_implementation(NAME)
     time.sleep(0.1)
     WRITE_KEY = BELLEHOOD_BAT
+
+    # Timeline of writes
+    #
+    #       0          3s         5.5s
+    # ------|----------|----------|--
+    #       6         16          |
+    #                             |
+    # Lag 1 read                 16
+    # Lag 5 read                  6
+
+    # We write the value 6.0, then wait 3 seconds
+    time6 = time.time()
     prctl = rdz.set(name=NAME, value=6.0, write_key=WRITE_KEY)
-
-    for _ in range(2):
-        time.sleep(1)
+    while time.time()-time6<3:
         rdz.admin_promises()
-    prctl = rdz.set(name=NAME, value=16.0, write_key=WRITE_KEY)
-    time16 = time.time()
-    prms = list()
-    time.sleep(1.1)
-    for _ in range(3):
-        time.sleep(1)
-        prms.append( rdz.admin_promises() )
+        time.sleep(0.1)
 
-    # Check delayed values
+    # Then write 16.0
+    prctl = rdz.set(name=NAME, value=16.0, write_key=WRITE_KEY)
+    time16 = time.time()  # Time at which 16.0 was written
+
+
+    # Wait another 3 seconds
+    time.sleep(1)
+    prms = list()
+    while time.time()-time6<5.5:
+        prms.append( rdz.admin_promises() )
+        time.sleep(0.1)
+
+    # Get the value that has been delayed by 1 second or more ... this should be 16.0
     delayed_1_value = rdz.get_delayed(name=NAME, delay=1)
     rdz.touch(name=NAME,write_key=WRITE_KEY)
     assert abs(float(delayed_1_value)-16.0)<1e-5
+
+    # Get the value delayed by 5 seconds or more two different ways ... this should be 6.0
+    elapsed1 = time.time() - time16  # Did less than 5 seconds elapse ... just checking
+
     delayed_5_value   = float(rdz.client.get(name=rdz.delayed_name(name=NAME,delay=5)))
     delayed_5_value_2 = rdz.get_delayed(name=NAME,delay=5)
     assert abs(delayed_5_value-delayed_5_value_2)<1e-5
-    elapsed = time.time()-time16
-    if elapsed<5:
+    elapsed2 = time.time()-time16             # Did less than 5 seconds elapse ... just checking again
+    if elapsed1<5 and elapsed2<5:
         assert abs(float(delayed_5_value)-6.0)<1e-5
-    else:
+    elif elapsed1>5 and elapsed2>5:
         assert abs(float(delayed_5_value)-16.0)<1e-5
+    else:
+        pass # Give up checking this time as there could be a race condition in test
 
     # Test lags while we are at it
     lagged_values = rdz.get_lagged_values(name=NAME)
