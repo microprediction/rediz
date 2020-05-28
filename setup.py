@@ -7,8 +7,8 @@ README = (HERE / "README.md").read_text()
 
 setup(
     name="rediz",
-    version="0.4.15",
-    description="Open access to competing prediction algorithms",
+    version="0.4.18",
+    description="Powering easy intelligence/nowcasts at www.microprediction.org",
     long_description=README,
     long_description_content_type="text/markdown",
     url="https://github.com/microprediction/rediz",

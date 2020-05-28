@@ -5,6 +5,7 @@ import numpy as np
 from redis.client import list_or_args
 from typing import List, Union, Any, Optional
 from microprediction.conventions import MicroConventions
+from rediz.samplers import exponential_bootstrap
 
 KeyList   = List[Optional[str]]
 NameList  = List[Optional[str]]
@@ -91,6 +92,7 @@ class RedizConventions(MicroConventions):
         self._DONATIONS = "donations" + self.SEP  # Write key donations
         self._DONATION_PASSWORD = muid.shash(self._obscurity)  # Write key donation password
         self._DONORS = "donors"
+        self._DISCOUNT = 0.9            # Transfers
 
         # Other implementation config
         self._DELAY_GRACE = int(delay_grace or 5)  # Seconds beyond the schedule time when promise data expires
@@ -555,7 +557,6 @@ class RedizConventions(MicroConventions):
     # --------------------------------------------------------------------------
 
     def empirical_predictions(self, lagged_values ):
-        from rediz.samplers import exponential_bootstrap
         predictions = exponential_bootstrap(lagged=lagged_values, decay=0.005, num=self.NUM_PREDICTIONS)
         return sorted(predictions)
 

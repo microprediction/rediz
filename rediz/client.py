@@ -934,8 +934,52 @@ class Rediz(RedizConventions):
     #      Implementation  (Admministrative - garbage collection )
     # --------------------------------------------------------------------------
 
+    def transfer(self, source_write_key, recipient_write_key, amount, as_record=False):
+        """ Debit and credit write_keys """
+        transaction_record = {"settlement_time": str(datetime.datetime.now()), "type": "transfer", "source": source_write_key, "recipient": recipient_write_key}
+        success = 0
+        if self.is_valid_key(recipient_write_key):
+            if self.is_valid_key(recipient_write_key):
+                recipient_balance = self.get_balance(write_key=recipient_write_key)
+                if recipient_balance < -1.0:
+                    source_distance = self.distance_to_bankruptcy(source_write_key)
+                    maximum_to_receive = -recipient_balance  # Cannot make a balance positive
+                    maximum_to_give    = max(0,source_distance)
+                    given = min(maximum_to_give,maximum_to_receive,amount)
+                    received = given*self._DISCOUNT
+                    transaction_record.update({'max_to_give':maximum_to_give,'max_to_receive':maximum_to_receive,'given':given,'received':received})
+                    if given>0.1:
+                        pipe = self.client.pipeline(transaction=True)
+                        pipe.hincrbyfloat(name=self._BALANCES, key=source_write_key, amount=-given)
+                        pipe.hincrbyfloat(name=self._BALANCES, key=recipient_write_key, amount=received)
+                        execut = pipe.execute()
+                        success = 1
+                    else:
+                        transaction_record.update({'reason':'Not in a position to give, or not in a position to receive'})
+                else:
+                    transaction_record.update({"reason": "Cannot transfer to a key balance above -1.0"})
+            else:
+                transaction_record.update({"reason": "Invalid source write_key"})
+        else:
+            transaction_record.update({"reason":"Invalid source write_key"})
+
+        # Logging
+        transaction_record.update({"success":success})
+        log_names = [ self.transactions_name(),
+                      self.transactions_name(write_key=source_write_key),
+                      self.transactions_name(write_key=recipient_write_key)
+                    ]
+        log_pipe = self.client.pipeline(transaction=False)
+        for ln in log_names:
+            log_pipe.xadd(name=ln, fields=transaction_record)
+            log_pipe.expire(name=ln, time=60 * 60 * 24)  # Don't expire for 24 hours after any transfer
+        log_pipe.execute()
+        return success if not as_record else transaction_record
+
     def bankruptcy(self,write_key_len):
-        return -1.0*( abs(self.min_balance)*(16**(write_key_len-8)) )
+        if write_key_len<=8:
+            return -0.01
+        return -1.0*( abs(self.min_balance)*(16**(write_key_len-9)) )
 
     def bankrupt(self,write_key):
         return self.distance_to_bankruptcy(write_key=write_key) < 0
