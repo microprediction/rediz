@@ -7,7 +7,7 @@ README = (HERE / "README.md").read_text()
 
 setup(
     name="rediz",
-    version="0.4.18",
+    version="0.4.19",
     description="Powering easy intelligence/nowcasts at www.microprediction.org",
     long_description=README,
     long_description_content_type="text/markdown",
@@ -22,7 +22,7 @@ setup(
     ],
     packages=["rediz"],
     test_suite='pytest',
-    tests_require=['pytest'],
+    tests_require=['pytest','muid','fakeredis'],
     include_package_data=True,
     install_requires=["muid","microprediction","fakeredis","redis","sortedcontainers","numpy","aiohttp","pymorton","scipy","pathlib","cachetools","flask","flask_restx"],
     entry_points={
