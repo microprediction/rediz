@@ -1,5 +1,4 @@
 from rediz.client import Rediz
-from threezaconventions.crypto import random_key
 import json, os, uuid, time
 from rediz.rediz_test_config_private import BELLEHOOD_BAT, TASTEABLE_BEE
 
@@ -7,8 +6,13 @@ from rediz.rediz_test_config_private import BELLEHOOD_BAT, TASTEABLE_BEE
 
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 
+
+
 def dump(obj,name="tmp_rediz_client.json"):
     json.dump(obj,open(name,"w"))
+
+def random_key():
+	return str(uuid.uuid4())
 
 def random_name():
     return random_key()+'.json'
