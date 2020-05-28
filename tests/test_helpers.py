@@ -1,11 +1,13 @@
 from rediz.client import Rediz
-from threezaconventions.crypto import random_key
 import json, os, uuid
 import numpy as np
 from rediz.rediz_test_config_private import BELLEHOOD_BAT
 
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 # python -m pytest tests/test_helpers.py ; cat tmp_helpers.json
+
+def random_key():
+	return str(uuid.uuid4())
 
 def test_donation():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
