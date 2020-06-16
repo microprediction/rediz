@@ -1,9 +1,7 @@
 from rediz.client import Rediz
 import json, time
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
-import muid, pprint
 from rediz.rediz_test_config_private import BELLEHOOD_BAT
-import time
 
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_delays.py ; cat tmp_delays.json
 
@@ -27,7 +25,7 @@ def do_test_delay_string(rdz):
     rdz._delete_implementation(NAME)
     time.sleep(0.1)
     WRITE_KEY = BELLEHOOD_BAT
-    assert muid.validate(WRITE_KEY), "MUID NOT WORKING ?! "
+    assert Rediz.muid_difficulty(write_key=WRITE_KEY)>5, "MUID NOT WORKING ?! "
     prctl = rdz.set( name = NAME,  value = "living in the past",  write_key=WRITE_KEY )
     time.sleep(3)
     prctl = rdz.set( name = NAME,  value = "living in the present",  write_key=WRITE_KEY )

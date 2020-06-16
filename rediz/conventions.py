@@ -1,10 +1,10 @@
-import re, sys, json, math, time, os, uuid, muid, itertools
+import re, sys, json, math, time, os, uuid, itertools
 import pymorton
 from itertools import zip_longest
 import numpy as np
 from redis.client import list_or_args
 from typing import List, Union, Any, Optional
-from microprediction.conventions import MicroConventions
+from microconventions import MicroConventions
 from rediz.samplers import exponential_bootstrap
 
 KeyList   = List[Optional[str]]
@@ -97,7 +97,7 @@ class RedizConventions(MicroConventions):
         self._SAMPLES = self._obscurity + self.SAMPLES  # Prefix to delayed predictions by horizon. Contain write_keys !
         self._PROMISED = "promised" + self.SEP  # Prefixes temporary values referenced by the promise queue
         self._DONATIONS = "donations" + self.SEP  # Write key donations
-        self._DONATION_PASSWORD = muid.shash(self._obscurity)  # Write key donation password
+        self._DONATION_PASSWORD = MicroConventions.shash(self._obscurity)  # Write key donation password
         self._DONORS = "donors"
         self._DISCOUNT = 0.9            # Transfers
 
@@ -396,7 +396,7 @@ class RedizConventions(MicroConventions):
     def _make_scenario_obscure(self, ticket):
         """ Change write_key to a hash of write_key """
         parts = ticket.split(self.SEP)
-        return parts[0] + self.SEP + muid.shash(parts[1])
+        return parts[0] + self.SEP + self.shash(parts[1])
 
     def _scenario_percentile(self, scenario):
         """ Extract scenario percentile from scenario string """

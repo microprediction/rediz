@@ -1,4 +1,4 @@
-import fakeredis, sys, math, json, redis, time, random, itertools, datetime, muid
+import fakeredis, sys, math, json, redis, time, random, itertools, datetime
 import numpy as np
 from collections import Counter, OrderedDict
 from typing import List, Union, Any, Optional
@@ -6,7 +6,6 @@ from redis.client import list_or_args
 from redis.exceptions import DataError
 from .conventions import RedizConventions, REDIZ_CONVENTIONS_ARGS, KeyList, NameList, ValueList
 from rediz.utilities import get_json_safe, has_nan, shorten, stem
-import muid
 
 # REDIZ
 # -----
@@ -50,7 +49,7 @@ class Rediz(RedizConventions):
         return self._size_implementation(name=name, with_report=with_report, with_private=True)
 
     def get_donation_password(self):
-        return muid.shash(self._obscurity)
+        return self.shash(self._obscurity)
 
     def get_donors(self):
         donors = self.client.hgetall(self.donors_name())
@@ -60,12 +59,9 @@ class Rediz(RedizConventions):
         if len is None:
             len = 12
         if with_key:
-            return [ (write_key,muid.animal(write_key)) for write_key in self.client.smembers(self.donation_name(len=len))]
+            return [ (write_key,self.animal_from_key(write_key)) for write_key in self.client.smembers(self.donation_name(len=len))]
         else:
-            return [ muid.animal(write_key) for write_key in self.client.smembers(self.donation_name(len=len)) ]
-
-
-
+            return [ self.animal_from_key(write_key) for write_key in self.client.smembers(self.donation_name(len=len)) ]
 
 
     def get(self, name, as_json=False, **kwargs ):
@@ -179,7 +175,7 @@ class Rediz(RedizConventions):
 
     def get_sponsors(self):
         ownership = self.client.hgetall(self._OWNERSHIP)
-        obscured = [(name, muid.animal(key)) for name, key in ownership.items()]
+        obscured = [(name, self.animal_from_key(key)) for name, key in ownership.items()]
         obscured.sort(key=lambda t: len(t[1]))
         return OrderedDict(obscured)
 
@@ -223,9 +219,10 @@ class Rediz(RedizConventions):
     def touch(self, name, write_key, budget=1):
         return self._touch_implementation(name=name,write_key=write_key,budget=budget)
 
-    def muid_difficulty(self, write_key):
+    @staticmethod
+    def muid_difficulty(write_key):
         try:
-            return muid.difficulty(write_key)
+            return Rediz.key_difficulty(write_key)
         except:
             return 0 
 
@@ -310,7 +307,7 @@ class Rediz(RedizConventions):
         official_password = self.get_donation_password()
         donor = donor or 'anonymous'
         if password == official_password:
-            len = self.muid_difficulty(write_key)
+            len = self.key_difficulty(write_key)
             if len >= self.MIN_LEN:
                 if self.client.sadd(self.donation_name(len=len), write_key):
                     importance = 16 ** (len - self.MIN_LEN)
@@ -991,7 +988,7 @@ class Rediz(RedizConventions):
         return self.distance_to_bankruptcy(write_key=write_key) < 0
 
     def distance_to_bankruptcy(self,write_key):
-        level   = self.bankruptcy(self.muid_difficulty(write_key))
+        level   = self.bankruptcy(self.key_difficulty(write_key))
         balance = self.get_balance(write_key=write_key)
         return balance - level
 
@@ -1274,7 +1271,7 @@ class Rediz(RedizConventions):
         retrieve_pipe = self.client.pipeline()
         num_delay   = len(self.DELAYS)
         num_windows = len(self._WINDOWS)
-        sponsors = [ muid.animal(ky) for ky in write_keys ]   # TODO: Call MicroConventions instead and insulate from MUID.
+        sponsors = [ self.animal_from_key(ky) for ky in write_keys ]   # TODO: Call MicroConventions instead and insulate from MUID.
 
         #----  Construct pipe to retrieve quarantined predictions ----------
         scenarios_lookup    =  dict( [  (name,  dict([(delay_ndx, dict()) for delay_ndx in range(num_delay)]) ) for name in names ] )
@@ -1350,8 +1347,8 @@ class Rediz(RedizConventions):
                             rescaled_amount = budget * float(amount)
                             pipe.hincrbyfloat(name=self._BALANCES, key=recipient, amount=rescaled_amount)
                             pipe.hincrbyfloat(name=self.VOLUMES, key=self.horizon_name(name=name, delay=delay), amount=abs(rescaled_amount))
-                            write_code = muid.shash(write_key)
-                            recipient_code = muid.shash(recipient)
+                            write_code = self.shash(write_key)
+                            recipient_code = self.shash(recipient)
                             # Leaderboards
                             for lb in leaderboard_names:
                                 pipe.zincrby(name=lb, value=recipient_code, amount=rescaled_amount)
@@ -1406,7 +1403,7 @@ class Rediz(RedizConventions):
     def _zmean_scenarios_percentile(self, percentile_scenarios, included_codes=None):
         """ Each submission has an implicit z-score. Average them. """
         if included_codes:
-            owners_prctls = dict([ (self._scenario_owner(s),self._scenario_percentile(s)) for s in percentile_scenarios if muid.shash(self._scenario_owner(s)) in included_codes])
+            owners_prctls = dict([ (self._scenario_owner(s),self._scenario_percentile(s)) for s in percentile_scenarios if self.shash(self._scenario_owner(s)) in included_codes])
         else:
             owners_prctls = dict([ (self._scenario_owner(s),self._scenario_percentile(s)) for s in percentile_scenarios ])
         prctls = [ p for o,p in owners_prctls.items() ]
@@ -1657,12 +1654,12 @@ class Rediz(RedizConventions):
     def _get_leaderboard_implementation(self, name, delay, count, readable=True):
         pname = self.leaderboard_name(name=name,delay=delay)
         leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
-        return OrderedDict([(muid.search(code),score) for code,score in leaderboard]) if readable else dict(leaderboard)
+        return OrderedDict([(self.animal_from_code(code),score) for code,score in leaderboard]) if readable else dict(leaderboard)
 
     def _get_custom_leaderboard_implementation(self, sponsor, dt, count, readable=True):
         pname = self.custom_leaderboard_name(sponsor=sponsor,dt=dt)
         leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
-        return OrderedDict([(muid.search(code), score) for code, score in leaderboard]) if readable else dict(
+        return OrderedDict([(self.animal_from_code(code), score) for code, score in leaderboard]) if readable else dict(
             leaderboard)
 
     def _get_links_implementation(self, name, delay=None, delays=None):
@@ -1694,7 +1691,7 @@ class Rediz(RedizConventions):
 
     def _get_index_implementation(self):
         ownership = list(self.client.hgetall(self._OWNERSHIP))
-        obscured = [(name, muid.animal(key)) for name, key in ownership.items()]
+        obscured = [(name, self.animal_from_key(key)) for name, key in ownership.items()]
         obscured.sort(key=lambda t: len(t[1]))
         return obscured
 
@@ -1739,7 +1736,7 @@ class Rediz(RedizConventions):
     def _get_home_implementation(self, write_key):
 
         def top_level(write_key):
-            things = {'code':muid.shash(write_key),'animal':muid.animal(write_key),
+            things = {'code':self.shash(write_key),'animal':self.animal_from_key(write_key),
                        self.balance_name(write_key=write_key):self.get_balance(write_key=write_key),
                        'distance_to_bankruptcy':self.distance_to_bankruptcy(write_key=write_key),
                        '/active/'+write_key:self.get_active(write_key=write_key),
