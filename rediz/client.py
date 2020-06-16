@@ -4,9 +4,9 @@ from collections import Counter, OrderedDict
 from typing import List, Union, Any, Optional
 from redis.client import list_or_args
 from redis.exceptions import DataError
-from muid import shash
 from .conventions import RedizConventions, REDIZ_CONVENTIONS_ARGS, KeyList, NameList, ValueList
 from rediz.utilities import get_json_safe, has_nan, shorten, stem
+import muid
 
 # REDIZ
 # -----
@@ -56,18 +56,16 @@ class Rediz(RedizConventions):
         donors = self.client.hgetall(self.donors_name())
         return dict( sorted(donors.items(), key = lambda e:int(e[1]),reverse=True ) )
 
-    def _get_donations(self, len=None):
-        if len is None:
-            len = 12
-        return [ (write_key, muid.animal(write_key))  for difficulty in range(17,11,-1)  for write_key in self.get_donations(len=difficulty) ]
-
     def get_donations(self, len=None, with_key=False ):
         if len is None:
             len = 12
         if with_key:
-            return [ (write_key,muid.animal(write_key)) for difficulty in range(17, 11, -1) for write_key in self.client.smembers(self.donation_name(len=len))]
+            return [ (write_key,muid.animal(write_key)) for write_key in self.client.smembers(self.donation_name(len=len))]
         else:
-            return [ muid.animal(write_key)  for difficulty in range(17,11,-1)  for write_key in self.client.smembers(self.donation_name(len=len)) ]
+            return [ muid.animal(write_key) for write_key in self.client.smembers(self.donation_name(len=len)) ]
+
+
+
 
 
     def get(self, name, as_json=False, **kwargs ):
@@ -126,6 +124,9 @@ class Rediz(RedizConventions):
     def get_leaderboard(self, name=None, delay=None, count=50):
         return self._get_leaderboard_implementation(name=name, delay=delay, count=count)
 
+    def get_custom_leaderboard(self, sponsor=None, dt=None, count=50):
+        return self._get_custom_leaderboard_implementation(sponsor=sponsor, dt=dt, count=count)
+
     def get_history(self, name, max='+', min='-', count=100, populate=True, drop_expired=True ):
         return self._get_history_implementation( name=name, max=max, min=min, count=count, populate=populate, drop_expired=drop_expired )
 
@@ -152,6 +153,9 @@ class Rediz(RedizConventions):
 
     def get_balance(self, write_key):
         return float(self.client.hget(name=self._BALANCES, key=write_key) or 0)
+
+    def transfer(self, source_write_key, recipient_write_key, amount=None, as_record=False):
+        return self._transfer_implementation(source_write_key=source_write_key, recipient_write_key=recipient_write_key, amount=amount, as_record=as_record )
 
     @staticmethod
     def _nice_and_ordered(d):
@@ -934,7 +938,7 @@ class Rediz(RedizConventions):
     #      Implementation  (Admministrative - garbage collection )
     # --------------------------------------------------------------------------
 
-    def transfer(self, source_write_key, recipient_write_key, amount, as_record=False):
+    def _transfer_implementation(self, source_write_key, recipient_write_key, amount, as_record=False):
         """ Debit and credit write_keys """
         transaction_record = {"settlement_time": str(datetime.datetime.now()), "type": "transfer", "source": source_write_key, "recipient": recipient_write_key}
         success = 0
@@ -945,6 +949,8 @@ class Rediz(RedizConventions):
                     source_distance = self.distance_to_bankruptcy(source_write_key)
                     maximum_to_receive = -recipient_balance  # Cannot make a balance positive
                     maximum_to_give    = max(0,source_distance)
+                    if amount is None:
+                        amount = maximum_to_give
                     given = min(maximum_to_give,maximum_to_receive,amount)
                     received = given*self._DISCOUNT
                     transaction_record.update({'max_to_give':maximum_to_give,'max_to_receive':maximum_to_receive,'given':given,'received':received})
@@ -1263,11 +1269,14 @@ class Rediz(RedizConventions):
 
     def _msettle(self, names, values, budgets, with_percentiles, write_keys, with_copulas):
         """ Parallel version of settle  """
+
         assert len(set(names))==len(names),"mget() cannot be used with repeated names"
         retrieve_pipe = self.client.pipeline()
         num_delay   = len(self.DELAYS)
         num_windows = len(self._WINDOWS)
+        sponsors = [ muid.animal(ky) for ky in write_keys ]   # TODO: Call MicroConventions instead and insulate from MUID.
 
+        #----  Construct pipe to retrieve quarantined predictions ----------
         scenarios_lookup    =  dict( [  (name,  dict([(delay_ndx, dict()) for delay_ndx in range(num_delay)]) ) for name in names ] )
         pools_lookup        =  dict( [  (name,  dict() ) for name in names ] )
         participants_lookup =  dict( [  (name,  dict() ) for name in names ] )
@@ -1281,10 +1290,10 @@ class Rediz(RedizConventions):
                 for window_ndx, window in enumerate(self._WINDOWS):
                     scenarios_lookup[name][delay_ndx][window_ndx] = len(retrieve_pipe)
                     retrieve_pipe.zrangebyscore(name=samples_name, min=value - window, max=value + window, withscores=False, start=0, num=15)
-
+                    # FIXME: This introduces bias toward selecting the bottom of the bucket ... do we want to make two calls instead?
         retrieved = retrieve_pipe.execute()
 
-        # Compute percentiles by zooming out the selection
+        #---- Compute percentiles by zooming out until we have enough points ---
         some_percentiles = False
         percentiles = dict([(name, dict( (d,0.5) for d in range(len(self.DELAYS))  )) for name in names])
         if with_percentiles:
@@ -1305,10 +1314,10 @@ class Rediz(RedizConventions):
                                     some_percentiles = True
                             percentiles[name][delay_ndx] = self._zmean_scenarios_percentile(percentile_scenarios=percentile_scenarios)
 
-        # Rewards
+        # ---- Rewards and leaderboard update pipeline
         pipe = self.client.pipeline()
-        pipe.hmset(name=self.BUDGETS, mapping=dict(zip(names, budgets)))
-        for name, budget, write_key in zip(names, budgets, write_keys):
+        pipe.hmset(name=self.BUDGETS, mapping=dict(zip(names, budgets)))                             # Log the budget decision
+        for name, budget, write_key, sponsor in zip(names, budgets, write_keys, sponsors):
             pools = [retrieved[pools_lookup[name][delay_ndx]] for delay_ndx in range(num_delay)]
             if any(pools):
                 participant_sets = [retrieved[participants_lookup[name][delay_ndx]] for delay_ndx in range(num_delay)]
@@ -1328,6 +1337,14 @@ class Rediz(RedizConventions):
                         payments.update(game_payments)
 
                     if len(payments):
+                        leaderboard_names = [self.leaderboard_name(),
+                                             self.leaderboard_name(name=name),
+                                             self.leaderboard_name(name=None, delay=delay),
+                                             self.leaderboard_name(name=name, delay=delay),
+                                             self.custom_leaderboard_name(sponsor=sponsor, name=name, dt=datetime.datetime.now()),
+                                             self.custom_leaderboard_name(sponsor=sponsor, name=name),
+                                             self.custom_leaderboard_name(sponsor=sponsor, dt=datetime.datetime.now())
+                                             ]
                         for (recipient, amount) in payments.items():
                             # Record keeping
                             rescaled_amount = budget * float(amount)
@@ -1335,25 +1352,29 @@ class Rediz(RedizConventions):
                             pipe.hincrbyfloat(name=self.VOLUMES, key=self.horizon_name(name=name, delay=delay), amount=abs(rescaled_amount))
                             write_code = muid.shash(write_key)
                             recipient_code = muid.shash(recipient)
-                            # Leaderboards: Sorted sets
-                            for lb in [self.leaderboard_name(), self.leaderboard_name(name=name), self.leaderboard_name(name=None,delay=delay), self.leaderboard_name(name=name,delay=delay) ]:
+                            # Leaderboards
+                            for lb in leaderboard_names:
                                 pipe.zincrby(name=lb, value=recipient_code, amount=rescaled_amount)
-                            # Performance: Custom hash
+                            # Performance
                             pipe.hincrbyfloat(name=self.performance_name(write_key=recipient), key=self.horizon_name(name=name, delay=delay), amount=rescaled_amount)
                             # Transactions logs:
                             transaction_record = {"settlement_time":str(datetime.datetime.now()),"stream": name, "delay":delay, "stream_owner_code":write_code,"recipient_code":recipient_code, "amount": rescaled_amount}
-                            log_names = [ self.transactions_name(), self.transactions_name(write_key=recipient ),  self.transactions_name(write_key=recipient, name=name ), self.transactions_name(write_key=recipient, name=name, delay=delay ) ]
+                            log_names = [ self.transactions_name(),
+                                          self.transactions_name(write_key=recipient ),
+                                          self.transactions_name(write_key=recipient, name=name ),
+                                          self.transactions_name(write_key=recipient, name=name, delay=delay ) ]
                             for ln in log_names:
                                 pipe.xadd(name=ln ,   fields=transaction_record )
                                 pipe.expire(name=ln,  time=self._TRANSACTIONS_TTL)
-        settle_exec = pipe.execute()
+                        for lb in leaderboard_names:
+                            pipe.expire(name=lb, time=self._LEADERBOARD_TTL)
 
-        # Derived markets ... z's for 1-d, 2-d, 3-d market-implied z-scores and z-curves
-        # By default mset() creates a derivative market for the market-implied z-scores
-        # If the budget is large enough, it also creates copula markets on z-curves based
-        # on permutations of the market implied percentiles
+        settle_exec = pipe.execute()   # No checks here
+
 
         if with_percentiles and some_percentiles:
+            first_write_key = write_keys[0]
+            # Derived markets use 1-d, 2-d, 3-d market-implied z-scores and z-curves
             z_budgets = list()
             z_names   = list()
             z_curves  = list()
@@ -1377,7 +1398,7 @@ class Rediz(RedizConventions):
                     z_names.append(zname)
                     z_budgets.append(z_budget)
                     z_curves.append(zcurve_value)
-                    z_write_keys.append(write_key)
+                    z_write_keys.append(first_write_key)
             if z_names:
                 self._mset_implementation(budgets=z_budgets, names=z_names, values=z_curves, write_keys=z_write_keys, with_percentiles=False, with_copulas=False)
         return percentiles
@@ -1389,14 +1410,14 @@ class Rediz(RedizConventions):
         else:
             owners_prctls = dict([ (self._scenario_owner(s),self._scenario_percentile(s)) for s in percentile_scenarios ])
         prctls = [ p for o,p in owners_prctls.items() ]
-        mean_prctl = Rediz._zmean_percentile(prctls)
+        mean_prctl = Rediz.zmean_percentile(prctls)
 
         if prctls and included_codes is not None and len(prctls)<len(included_codes) and abs(mean_prctl-0.5)>1e-6:
             if True:
                 E = math.exp(8.0*(mean_prctl-0.5))
                 missing_prctl = ( E / (E+1) )
                 prctls = prctls + [missing_prctl]*(len(included_codes)-len(prctls))
-            return Rediz._zmean_percentile(prctls)
+            return Rediz.zmean_percentile(prctls)
         else:
             return mean_prctl
 
@@ -1637,6 +1658,12 @@ class Rediz(RedizConventions):
         pname = self.leaderboard_name(name=name,delay=delay)
         leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
         return OrderedDict([(muid.search(code),score) for code,score in leaderboard]) if readable else dict(leaderboard)
+
+    def _get_custom_leaderboard_implementation(self, sponsor, dt, count, readable=True):
+        pname = self.custom_leaderboard_name(sponsor=sponsor,dt=dt)
+        leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
+        return OrderedDict([(muid.search(code), score) for code, score in leaderboard]) if readable else dict(
+            leaderboard)
 
     def _get_links_implementation(self, name, delay=None, delays=None):
         """ Set of outgoing links created by name owner """

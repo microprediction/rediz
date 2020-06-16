@@ -42,7 +42,7 @@ def test_mean_percentile():
     normcdf = Rediz._normcdf_function()
     norminv = Rediz._norminv_function()
     p = [ normcdf(z) for z in zscores ]
-    avg_p = Rediz._zmean_percentile(p)
+    avg_p = Rediz.zmean_percentile(p)
     implied_avg = norminv(avg_p)
     actual_avg = np.mean(zscores)
     assert abs(implied_avg-actual_avg)<1e-4

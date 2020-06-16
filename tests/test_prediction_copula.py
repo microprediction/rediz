@@ -1,8 +1,14 @@
 from rediz.client import Rediz
-import json, os, uuid, random, time
-from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 import numpy as np
 import math
+import json, os, uuid, random, time
+from rediz.rediz_test_config import REDIZ_TEST_CONFIG
+try:
+    from rediz.rediz_test_config_private import CELLOSE_BOBCAT
+except:
+    pass # TODO get from env
+
+
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_prediction_copula.py ; cat tmp_prediction.json
 
 def dump(obj,name="tmp_prediction_copula.json"): # Debugging
@@ -11,7 +17,8 @@ def dump(obj,name="tmp_prediction_copula.json"): # Debugging
 def feed(rdz,targets, write_key):
     values = [ 0.1*np.random.randn()*math.exp(np.random.randn()) for _ in range(3) ]
     budgets = [1.0 for _ in targets ]
-    rdz.cset(names=targets,write_key=write_key,values=values,budgets=budgets)
+    res = rdz.cset(names=targets,write_key=write_key,values=values,budgets=budgets)
+    assert res, "Feed didn't work in test_prediction_copulas"
     time.sleep(0.5)
     rdz.mtouch(names=targets, write_key=write_key)
 
@@ -93,7 +100,7 @@ def test_serial_real():
     do_serial(rdz)
 
 def do_serial( rdz ):
-    target_key = "7d09fb2007032759bb2fe1acbdbfc47b"      # Commot Ocelot
+    target_key = CELLOSE_BOBCAT
     model_key  = '191e30c156a97c9f83ffebcb473a4b83'      # Bestayed Fly
     model_key1 = 'dd98bd16e5f9f77e206a662285378206'      # Scytale Bass
     model_key2 = 'd4d06552e5a210e74000abf7fa25a989'      # Teemles Eel

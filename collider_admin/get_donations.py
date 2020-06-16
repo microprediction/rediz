@@ -7,4 +7,4 @@ WRITE_KEY = REDIZ_COLLIDER_CONFIG["write_key"]
 
 if __name__ == '__main__':
     rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
-    pprint.pprint(rdz.get_donations(with_key=True))
+    pprint.pprint(rdz.get_donations(with_key=True,len=12))

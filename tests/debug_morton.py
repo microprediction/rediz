@@ -32,7 +32,7 @@ def sample(rho,dim,n):
         zs.append( to1(sample) )
     return zs, std0
 
-def do2(rho):
+def do3(rho):
     do(rho,dim=3)
 
 def do2(rho):

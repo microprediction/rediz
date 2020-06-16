@@ -20,9 +20,13 @@ might be causally related.
 This setup is especially well suited to collective prediction of civic data streams such as transport, water, electricity, public supply chain indicators or the spread of infectious diseases. 
   
 
+### Conventions 
+
+https://github.com/microprediction/microconventions/blob/master/README.md
+
 ### Client README (microprediction package)
 
-https://github.com/microprediction/rediz/blob/master/README_MICROPREDICTION.md
+https://github.com/microprediction/rediz/blob/master/README.md
 
 ### Server README (rediz package)
 
