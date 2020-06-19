@@ -41,7 +41,6 @@ def do_test_delay_string(rdz):
 
     # Test market
 
-
     rdz._delete_implementation(NAME)
 
 

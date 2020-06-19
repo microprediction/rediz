@@ -74,6 +74,7 @@ class RedizConventions(MicroConventions):
         self.CONFIRMS_TTL = int(error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
         self.ERROR_LIMIT = int(error_limit or 1000)  # Number of error messages to keep per write key
         self.CONFIRMS_LIMIT = int(error_limit or 1000)  # Number of error messages to keep per write key
+        self.TRANSACTIONS_LIMIT = 1000
 
         # User transparent temporal and other config
         self.MIN_LEN = int(self.min_len)                     # FIXME: Get rid of MIN_LEN and use min_len instead

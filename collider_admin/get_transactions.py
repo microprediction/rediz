@@ -3,7 +3,6 @@ from rediz.collider_config_private import REDIZ_COLLIDER_CONFIG
 import pprint
 
 from rediz.collider_config_private import REDIZ_COLLIDER_CONFIG
-WRITE_KEY = REDIZ_COLLIDER_CONFIG["write_key"]
 
 WRITE_KEY = '74ab5a2c6205469402cb94d2935d3443'
 

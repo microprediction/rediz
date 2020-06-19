@@ -141,6 +141,9 @@ class Rediz(RedizConventions):
     def delete_errors(self, write_key):
         return self.client.delete(self.errors_name(write_key=write_key))
 
+    def delete_warnings(self, write_key):
+        return self.client.delete(self.warnings_name(write_key=write_key))
+
     def get_confirms(self, write_key, start=0, end=-1):
         return self.client.lrange(name=self.confirms_name(write_key=write_key), start=start, end=end)
 
@@ -160,10 +163,6 @@ class Rediz(RedizConventions):
         d_tuples.sort(  key=lambda t: t[1],reverse=True )
         return OrderedDict(d_tuples)
 
-    def get_performance(self, write_key):
-        performance = self.client.hgetall(name=self.performance_name(write_key=write_key))
-        return self._nice_and_ordered(performance)
-
     def get_budget(self, name):
         return self.client.hget(name=self.BUDGETS, key=name)
 
@@ -178,9 +177,6 @@ class Rediz(RedizConventions):
         obscured = [(name, self.animal_from_key(key)) for name, key in ownership.items()]
         obscured.sort(key=lambda t: len(t[1]))
         return OrderedDict(obscured)
-
-    def delete_performance(self, write_key):
-        return self.client.delete(self.performance_name(write_key=write_key))
 
     def get_links(self, name, delay=None, delays=None ):
         assert not self.SEP in name, "Intent is to provide delay variable"
@@ -300,6 +296,24 @@ class Rediz(RedizConventions):
         return self._delete_scenarios_implementation( name=name, write_key=write_key, delay=delay, delays=delays )
 
     # --------------------------------------------------------------------------
+    #            Public interface  (performance)
+    # --------------------------------------------------------------------------
+
+    def get_performance(self, write_key):
+        performance = self.client.hgetall(name=self.performance_name(write_key=write_key))
+        return self._nice_and_ordered(performance)
+
+    def delete_performance(self, write_key):
+        return self.client.delete(self.performance_name(write_key=write_key))
+
+    def delete_leaderboard(self, write_key, name, delay=None):
+        if self._authorize(name=name, write_key=write_key):
+            self._delete_leaderboard_implementation(name=name, delay=delay)
+
+    def _delete_leaderboard_implementation(self, name, delay):
+        self.client.delete(self.leaderboard_name(name=name, delay=delay))
+
+    # --------------------------------------------------------------------------
     #            Donations of MUIDs
     # --------------------------------------------------------------------------
 
@@ -324,8 +338,6 @@ class Rediz(RedizConventions):
     # --------------------------------------------------------------------------
     #            Public interface  (subscription)
     # --------------------------------------------------------------------------
-
-
 
     def subscribe(self, name, write_key, source ):
         """ Permissioned subscribe """
@@ -777,9 +789,14 @@ class Rediz(RedizConventions):
             for derived_name in derived_names:
                 delete_pipe.pexpire(name=derived_name,time=1)
 
+        # (b-7) Delete budget
+        delete_pipe.hdel(self.BUDGETS,*names)
+        delete_pipe.hdel(self.VOLUMES, *names)
+
         # (b-6) And de-register the name
         delete_pipe.srem(self._NAMES,*names)
         delete_pipe.hdel(self._ownership_name(),*names)
+
 
         del_exec = delete_pipe.execute()
 
@@ -789,6 +806,9 @@ class Rediz(RedizConventions):
      #            Implementation  (touch)
      # --------------------------------------------------------------------------
 
+    def _sanitize_log_entry(self, s):
+        return s.replace(self._obscurity,'OBSCURE')
+
     def _log_to_list(self, log_name, ttl, limit, data=None, **kwargs):
         """ Append to list style log """
         log_entry = {'time': str(datetime.datetime.now()),'epoch_time':time.time()}
@@ -796,7 +816,7 @@ class Rediz(RedizConventions):
             log_entry.update(data)
         log_entry.update(**kwargs)
         logging_pipe = self.client.pipeline(transaction=False)
-        logging_pipe.lpush(log_name, json.dumps(log_entry))
+        logging_pipe.lpush(log_name, self._sanitize_log_entry( json.dumps(log_entry)) )
         logging_pipe.expire(log_name, ttl)
         logging_pipe.ltrim(log_name, start=0, end=limit)
         logging_pipe.execute(raise_on_error=True)
@@ -974,7 +994,7 @@ class Rediz(RedizConventions):
                     ]
         log_pipe = self.client.pipeline(transaction=False)
         for ln in log_names:
-            log_pipe.xadd(name=ln, fields=transaction_record)
+            log_pipe.xadd(name=ln, fields=transaction_record, maxlen=self.TRANSACTIONS_LIMIT)
             log_pipe.expire(name=ln, time=60 * 60 * 24)  # Don't expire for 24 hours after any transfer
         log_pipe.execute()
         return success if not as_record else transaction_record
@@ -1213,7 +1233,7 @@ class Rediz(RedizConventions):
         assert name==self._root_name(name)
         if len(values)==self.num_predictions and self.is_valid_key(write_key
                 ) and all( [ isinstance(v,(int,float) ) for v in values] ) and all (delay in self.DELAYS for delay in delays):
-            # Ensure sorted ... TODO: force this on the algorithm?
+            # Ensure sorted ... TODO: force this on the algorithm, or charge a fee?
             values = sorted(values)
 
             # Jigger sorted predictions
@@ -1361,7 +1381,7 @@ class Rediz(RedizConventions):
                                           self.transactions_name(write_key=recipient, name=name ),
                                           self.transactions_name(write_key=recipient, name=name, delay=delay ) ]
                             for ln in log_names:
-                                pipe.xadd(name=ln ,   fields=transaction_record )
+                                pipe.xadd(name=ln ,   fields=transaction_record, maxlen=self.TRANSACTIONS_LIMIT )
                                 pipe.expire(name=ln,  time=self._TRANSACTIONS_TTL)
                         for lb in leaderboard_names:
                             pipe.expire(name=lb, time=self._LEADERBOARD_TTL)

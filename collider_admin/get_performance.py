@@ -1,9 +1,6 @@
 from rediz.client import Rediz
-from rediz.collider_config_private import REDIZ_COLLIDER_CONFIG
 import pprint
-
-from rediz.collider_config_private import REDIZ_COLLIDER_CONFIG
-WRITE_KEY = REDIZ_COLLIDER_CONFIG["write_key"]
+from rediz.collider_config_private import REDIZ_COLLIDER_CONFIG, WRITE_KEY
 
 
 if __name__ == '__main__':
