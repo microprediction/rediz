@@ -7,7 +7,8 @@ import math
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_prediction_concurrent.py ; cat tmp_concurrent.json
 
 def dump(obj,name="tmp_concurrent.json"): # Debugging
-    json.dump(obj,open(name,"w"))
+    if REDIZ_TEST_CONFIG["DUMP"]:
+        json.dump(obj,open(name,"w"))
 
 def feed(rdz,target, write_key):
     value = 0.1*np.random.randn()*math.exp(np.random.randn())

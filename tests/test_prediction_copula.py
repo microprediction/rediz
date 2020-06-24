@@ -1,18 +1,15 @@
 from rediz.client import Rediz
 import numpy as np
-import math
-import json, os, uuid, random, time
+import json, time, math
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
-try:
-    from rediz.rediz_test_config_private import CELLOSE_BOBCAT
-except:
-    pass # TODO get from env
+CELLOSE_BOBCAT = REDIZ_TEST_CONFIG['CELLOSE_BOBCAT']
 
 
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_prediction_copula.py ; cat tmp_prediction.json
 
 def dump(obj,name="tmp_prediction_copula.json"): # Debugging
-    json.dump(obj,open(name,"w"))
+    if REDIZ_TEST_CONFIG["DUMP"]:
+        json.dump(obj,open(name,"w"))
 
 def feed(rdz,targets, write_key):
     values = [ 0.1*np.random.randn()*math.exp(np.random.randn()) for _ in range(3) ]

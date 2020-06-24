@@ -21,6 +21,11 @@ jobs:
     - uses: actions/checkout@v2
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v2
+    - name: Set environ variable
+      run: echo '::set-env name=TEST_CONFIG_URL::{{secrets.TEST_CONFIG_URL}}'
+      env:
+          TEST_CONFIG_URL: {{secrets.TEST_CONFIG_URL}}
+          TEST_CONFIG_FAILOVER_URL: {{secrets.TEST_CONFIG_FAILOVER_URL}}
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies

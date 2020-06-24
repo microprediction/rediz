@@ -117,11 +117,6 @@ class Rediz(RedizConventions):
     def get_lagged_times(self, name, start=0, end=None, count=1000, to_float=True):
         return self._get_lagged_implementation(name, start=start, end=end, count=count, with_values=False, with_times=True, to_float=to_float)
 
-    def get_leaderboard(self, name=None, delay=None, count=50):
-        return self._get_leaderboard_implementation(name=name, delay=delay, count=count)
-
-    def get_custom_leaderboard(self, sponsor=None, dt=None, count=50):
-        return self._get_custom_leaderboard_implementation(sponsor=sponsor, dt=dt, count=count)
 
     def get_history(self, name, max='+', min='-', count=100, populate=True, drop_expired=True ):
         return self._get_history_implementation( name=name, max=max, min=min, count=count, populate=populate, drop_expired=drop_expired )
@@ -195,9 +190,33 @@ class Rediz(RedizConventions):
     def get_home(self,write_key):
         return self._get_home_implementation(write_key=write_key)
 
-    # --------------------------------------------------------------------------
-    #            Permissioned get
-    # --------------------------------------------------------------------------
+    #---------------------------
+    #        Leaderboards
+    #---------------------------
+
+    def get_leaderboard(self, name=None, delay=None, count=200):
+        return self._get_leaderboard_implementation(name=name, delay=delay, count=count)
+
+    def get_previous_monthly_overall_leaderboard(self):
+        last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
+        return self._get_custom_leaderboard_implementation(sponsor=None,dt=last_month_day,count=200)
+
+    def get_monthly_overall_leaderboard(self):
+        return self._get_custom_leaderboard_implementation(sponsor=None,dt=datetime.datetime.now(),count=200)
+
+    # By sponsor ...
+
+    def get_sponsored_leaderboard(self, sponsor):
+        return self._get_custom_leaderboard_implementation(sponsor=sponsor,dt=None,count=200)
+
+    def get_monthly_sponsored_leaderboard(self, sponsor):
+        return self._get_custom_leaderboard_implementation(sponsor=sponsor,dt=datetime.datetime.now(),count=200)
+
+    def get_previous_monthly_sponsored_leaderboard(self, sponsor):
+        last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
+        return self._get_custom_leaderboard_implementation(sponsor=sponsor, dt=last_month_day,count=200)
+
+
 
     def get_messages(self,name, write_key):
         if self._authorize(name=name, write_key=write_key):
@@ -724,11 +743,12 @@ class Rediz(RedizConventions):
         else:
             return 0
 
-    def _expire_derivatives(self, names):
-        expire_pipe  = self.client.pipeline()
-        for name in self.zcurve_names(names):
-            self.client.expire(name)
-        expire_pipe.execute()
+    def _delete_z1_implementation(self, names):
+        """ Delete z1~, z2~ names """
+        for name in names:
+            znames = [ self.zcurve_name(names=[name], delay=delay) for delay in self.DELAYS ]
+            for zname in znames:
+                self._delete_implementation(zname)
 
     def _delete_implementation(self, names, *args):
         """ Removes all traces of name """
@@ -796,7 +816,6 @@ class Rediz(RedizConventions):
         # (b-6) And de-register the name
         delete_pipe.srem(self._NAMES,*names)
         delete_pipe.hdel(self._ownership_name(),*names)
-
 
         del_exec = delete_pipe.execute()
 
@@ -1291,7 +1310,7 @@ class Rediz(RedizConventions):
         retrieve_pipe = self.client.pipeline()
         num_delay   = len(self.DELAYS)
         num_windows = len(self._WINDOWS)
-        sponsors = [ self.animal_from_key(ky) for ky in write_keys ]   # TODO: Call MicroConventions instead and insulate from MUID.
+        sponsors = [ self.shash(ky) for ky in write_keys ]
 
         #----  Construct pipe to retrieve quarantined predictions ----------
         scenarios_lookup    =  dict( [  (name,  dict([(delay_ndx, dict()) for delay_ndx in range(num_delay)]) ) for name in names ] )
@@ -1334,7 +1353,7 @@ class Rediz(RedizConventions):
         # ---- Rewards and leaderboard update pipeline
         pipe = self.client.pipeline()
         pipe.hmset(name=self.BUDGETS, mapping=dict(zip(names, budgets)))                             # Log the budget decision
-        for name, budget, write_key, sponsor in zip(names, budgets, write_keys, sponsors):
+        for name, budget, write_key, sponsor, value in zip(names, budgets, write_keys, sponsors, values):
             pools = [retrieved[pools_lookup[name][delay_ndx]] for delay_ndx in range(num_delay)]
             if any(pools):
                 participant_sets = [retrieved[participants_lookup[name][delay_ndx]] for delay_ndx in range(num_delay)]
@@ -1349,6 +1368,7 @@ class Rediz(RedizConventions):
                             if len(rewarded_scenarios) == 0:
                                 _ndx = scenarios_lookup[name][delay_ndx][window_ndx]
                                 rewarded_scenarios = retrieved[_ndx]
+                        num_rewarded = len(rewarded_scenarios)
 
                         game_payments = self._game_payments(pool=pool, participant_set=participant_set, rewarded_scenarios=rewarded_scenarios)
                         payments.update(game_payments)
@@ -1375,7 +1395,15 @@ class Rediz(RedizConventions):
                             # Performance
                             pipe.hincrbyfloat(name=self.performance_name(write_key=recipient), key=self.horizon_name(name=name, delay=delay), amount=rescaled_amount)
                             # Transactions logs:
-                            transaction_record = {"settlement_time":str(datetime.datetime.now()),"stream": name, "delay":delay, "stream_owner_code":write_code,"recipient_code":recipient_code, "amount": rescaled_amount}
+                            transaction_record = {"settlement_time":str(datetime.datetime.now()),
+                                                  "amount": rescaled_amount,
+                                                  "stream": name,
+                                                  "delay":delay,
+                                                  "value":value,
+                                                  "submitted":pool,
+                                                  "rewarded":num_rewarded,
+                                                  "stream_owner_code":write_code,
+                                                  "recipient_code":recipient_code}
                             log_names = [ self.transactions_name(),
                                           self.transactions_name(write_key=recipient ),
                                           self.transactions_name(write_key=recipient, name=name ),

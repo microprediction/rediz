@@ -1,12 +1,14 @@
 from rediz.client import Rediz
 import json, os, uuid, time
-from rediz.rediz_test_config_private import BELLEHOOD_BAT, TASTEABLE_BEE
-
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
+BELLEHOOD_BAT = REDIZ_TEST_CONFIG['BELLEHOOD_BAT']
+TASTEABLE_BEE = REDIZ_TEST_CONFIG['TASTEABLE_BEE']
+
 # pip install -e ; python -m pytest tests/test_links.py ; cat tmp_links.json
 
 def dump(obj,name="tmp_links.json"):
-    json.dump(obj,open(name,"w"))
+    if REDIZ_TEST_CONFIG["DUMP"]:
+        json.dump(obj,open(name,"w"))
 
 def test_fake():
     rdz_fake = Rediz(delay_grace=60, delay_seconds=[1,5])

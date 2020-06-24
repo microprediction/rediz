@@ -3,12 +3,13 @@ import json
 import time
 import sys
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
-from rediz.rediz_test_config_private import BELLEHOOD_BAT
+BELLEHOOD_BAT = REDIZ_TEST_CONFIG['BELLEHOOD_BAT']
 import numpy as np
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_memory_usage_set.py ; cat tmp_memory_set.json
 
 def dump(obj,name="tmp_memory_set.json"): # Debugging
-    json.dump(obj,open(name,"w"))
+    if REDIZ_TEST_CONFIG["DUMP"]:
+        json.dump(obj,open(name,"w"))
 
 def test_real():
     rdz = Rediz(**REDIZ_TEST_CONFIG)

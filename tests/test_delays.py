@@ -1,7 +1,7 @@
 from rediz.client import Rediz
 import json, time
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
-from rediz.rediz_test_config_private import BELLEHOOD_BAT
+BELLEHOOD_BAT = REDIZ_TEST_CONFIG['BELLEHOOD_BAT']
 
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_delays.py ; cat tmp_delays.json
 

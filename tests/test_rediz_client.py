@@ -1,15 +1,16 @@
 from rediz.client import Rediz
 import json, os, uuid, time
-from rediz.rediz_test_config_private import BELLEHOOD_BAT, TASTEABLE_BEE
+from rediz.rediz_test_config import REDIZ_TEST_CONFIG
+BELLEHOOD_BAT = REDIZ_TEST_CONFIG['BELLEHOOD_BAT']
+TASTEABLE_BEE = REDIZ_TEST_CONFIG['TASTEABLE_BEE']
 
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_rediz_client.py ; cat tmp_rediz_client.json
 
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 
-
-
 def dump(obj,name="tmp_rediz_client.json"):
-    json.dump(obj,open(name,"w"))
+    if REDIZ_TEST_CONFIG["DUMP"]:
+        json.dump(obj,open(name,"w"))
 
 def random_key():
 	return str(uuid.uuid4())

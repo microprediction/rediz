@@ -70,10 +70,10 @@ class RedizConventions(MicroConventions):
         self.WARNINGS_TTL = int(60 * 60)  # TODO: allow configuation
         self.WARNINGS_LIMIT = 1000
         self.CONFIRMS_TTL = int(error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
-        self.ERROR_TTL = int(error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
+        self.ERROR_TTL = int(error_ttl or 60 * 60)     # Number of seconds that set execution error logs are persisted
         self.CONFIRMS_TTL = int(error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
-        self.ERROR_LIMIT = int(error_limit or 1000)  # Number of error messages to keep per write key
-        self.CONFIRMS_LIMIT = int(error_limit or 1000)  # Number of error messages to keep per write key
+        self.ERROR_LIMIT = int(error_limit or 1000)    # Number of error messages to keep per write key
+        self.CONFIRMS_LIMIT = int(error_limit or 1000) # Number of error messages to keep per write key
         self.TRANSACTIONS_LIMIT = 1000
 
         # User transparent temporal and other config
@@ -262,6 +262,7 @@ class RedizConventions(MicroConventions):
         def lb_month(dt=None):
             return dt.isoformat()[:7] if dt is not None else 'all_time'
 
+        sponsor = sponsor or 'overall'
         return self.SEP.join([self.CUSTOM_LEADERBOARD[:-2], sponsor.replace(' ','_'), lb_cat(name), lb_month(dt)]) + '.json'
 
 
@@ -542,7 +543,7 @@ class RedizConventions(MicroConventions):
         znames=list()
         for delay in self.DELAYS:
            for dim in [1,2,3]:
-                name_combinations = itertools.combinations(sorted(names),dim)
+                name_combinations = list(itertools.combinations(sorted(names),dim))
                 zname = self.zcurve_name( names=name_combinations,delay=delay )
                 znames.append(zname)
         return znames

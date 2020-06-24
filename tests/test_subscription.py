@@ -1,11 +1,16 @@
 from rediz.client import Rediz
 import json, os, uuid, random, time
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
-from rediz.rediz_test_config_private import BELLEHOOD_BAT, TASTEABLE_BEE, SHOOTABLE_CAT, BABLOH_CATTLE
+BELLEHOOD_BAT = REDIZ_TEST_CONFIG['BELLEHOOD_BAT']
+TASTEABLE_BEE = REDIZ_TEST_CONFIG['TASTEABLE_BEE']
+SHOOTABLE_CAT = REDIZ_TEST_CONFIG['SHOOTABLE_CAT']
+BABLOH_CATTLE = REDIZ_TEST_CONFIG['BABLOH_CATTLE']
+
+
 
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_subscription.py ; cat tmp_subscription.json
 def dump(obj,name="tmp_subscription.json"): # Debugging
-    if False:
+    if REDIZ_TEST_CONFIG["DUMP"]:
         json.dump(obj,open(name,"w"))
 
 def don_test_subscription_singular():
