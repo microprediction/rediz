@@ -33,6 +33,7 @@ jobs:
         pip install --upgrade pymorton
         pip install --upgrade scipy
         pip install --upgrade pathlib
+        pip install --upgrade getjson
         pip install flake8 pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: Lint with flake8

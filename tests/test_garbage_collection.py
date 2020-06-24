@@ -6,7 +6,8 @@ BELLEHOOD_BAT = REDIZ_TEST_CONFIG['BELLEHOOD_BAT']
 # # rm tmp*.json; pip install -e . ; python -m pytest tests/test_garbage_collection.py ; cat tmp_garbage.json
 
 def dump(obj,name="tmp_garbage.json"): # Debugging
-    json.dump(obj,open(name,"w"))
+    if REDIZ_TEST_CONFIG['DUMP']:
+        json.dump(obj,open(name,"w"))
 
 def test_delete_simple():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
