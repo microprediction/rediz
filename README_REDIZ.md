@@ -1,7 +1,7 @@
 
 # Server side notes (rediz library)
   
-At www.microprediction.com client requests using the microprediction library are (mostly) handled by the rediz library. 
+At www.microprediction.org client requests using the microprediction library are (mostly) handled by the rediz library. 
   
 ## Publishing live data
 
@@ -12,19 +12,17 @@ Repeatedly publishing scalar data to the same name creates a stream.
       while True:
           time.sleep(15)
           value  = measure_somehow()
-          prctl  = rdz.set(name='air-pressure-06820.json',write_key=my_secret_key,value=value)        
+          res  = rdz.set(name='air-pressure-06820.json',write_key=my_secret_key,value=value)        
 
-The set() command returns a percentile. Rediz can be used to convert any data into uniformly distributed data. 
+The set() command returns percentiles in the results. Rediz can be used to convert any data into uniformly distributed data. 
 
 #### Stream name rules (rediz)
 
-See the RedizConventions.is_plain_name (at https://github.com/microprediction/rediz/blob/master/rediz/conventions.py) for naming rules. Names are intended to be web friendly (no URL escaping) and topic friendly (e.g. SNS). This 
-leaves us with alphanumeric, hyphens, underscores, colons (discouraged) and at most one period. Lowercase is encouraged. The name extension must suggest the format. Only .json is supported at present. Names cannot
- contain double colons or tildes as these carry a special significance in Rediz.  
+See https://github.com/microprediction/microconventions/tree/master/microconventions
 
 #### Rediz value types
 
-At present only scalar values such as https://www.microprediction.com/live/cop.json are predicted. It is, however, possible to write non-scalar values should that prove useful. 
+At present only scalar values such as https://www.microprediction.org/live/cop.json are predicted. It is, however, possible to write non-scalar values should that prove useful. 
 Values are stored as binary strings. However the rediz library infers an implied type when set() is called. The four possibilities are
 
 | type    | Example object    |  Example string                    | Predicted? |
@@ -53,15 +51,6 @@ The set() command overwrites the previous value, but scalar and vector value rev
 This buffer can be accessed directly with a get() but it is recommended that one use the getter:
 
     lagged = get_lagged('air-pressure-06820.json',count=20)
-
-One can also retrieve time stamps
-
-    lagged = get_lagged('air-pressure-06820.json',with_times=True)
-
-which returns tuples (time,value). The most recent data is returned first. At www.microprediction.com it is also 
-possible to access lagged values by using the lagged API. For example www.microprediction.com/lagged/cop.json 
-
-       
 
 #### History (dict, any)
 
@@ -107,7 +96,7 @@ Closely related but different to lags and history, Rediz also generates quaranti
 | delayed::15:air-pressure-06820.json  | Name holding 15 sec delayed data |
 
 Quarantined data is not made available until a fixed number of seconds has expired since set(). In the above example the data is embargoed
- for 15 seconds. It is by this means www.microprediction.com acts as a trusted third party allowing users to advertise data
+ for 15 seconds. It is by this means www.microprediction.org acts as a trusted third party allowing users to advertise data
  streams that have been independently delayed for some short period of time. Quarantined data is accessed like any other name:
 
     rdz.get("delayed:15:air-pressure-06820.json")
@@ -140,7 +129,8 @@ Retrieve predictions via:
 
     rdz.get_predictions(name='air-pressure-06820.json', delay=15)
     
-or directly 'predictions::15::air-pressure-06820.json' 
+or directly 'predictions::15::air-pressure-06820.json'   At present this is not exposed in the microprediction client. However the client does contain
+a get_cdf method
 
 #### Predicting univariate streams 
 
@@ -169,19 +159,22 @@ For example:
 
      rdz.set(name='air-pressure-features.json',write_keys=my_secret_key,values=[99.1,1237.1,123.2,25.5])  
 
-will not trigger prediction. In conjunction with link() this is one way to provide relevant data that is not a primary prediction target pe se. 
+will not trigger prediction. In conjunction with link() this is one way to provide relevant data that is not a primary prediction target pe se. At time 
+of writing the client library microprediction does not support this, only scalar setting. 
 
 #### Providing data for joint (multi-dimensional) prediction 
 
-At www.microprediction.com the copula API provides some advanced functionality. This is implemented in rediz with mset()
+At www.microprediction.org the copula API provides some advanced functionality. This is implemented in rediz with cset()
 
      names  = [ 'airp-06820.json', 'airp-06821.json', 'airp-06821.json' ]
      values = [ 26.2, 33.4, 44.1 ]
      write_keys = [ write_key for _ in names ]
      budgets = [ 100, 100, 100 ]
-     rdz.mset(names=names,values=values, budgets=budgets, write_keys=write_keys) 
+     rdz.cset(names=names,values=values, budgets=budgets, write_keys=write_keys) 
 
-This initiates prediction of each of the three variables. However it also creates derived (implied) predictions
+There is also a cset method in the microprediction client
+
+A cset call initiates derived (implied) predictions
 
 - Prediction of implied percentiles 
 - Prediction of two and three dimensional implied Copulas
@@ -197,8 +190,6 @@ as well as ancilliary streams such as
     
 as with any name. As the reader will infer, Rediz takes a novel, multi-stage approach to multivariate prediction that is
 inspired by the theory of Copula functions. 
-
-
 
 #### Predicting implied z-score streams 
 
@@ -246,22 +237,18 @@ These database entries are sets (actually redis sorted sets) aggregating all pre
 
 #### Rewards
 
-Submitted scenarios are eligible if they have been quarantined for the minimum time period. 
+Rewards, both positive and negative, are calculated upon arrival of every data point (when cset or set are called). At this
+time the predictions zsets are searched. 
 
+- Submitted scenarios are eligible if they have been quarantined for the minimum time period. 
 - We find W winners in a neighborhood (ball) of radius h around the revealed ground truth. 
 - Entries inside the ball are rewarded P/(N*W)
 - Entries outside the ball are rewarded -1/N.
 
-#### Interpreting predictions
-
-Subject to careful statistical interpretation, various types of projections/moments and other characterization of the preditions can be consumed. For example:
-
-| Example                                      | Interpretation                      | Done? |
-|----------------------------------------------|-------------------------------------|-------|
-| mean::predictions:60:air-pressure-06820.json | Mean 1 minute forecast              | No    |
-| mean::samples:600:air-pressure-06820.json    | Mean ex-post 10 min population std  | No    |
-| percentiles::predictions:600:air-pressure-06820.json    | Forecast histogram       | No    |
-
+The method of determining the W winners is undergoing change but at time of writing:
+ 
+- We search near the value with a tight window
+- We backoff and enlarge the window if no winner is found
 
 ### Links
 
@@ -270,6 +257,8 @@ A link is a suggestion that one live source of data can predict another. Links c
      link( name=my-wattage-prediction-019871938618326, write_key="my-obsucre-87294812739874109872", target=wattage-019871938618326, delay=300 )
 
 suggests that my-wattage-prediction-019871938618326 has explanatory power five minutes ahead for wattage-019871938618326. It is removed with unlink(). 
+
+This functionality is not currently exposed in the client library. 
 
 ### Subscription
 
@@ -349,8 +338,7 @@ Getters and equivalent prefixed names
                
 | Prediction    |  Cost |  Interpretation                      | Done? |   
 |---------------|-------|--------------------------------------|-------|      
-| predict       | 1     | Provide future scenarios             | Y     |                      
-| mpredict      |       | Provide 2 or 3 dimensional scenarios | N     |
+| set_scenarios       | 1     | Provide future scenarios             | Y     |                      
 
 #### Accounting
 
@@ -383,4 +371,8 @@ Rediz passes through the following constructor arguments to the redis client con
 
 Rediz can also be instantiated with no host, in which case fakeredis will be used. 
 
+
+#### Leaderboards 
+
+A bunch of these are exposed. See rediz.client for various kinds. 
 

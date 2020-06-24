@@ -40,7 +40,7 @@ Promises take values looking like SOURCE::method::DESTINATION
 
 ### General discussion
 
-We refer the reader to www.microprediction.com for more information about the motivation for Rediz.
+We refer the reader to www.microprediction.org for more information about the motivation for Rediz.
 
 #### Related theory
 
