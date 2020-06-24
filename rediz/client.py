@@ -874,7 +874,7 @@ class Rediz(RedizConventions):
         exec = expire_pipe.execute()
         report = dict( zip(all_names,exec) )
         self._confirm(write_key=write_key, operation='mtouch', count=sum(exec) )
-        if not all(exec):
+        if not any(exec):
             self._warn(write_key=write_key, operation='mtouch', error='expiry not set ... names may not exist', data=report, ttls=ttls )
         return sum(exec)
 
