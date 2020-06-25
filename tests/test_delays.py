@@ -63,13 +63,16 @@ def do_test_lags_and_delays(rdz):
 
     # We write the value 6.0, then wait 3 seconds
     time6 = time.time()
-    prctl = rdz.set(name=NAME, value=6.0, write_key=WRITE_KEY)
+    res1 = rdz.set(name=NAME, value=6.0, write_key=WRITE_KEY)
+    assert 'value' in res1
+    rdz.admin_promises()
     while time.time()-time6<3:
         rdz.admin_promises()
         time.sleep(0.1)
 
     # Then write 16.0
-    prctl = rdz.set(name=NAME, value=16.0, write_key=WRITE_KEY)
+    res2 = rdz.set(name=NAME, value=16.0, write_key=WRITE_KEY)
+    assert 'value' in res2
     time16 = time.time()  # Time at which 16.0 was written
 
 

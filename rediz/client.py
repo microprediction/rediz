@@ -91,7 +91,7 @@ class Rediz(RedizConventions):
     def get_predictions(self, name, delay=None, delays=None):
         return self._get_predictions_implementation(name=name, delay=delay, delays=delays)
 
-    def get_cdf(self, name, delay=None, values=None, top=5, min_balance=0):
+    def get_cdf(self, name, delay=None, values=None, top=10, min_balance=-500):
         """
         :param values:   Abscissa for CDF
         :param top:      Number of top participants to use
@@ -1215,7 +1215,6 @@ class Rediz(RedizConventions):
         assert name == self._root_name(name),"get_cdf expects root name"
         assert delay in self.DELAYS,"delay is not a valid choice of delay"
 
-        # We only use the top three performers on the leaderboard to estimate the inverse CDF
         score_pipe = self.client.pipeline()
         num = self.client.zcard(name=self._predictions_name(name=name, delay=delay))
         lb  = self._get_leaderboard_implementation(name=name,delay=delay,readable=False,count=top)
@@ -1326,7 +1325,7 @@ class Rediz(RedizConventions):
                 retrieve_pipe.smembers(self._sample_owners_name(name=name, delay=delay))    # List of owners
                 for window_ndx, window in enumerate(self._WINDOWS):
                     scenarios_lookup[name][delay_ndx][window_ndx] = len(retrieve_pipe)
-                    retrieve_pipe.zrangebyscore(name=samples_name, min=value - window, max=value + window, withscores=False, start=0, num=15)
+                    retrieve_pipe.zrangebyscore(name=samples_name, min=value - window, max=value + window, withscores=False, start=0, num=25)
                     # FIXME: This introduces bias toward selecting the bottom of the bucket ... do we want to make two calls instead?
         retrieved = retrieve_pipe.execute()
 

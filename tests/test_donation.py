@@ -23,7 +23,7 @@ def test_donate_remote():
     write_key_1 = '861f9f15d9d151b9f9e139532c9dca9d'
     write_key_2 = '3ea3788a1ef07a257b8608c7087287f0'
 
-    res1 = requests.post('https://www.microprediction.org/donations/' + write_key_1, data={'password': DONATION_PASSWORD,'donor':'Test'})
-    res2 = requests.post('https://www.microprediction.org/donations/' + write_key_2, data={'password': DONATION_PASSWORD,'donor':'Test'})
+    res1 = requests.post('https://api.microprediction.org/donations/' + write_key_1, data={'password': DONATION_PASSWORD,'donor':'Test'})
+    res2 = requests.post('https://api.microprediction.org/donations/' + write_key_2, data={'password': DONATION_PASSWORD,'donor':'Test'})
 
     assert res1.json()['success']
