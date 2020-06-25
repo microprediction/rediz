@@ -35,36 +35,36 @@ class RedizConventions(MicroConventions):
         # User facing conventions: transparent use of prefixing
         # TODO: These are moved to MicroConventions ... can delete this soon
 
-        self.DELAYED = "delayed" + self.SEP
-        self.CDF = 'cdf'+self.SEP
-        self.LINKS = "links" + self.SEP
-        self.BACKLINKS = "backlinks" + self.SEP
-        self.MESSAGES = "messages" + self.SEP
-        self.HISTORY = "history" + self.SEP
-        self.LAGGED = "lagged"+self.SEP
-        self.LAGGED_VALUES = "lagged_values" + self.SEP
-        self.LAGGED_TIMES = "lagged_times" + self.SEP
-        self.SUBSCRIBERS = "subscribers" + self.SEP
-        self.SUBSCRIPTIONS = "subscriptions" + self.SEP
-        self.TRANSACTIONS = "transactions" + self.SEP
-        self.PREDICTIONS = "predictions"+ self.SEP
-        self.SAMPLES = "samples" + self.SEP
-        self.BALANCE = "balance" + self.SEP
-        self.PERFORMANCE = "performance" + self.SEP
-        self.LEADERBOARD = "leaderboard" + self.SEP
-        self.CUSTOM_LEADERBOARD = 'custom_leaderboard' + self.SEP
-        self.BUDGETS = "budget" + self.SEP
-        self.VOLUMES = "volumes" + self.SEP
-        self.SUMMARY = "summary" + self.SEP
+        #self.DELAYED = "delayed" + self.SEP
+        #self.CDF = 'cdf'+self.SEP
+        #self.LINKS = "links" + self.SEP
+        #self.BACKLINKS = "backlinks" + self.SEP
+        #self.MESSAGES = "messages" + self.SEP
+        #self.HISTORY = "history" + self.SEP
+        #self.LAGGED = "lagged"+self.SEP
+        #self.LAGGED_VALUES = "lagged_values" + self.SEP
+        #self.LAGGED_TIMES = "lagged_times" + self.SEP
+        #self.SUBSCRIBERS = "subscribers" + self.SEP
+        #self.SUBSCRIPTIONS = "subscriptions" + self.SEP
+        #self.TRANSACTIONS = "transactions" + self.SEP
+        #self.PREDICTIONS = "predictions"+ self.SEP
+        #self.SAMPLES = "samples" + self.SEP
+        #self.BALANCE = "balance" + self.SEP
+        #self.PERFORMANCE = "performance" + self.SEP
+        #self.LEADERBOARD = "leaderboard" + self.SEP
+        #self.CUSTOM_LEADERBOARD = 'custom_leaderboard' + self.SEP
+        #self.BUDGETS = "budget" + self.SEP
+        #self.VOLUMES = "volumes" + self.SEP
+        #self.SUMMARY = "summary" + self.SEP
 
         # Transparent but parametrized
         self.HISTORY_LEN = int(history_len or 1000)
         self.LAGGED_LEN = int(lagged_len or 10000)
 
         # Logging
-        self.CONFIRMS = "confirms" + self.SEP  # TODO: Moved to MicroConventions
-        self.WARNINGS = "warnings" + self.SEP  # TODO: Moved to MicroConventions
-        self.ERRORS   = "errors" + self.SEP    # TODO: Moved to MicroConventions
+        #self.CONFIRMS = "confirms" + self.SEP  # TODO: Moved to MicroConventions
+        #self.WARNINGS = "warnings" + self.SEP  # TODO: Moved to MicroConventions
+        #self.ERRORS   = "errors" + self.SEP    # TODO: Moved to MicroConventions
 
 
         self.WARNINGS_TTL = int(60 * 60)  # TODO: allow configuation
@@ -82,7 +82,7 @@ class RedizConventions(MicroConventions):
         self.NUM_PREDICTIONS = int(self.num_predictions)     # Number of scenerios in a prediction batch
         self.DELAYS = delays or [1, 5]
         self.CONFIRMS_MAX = 5  # Maximum number of confirmations when using mset()
-        self.NOISE = 0.3 / self.NUM_PREDICTIONS  # Tie-breaking / smoothing noise added to predictions
+        self.NOISE = 0.1 / self.NUM_PREDICTIONS  # Tie-breaking / smoothing noise added to predictions
 
         # Implementation details: private reserved redis keys and prefixes.
         self._obscurity = (obscurity or "obscure") + self.SEP
@@ -117,42 +117,6 @@ class RedizConventions(MicroConventions):
         if any(RedizConventions.sep() in name for name in names):
             raise Exception("Operation attempted with a name that uses " + RedizConventions.sep())
 
-
-    @staticmethod  # TODO: Remove this after pushing MicroConventions
-    def is_vector_value(value):
-        if isinstance(value, (list, tuple)):
-            return all((RedizConventions.is_scalar_value(v) for v in value))
-        else:
-            try:
-                v = json.loads(value)
-                return RedizConventions.is_vector_value(v)
-            except:
-                return False
-
-    @staticmethod # TODO: Remove this after pushing MicroConventions
-    def is_dict_value(value):
-        try:
-            d = dict(value)
-            return True
-        except:
-            try:
-                v = json.loads(value)
-                return RedizConventions.is_dict_value(value)
-            except:
-                return False
-
-    @staticmethod # TODO: Remove this after pushing MicroConventions
-    def to_record(value):
-        if RedizConventions.is_scalar_value(value):
-            fields = {"0": value}
-        elif RedizConventions.is_dict_value(value):
-            fields = dict(value)
-        elif RedizConventions.is_vector_value(value):
-            fields = dict(enumerate(list(value)))
-        else:
-            fields = {"value": value}
-        return fields
-
     @staticmethod
     def to_float(values):
         # Canonical way to convert str or [str] or [[str]] to float equivalent with nan replacing None
@@ -182,8 +146,6 @@ class RedizConventions(MicroConventions):
 
     def percentile_name(self, name, delay):
         return self.zcurve_name(names=[name],delay=delay)
-
-
 
     def donation_name(self,len):  # TODO: Move this elsewhere
         return self._DONATIONS + str(len)
@@ -266,37 +228,37 @@ class RedizConventions(MicroConventions):
         return self.SEP.join([self.CUSTOM_LEADERBOARD[:-2], sponsor.replace(' ','_'), lb_cat(name), lb_month(dt)]) + '.json'
 
 
-    def leaderboard_name(self, name=None, delay=None): # TODO: discard after MicroConventions upgrade
-        """ Name for leaderboards by stream name and horizon """
-        if name is None and delay is None:
-            return self.LEADERBOARD[:-2]+'.json'
-        elif name is None:
-            return self.LEADERBOARD+str(delay)+'.json'
-        elif delay is None:
-            return self.LEADERBOARD+str(name)
-        else:
-            return self.LEADERBOARD+self.horizon_name(name=name,delay=delay)
+    #def leaderboard_name(self, name=None, delay=None): # TODO: discard after MicroConventions upgrade
+    #    """ Name for leaderboards by stream name and horizon """
+    #    if name is None and delay is None:
+    #        return self.LEADERBOARD[:-2]+'.json'
+    #    elif name is None:
+    #        return self.LEADERBOARD+str(delay)+'.json'
+    #    elif delay is None:
+    #        return self.LEADERBOARD+str(name)
+    #    else:
+    #        return self.LEADERBOARD+self.horizon_name(name=name,delay=delay)
 
-    def history_name(self, name):   # TODO: discard after MicroConventions upgrade
-        return self.HISTORY + name
+    #def history_name(self, name):   # TODO: discard after MicroConventions upgrade
+    #    return self.HISTORY + name
 
-    def lagged_values_name(self, name):   # TODO: discard after MicroConventions upgrade
-        return self.LAGGED_VALUES + name
+    #def lagged_values_name(self, name):   # TODO: discard after MicroConventions upgrade
+    #    return self.LAGGED_VALUES + name
 
-    def lagged_times_name(self, name):   # TODO: discard after MicroConventions upgrade
-        return self.LAGGED_TIMES + name
+    #def lagged_times_name(self, name):   # TODO: discard after MicroConventions upgrade
+    #    return self.LAGGED_TIMES + name
 
-    def links_name(self, name, delay):   # TODO: discard after MicroConventions upgrade
-        return self.LINKS + str(delay) + self.SEP + name
+    #def links_name(self, name, delay):   # TODO: discard after MicroConventions upgrade
+    #    return self.LINKS + str(delay) + self.SEP + name
 
-    def backlinks_name(self, name):   # TODO: discard after MicroConventions upgrade
-        return self.BACKLINKS + name
+    #def backlinks_name(self, name):   # TODO: discard after MicroConventions upgrade
+    #    return self.BACKLINKS + name
 
-    def subscribers_name(self, name):   # TODO: discard after MicroConventions upgrade
-        return self.SUBSCRIBERS + name
+    #def subscribers_name(self, name):   # TODO: discard after MicroConventions upgrade
+    #    return self.SUBSCRIBERS + name
 
-    def subscriptions_name(self, name):   # TODO: discard after MicroConventions upgrade
-        return self.SUBSCRIPTIONS + name
+    #def subscriptions_name(self, name):   # TODO: discard after MicroConventions upgrade
+    #    return self.SUBSCRIPTIONS + name
 
 
     @staticmethod
@@ -489,106 +451,106 @@ class RedizConventions(MicroConventions):
     #           Statistics
     # --------------------------------------------------------------------------
 
-    def normcdf(self, x):  # TODO: Discard after MicroConv upgrade
-        g = self._normcdf_function()
-        return g(x)
+   # def normcdf(self, x):  # TODO: Discard after MicroConv upgrade
+   #     g = self._normcdf_function()
+   #     return g(x)
 
-    def norminv(self,p): # TODO: Discard after MicroConv upgrade
-        f = self._norminv_function()
-        return f(p)
+    #def norminv(self,p): # TODO: Discard after MicroConv upgrade
+    #    f = self._norminv_function()
+    #    return f(p)
 
-    @staticmethod  # TODO: discard as this is in MicroConventions now
-    def to_zscores(prctls):
-        norminv = RedizConventions._norminv_function()
-        return [ norminv(p) for p in prctls ]
+    #@staticmethod  # TODO: discard as this is in MicroConventions now
+    #def to_zscores(prctls):
+    #    norminv = RedizConventions._norminv_function()
+    #    return [ norminv(p) for p in prctls ]
 
 
-    @staticmethod # TODO: discard as this is in MicroConventions now
-    def _norminv_function():
-        try:
-            from statistics import NormalDist
-            return NormalDist(mu=0, sigma=1.0).inv_cdf
-        except ImportError:
-            from scipy.stats import norm
-            return norm.ppf
+    #@staticmethod # TODO: discard as this is in MicroConventions now
+    #def _norminv_function():
+    #    try:
+    #        from statistics import NormalDist
+    #        return NormalDist(mu=0, sigma=1.0).inv_cdf
+    #    except ImportError:
+    #        from scipy.stats import norm
+    #        return norm.ppf
 
-    @staticmethod   # TODO: discard as this is in MicroConventions now
-    def _normcdf_function():
-        try:
-            from statistics import NormalDist
-            return NormalDist(mu=0, sigma=1.0).cdf
-        except ImportError:
-            from scipy.stats import norm
-            return norm.cdf
+    #@staticmethod   # TODO: discard as this is in MicroConventions now
+    #def _normcdf_function():
+    #    try:
+    #        from statistics import NormalDist
+    #        return NormalDist(mu=0, sigma=1.0).cdf
+    #    except ImportError:
+    #        from scipy.stats import norm
+    #        return norm.cdf
 
-    @staticmethod  # TODO: discard as this is in MicroConventions now
-    def zmean_percentile(ps):
-        """ Given a vector of percentiles, returns normal percentile of the mean zscore """
-        if len(ps):
-            norminv = RedizConventions._norminv_function()
-            zscores = [norminv(p) for p in ps]
-            avg_zscore = np.nanmean(zscores)
-            normcdf = RedizConventions._normcdf_function()
-            avg_p = normcdf(avg_zscore)
-            return avg_p
-        else:
-            return 0.5
+    #@staticmethod  # TODO: discard as this is in MicroConventions now
+    #def zmean_percentile(ps):
+    #    """ Given a vector of percentiles, returns normal percentile of the mean zscore """
+    #    if len(ps):
+    #        norminv = RedizConventions._norminv_function()
+    #        zscores = [norminv(p) for p in ps]
+    #        avg_zscore = np.nanmean(zscores)
+    #        normcdf = RedizConventions._normcdf_function()
+    #        avg_p = normcdf(avg_zscore)
+    #        return avg_p
+    #    else:
+    #        return 0.5
 
     # --------------------------------------------------------------------------
     #           Z-order curves  TODO: Moved all this to MicroConventions
     # --------------------------------------------------------------------------
 
-    def zcurve_names(self, names):   # TODO: Discard after MicroConv upgrade
-        import itertools
-        znames=list()
-        for delay in self.DELAYS:
-           for dim in [1,2,3]:
-                name_combinations = list(itertools.combinations(sorted(names),dim))
-                zname = self.zcurve_name( names=name_combinations,delay=delay )
-                znames.append(zname)
-        return znames
+    #def zcurve_names(self, names):   # TODO: Discard after MicroConv upgrade
+    #    import itertools
+    #    znames=list()
+    #    for delay in self.DELAYS:
+    #       for dim in [1,2,3]:
+    #            name_combinations = list(itertools.combinations(sorted(names),dim))
+    #            zname = self.zcurve_name( names=name_combinations,delay=delay )
+    #            znames.append(zname)
+    #    return znames
 
-    def zcurve_name(self, names, delay): # TODO: Discard after MicroConv upgrade
-        """ Naming convention for derived quantities, called zcurves """
-        basenames = sorted( [n.split('.')[-2] for n in names] )
-        prefix    = "z" + str(len(names))
-        clearbase = "~".join( [prefix] + basenames + [str(delay)] )
-        return clearbase+'.json'
+    #def zcurve_name(self, names, delay): # TODO: Discard after MicroConv upgrade
+    #    """ Naming convention for derived quantities, called zcurves """
+    #    basenames = sorted( [n.split('.')[-2] for n in names] )
+    #    prefix    = "z" + str(len(names))
+    #    clearbase = "~".join( [prefix] + basenames + [str(delay)] )
+    #    return clearbase+'.json'
 
-    @staticmethod # TODO: Discard after MicroConv upgrade
-    def morton_scale(dim):
-        return 2**10
+    #@staticmethod # TODO: Discard after MicroConv upgrade
+    #def morton_scale(dim):
+    #    return 2**10
 
-    @staticmethod
-    def morton_large(dim): # TODO: Discard after MicroConv upgrade
-        SCALE = RedizConventions.morton_scale(dim=dim)
-        return pymorton.interleave( *[ SCALE-1 for _ in range(dim) ] )
+    #@staticmethod
+    #def morton_large(dim): # TODO: Discard after MicroConv upgrade
+    #    SCALE = RedizConventions.morton_scale(dim=dim)
+    #    return pymorton.interleave( *[ SCALE-1 for _ in range(dim) ] )
 
-    def to_zcurve(self, prctls: List[float] ): # TODO: Discard after MicroConv upgrade
-        """ A mapping from R^n -> R based on the Morton z-curve """
-        dim = len(prctls)
-        if dim==1:
-            return self.to_zscores(prctls)[0]
-        else:
-            SCALE = RedizConventions.morton_scale(dim)
-            int_prctls = [ int(math.floor(p*SCALE)) for p in prctls ]
-            m1         = pymorton.interleave(*int_prctls)
-            int_prctls_back = pymorton.deinterleave2(m1) if dim==2 else  pymorton.deinterleave3(m1)
-            assert all( i1==i2 for i1,i2 in zip(int_prctls, int_prctls_back))
-            m2         = pymorton.interleave(*[ SCALE-1 for _ in range(dim) ])
-            zpercentile =  m1/m2
-            return self.norminv(zpercentile)
+    #def to_zcurve(self, prctls: List[float] ): # TODO: Discard after MicroConv upgrade
+    #    """ A mapping from R^n -> R based on the Morton z-curve """
+    #    dim = len(prctls)
+    #    if dim==1:
+    #        return self.to_zscores(prctls)[0]
+    #    else:
+    #        SCALE = RedizConventions.morton_scale(dim)
+    #        int_prctls = [ int(math.floor(p*SCALE)) for p in prctls ]
+    #        m1         = pymorton.interleave(*int_prctls)
+    #        int_prctls_back = pymorton.deinterleave2(m1) if dim==2 else  pymorton.deinterleave3(m1)
+    #        assert all( i1==i2 for i1,i2 in zip(int_prctls, int_prctls_back))
+    #        m2         = pymorton.interleave(*[ SCALE-1 for _ in range(dim) ])
+    #        zpercentile =  m1/m2
+    #        return self.norminv(zpercentile)
 
-    def from_zcurve(self, zvalue, dim): # TODO: Discard after MicroConv upgrade
-        zpercentile = self.normcdf(zvalue)
-        SCALE = self.morton_scale(dim)
-        zmorton     = int( self.morton_large(dim)*zpercentile+0.5 )
-        if dim==2:
-            values  = pymorton.deinterleave2(zmorton)
-        elif dim==3:
-            values  = pymorton.deinterleave3(zmorton)
-        prtcls = [ v/SCALE for v in values ]
-        return prtcls
+    #def from_zcurve(self, zvalue, dim): # TODO: Discard after MicroConv upgrade
+    #    zpercentile = self.normcdf(zvalue)
+    #    SCALE = self.morton_scale(dim)
+    #    zmorton     = int( self.morton_large(dim)*zpercentile+0.5 )
+    #    if dim==2:
+    #        values  = pymorton.deinterleave2(zmorton)
+    #    elif dim==3:
+    #        values  = pymorton.deinterleave3(zmorton)
+    #    prtcls = [ v/SCALE for v in values ]
+    #    return prtcls
 
 
 
