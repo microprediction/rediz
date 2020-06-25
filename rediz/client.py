@@ -6,6 +6,7 @@ from redis.client import list_or_args
 from redis.exceptions import DataError
 from .conventions import RedizConventions, REDIZ_CONVENTIONS_ARGS, KeyList, NameList, ValueList
 from rediz.utilities import get_json_safe, has_nan, shorten, stem
+from pprint import pprint
 
 # REDIZ
 # -----
@@ -1466,7 +1467,6 @@ class Rediz(RedizConventions):
         else:
             return mean_prctl
 
-
     def _game_payments(self, pool, participant_set, rewarded_scenarios ):
         game_payments = Counter(dict((p, -1.0) for p in participant_set))
 
@@ -1482,7 +1482,12 @@ class Rediz(RedizConventions):
         if abs(sum(game_payments.values())) > 0.1:
             # This can occur if owners gets out of sync with the scenario hash ... which it should not
             # FIXME: Fail gracefully and raise system alert and/or garbage cleanup of owner::samples::delay::name versus samples::delay::name
-            raise Exception("Leakage in zero sum game")
+            print('********************************************')
+            print("Leakage in zero sum game",flush=True)
+            pprint(game_payments)
+            print('********************************************')
+            print('Set all payments to zero, for now, but need to fix this...')
+            game_payments = Counter(dict((p, 0.0) for p in participant_set))
         return game_payments
 
 
