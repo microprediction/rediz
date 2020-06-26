@@ -200,22 +200,51 @@ class Rediz(RedizConventions):
 
     def get_previous_monthly_overall_leaderboard(self):
         last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
-        return self._get_custom_leaderboard_implementation(sponsor=None,dt=last_month_day,count=200)
+        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=last_month_day, count=200)
 
     def get_monthly_overall_leaderboard(self):
-        return self._get_custom_leaderboard_implementation(sponsor=None,dt=datetime.datetime.now(),count=200)
+        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=datetime.datetime.now(), count=200)
 
     # By sponsor ...
+    # Allow user to pass either a write_key or a write_code (recall code = shash(key) )
 
-    def get_sponsored_leaderboard(self, sponsor):
-        return self._get_custom_leaderboard_implementation(sponsor=sponsor,dt=None,count=200)
+    def code_from_code_or_key(self, sponsor):
+        if self.is_valid_key(sponsor):
+            return self.shash(sponsor)
+        elif self.animal_from_code(sponsor):
+            return sponsor
+
+    def get_regular_monthly_sponsored_leaderboard(self, sponsor):
+        """ Excludes z's """
+        code = self.code_from_code_or_key(sponsor)
+        if code:
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='mystream')
+
+    def get_zscore_monthly_sponsored_leaderboard(self, sponsor):
+        code = self.code_from_code_or_key(sponsor)
+        if code:
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z1~')
+
+    def get_bivariate_monthly_sponsored_leaderboard(self, sponsor):
+        code = self.code_from_code_or_key(sponsor)
+        if code:
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z2~')
+
+    def get_trivariate_monthly_sponsored_leaderboard(self, sponsor):
+        code = self.code_from_code_or_key(sponsor)
+        if code:
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z3~')
 
     def get_monthly_sponsored_leaderboard(self, sponsor):
-        return self._get_custom_leaderboard_implementation(sponsor=sponsor,dt=datetime.datetime.now(),count=200)
+        code = self.code_from_code_or_key(sponsor)
+        if code:
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=datetime.datetime.now(), count=200)
 
     def get_previous_monthly_sponsored_leaderboard(self, sponsor):
-        last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
-        return self._get_custom_leaderboard_implementation(sponsor=sponsor, dt=last_month_day,count=200)
+        code = self.code_from_code_or_key(sponsor)
+        if code:
+            last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=last_month_day, count=200)
 
 
 
@@ -1708,8 +1737,8 @@ class Rediz(RedizConventions):
         leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
         return OrderedDict([(self.animal_from_code(code),score) for code,score in leaderboard]) if readable else dict(leaderboard)
 
-    def _get_custom_leaderboard_implementation(self, sponsor, dt, count, readable=True):
-        pname = self.custom_leaderboard_name(sponsor=sponsor,dt=dt)
+    def _get_custom_leaderboard_implementation(self, sponsor_code, dt, count, readable=True, name=None):
+        pname = self.custom_leaderboard_name(sponsor=sponsor_code, dt=dt, name=name)
         leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
         return OrderedDict([(self.animal_from_code(code), score) for code, score in leaderboard]) if readable else dict(
             leaderboard)

@@ -2,6 +2,7 @@ from rediz.client import Rediz
 import json, time, math
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 import numpy as np
+from pprint import pprint
 BELLEHOOD_BAT = REDIZ_TEST_CONFIG['BELLEHOOD_BAT']
 TESTING_KEYS = REDIZ_TEST_CONFIG['TESTING_KEYS']
 
@@ -43,11 +44,16 @@ def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_k
 
     target_code = rdz.shash(target_key)
     leaderboards = {'overall':rdz.get_leaderboard(),
-                    'sponsor':rdz.get_sponsored_leaderboard(sponsor=target_code),
+                    'sponsor':rdz.get_monthly_sponsored_leaderboard(sponsor=target_code),
     'monthly_sponsored':rdz.get_monthly_sponsored_leaderboard(sponsor=target_code),
     'overall_leaderboard':rdz.get_monthly_overall_leaderboard(),
     'monthly_overall_leaderboard':rdz.get_previous_monthly_overall_leaderboard(),
-    'previous_monthly_sponsored':rdz.get_previous_monthly_sponsored_leaderboard(sponsor=target_code)}
+    'previous_monthly_sponsored':rdz.get_previous_monthly_sponsored_leaderboard(sponsor=target_code),
+    'monthly_bivariate_leaderboard':rdz.get_bivariate_monthly_sponsored_leaderboard(sponsor=target_code),
+    'monthly_trivariate_leaderboard': rdz.get_trivariate_monthly_sponsored_leaderboard(sponsor=target_code),
+    'monthly_regular_leaderboard': rdz.get_regular_monthly_sponsored_leaderboard(sponsor=target_code),
+    'monthly_zscore_leaderboard': rdz.get_zscore_monthly_sponsored_leaderboard(sponsor=target_code)
+                    }
 
     samples       = rdz.get_samples(name=target, delay=1)
     lagged        = rdz.get_lagged(name=target)

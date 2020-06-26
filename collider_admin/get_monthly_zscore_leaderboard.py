@@ -5,6 +5,6 @@ from pprint import pprint
 
 if __name__ == '__main__':
     rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
-    pprint( rdz.get_monthly_sponsored_leaderboard(sponsor=CELLOSE_BOBCAT) )
+    pprint( rdz.get_zscore_monthly_sponsored_leaderboard(sponsor=CELLOSE_BOBCAT) )
 
 
