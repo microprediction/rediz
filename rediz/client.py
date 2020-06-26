@@ -1407,9 +1407,12 @@ class Rediz(RedizConventions):
                                              self.leaderboard_name(name=name),
                                              self.leaderboard_name(name=None, delay=delay),
                                              self.leaderboard_name(name=name, delay=delay),
-                                             self.custom_leaderboard_name(sponsor=sponsor, name=name, dt=datetime.datetime.now()),
-                                             self.custom_leaderboard_name(sponsor=sponsor, name=name),
-                                             self.custom_leaderboard_name(sponsor=sponsor, dt=datetime.datetime.now())
+                                             self.custom_leaderboard_name(sponsor=None, name=None),  # Overall all time
+                                             self.custom_leaderboard_name(sponsor=sponsor, name=None), # Sponsor category
+                                             self.custom_leaderboard_name(sponsor=sponsor, name=name),  # Sponsor and cateogry
+                                             self.custom_leaderboard_name(sponsor=sponsor, dt=datetime.datetime.now()), # Sponsor and month
+                                             self.custom_leaderboard_name(sponsor=sponsor, name=name, dt=datetime.datetime.now()), # Sponsor and category and month
+                                             self.custom_leaderboard_name(sponsor=sponsor, name=name, dt=datetime.datetime.now()), # Sponsor this month
                                              ]
                         for (recipient, amount) in payments.items():
                             # Record keeping
