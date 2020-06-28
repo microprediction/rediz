@@ -91,7 +91,7 @@ class Rediz(RedizConventions):
     def get_predictions(self, name, delay=None, delays=None):
         return self._get_predictions_implementation(name=name, delay=delay, delays=delays)
 
-    def get_cdf(self, name, delay=None, values=None, top=10, min_balance=-500):
+    def get_cdf(self, name, delay=None, values=None, top=10, min_balance=-5000):
         """
         :param values:   Abscissa for CDF
         :param top:      Number of top participants to use
@@ -1373,7 +1373,7 @@ class Rediz(RedizConventions):
                             # from more than one contributor, hopefully leading to more accurate percentiles
                             percentile_scenarios = list()
                             for window_ndx in range(num_windows):
-                                if len(percentile_scenarios) < 5:
+                                if len(percentile_scenarios) < 2:
                                     _ndx = scenarios_lookup[name][delay_ndx][window_ndx]
                                     percentile_scenarios = retrieved[_ndx]
                                     some_percentiles = True
@@ -1432,8 +1432,8 @@ class Rediz(RedizConventions):
                                                   "stream": name,
                                                   "delay":delay,
                                                   "value":value,
-                                                  "submitted":pool,
-                                                  "rewarded":num_rewarded,
+                                                  "submissions":pool,
+                                                  "submissions_close":num_rewarded,
                                                   "stream_owner_code":write_code,
                                                   "recipient_code":recipient_code}
                             log_names = [ self.transactions_name(),

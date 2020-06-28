@@ -70,7 +70,7 @@ class RedizConventions(MicroConventions):
         self.WARNINGS_TTL = int(60 * 60)  # TODO: allow configuation
         self.WARNINGS_LIMIT = 1000
         self.CONFIRMS_TTL = int(error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
-        self.ERROR_TTL = int(error_ttl or 60 * 60)     # Number of seconds that set execution error logs are persisted
+        self.ERROR_TTL = int(error_ttl or 24* 60 * 60)     # Number of seconds that set execution error logs are persisted
         self.CONFIRMS_TTL = int(error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
         self.ERROR_LIMIT = int(error_limit or 1000)    # Number of error messages to keep per write key
         self.CONFIRMS_LIMIT = int(error_limit or 1000) # Number of error messages to keep per write key
@@ -107,7 +107,7 @@ class RedizConventions(MicroConventions):
         self._DEFAULT_MODEL_STD = 1.0  # Noise added for self-prediction
         self._WINDOWS = windows  # Sizes of neighbourhoods around truth used in countback ... don't make too big or it hits performance
         self._INSTANT_RECALL = instant_recall or False
-        self._MAX_TTL = int( max_ttl or 12*60*60 ) # Maximum TTL, useful for testing
+        self._MAX_TTL = int( max_ttl or 96*60*60 ) # Maximum TTL, useful for testing
         self._TRANSACTIONS_TTL = int( transactions_ttl or 24 * (60 * 60) )  # How long to keep transactions stream for inactive write_keys
         self._LEADERBOARD_TTL  = int( 24 * (60 * 60)*60 )  # How long to keep transactions stream for inactive write_keys
 
