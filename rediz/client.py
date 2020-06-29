@@ -1018,7 +1018,8 @@ class Rediz(RedizConventions):
 
     def _transfer_implementation(self, source_write_key, recipient_write_key, amount, as_record=False):
         """ Debit and credit write_keys """
-        transaction_record = {"settlement_time": str(datetime.datetime.now()), "type": "transfer", "source": source_write_key, "recipient": recipient_write_key}
+        transaction_record = {"settlement_time": str(datetime.datetime.now()), "type": "transfer",
+                              "source": self.shash(source_write_key), "recipient": self.shash(recipient_write_key)}
         success = 0
         if self.is_valid_key(source_write_key) and self.key_difficulty(source_write_key)>=self.MIN_LEN-1:
             if self.is_valid_key(recipient_write_key):
@@ -1049,8 +1050,7 @@ class Rediz(RedizConventions):
 
         # Logging
         transaction_record.update({"success":success})
-        log_names = [ self.transactions_name(),
-                      self.transactions_name(write_key=source_write_key),
+        log_names = [ self.transactions_name(write_key=source_write_key),
                       self.transactions_name(write_key=recipient_write_key)
                     ]
         log_pipe = self.client.pipeline(transaction=False)
@@ -1496,10 +1496,12 @@ class Rediz(RedizConventions):
 
     def _zmean_scenarios_percentile(self, percentile_scenarios, included_codes=None):
         """ Each submission has an implicit z-score. Average them. """
+        # On the fly discard legacy scenarios where num_predictions are too large
         if included_codes:
-            owners_prctls = dict([ (self._scenario_owner(s),self._scenario_percentile(s)) for s in percentile_scenarios if self.shash(self._scenario_owner(s)) in included_codes])
+            owners_prctls = dict([ (self._scenario_owner(s),self._scenario_percentile(s)) for s in percentile_scenarios if (self.shash(self._scenario_owner(s)) in included_codes) and self._scenario_percentile(s)<1 ])
         else:
-            owners_prctls = dict([ (self._scenario_owner(s),self._scenario_percentile(s)) for s in percentile_scenarios ])
+            owners_prctls = dict([ (self._scenario_owner(s),self._scenario_percentile(s)) for s in percentile_scenarios if self._scenario_percentile(s)<1 ])
+
         prctls = [ p for o,p in owners_prctls.items() ]
         mean_prctl = Rediz.zmean_percentile(prctls)
 
