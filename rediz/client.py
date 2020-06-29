@@ -681,8 +681,7 @@ class Rediz(RedizConventions):
                               "write_key": write_key, "amount":create_charge,"message":"charge for new stream creation","name":name}
         pipe.hincrbyfloat(name=self._BALANCES, key=write_key, amount=create_charge)
         if not fakeredis:
-            log_names = [self.transactions_name(),
-                         self.transactions_name(write_key=write_key),
+            log_names = [self.transactions_name(write_key=write_key),
                          self.transactions_name(write_key=write_key, name=name)]
             for ln in log_names:
                 pipe.xadd(name=ln, fields=transaction_record, maxlen=self.TRANSACTIONS_LIMIT)
@@ -1021,7 +1020,7 @@ class Rediz(RedizConventions):
         """ Debit and credit write_keys """
         transaction_record = {"settlement_time": str(datetime.datetime.now()), "type": "transfer", "source": source_write_key, "recipient": recipient_write_key}
         success = 0
-        if self.is_valid_key(recipient_write_key):
+        if self.is_valid_key(source_write_key) and self.key_difficulty(source_write_key)>=self.MIN_LEN-1:
             if self.is_valid_key(recipient_write_key):
                 recipient_balance = self.get_balance(write_key=recipient_write_key)
                 if recipient_balance < -1.0:
@@ -1044,9 +1043,9 @@ class Rediz(RedizConventions):
                 else:
                     transaction_record.update({"reason": "Cannot transfer to a key balance above -1.0"})
             else:
-                transaction_record.update({"reason": "Invalid source write_key"})
+                transaction_record.update({"reason": "Invalid recipient write_key"})
         else:
-            transaction_record.update({"reason":"Invalid source write_key"})
+            transaction_record.update({"reason":"Invalid source write_key, must be "+str(self.MIN_LEN-1)+" difficulty."})
 
         # Logging
         transaction_record.update({"success":success})
