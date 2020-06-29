@@ -579,6 +579,7 @@ class Rediz(RedizConventions):
 
         if ndxs:
             exists_pipe = self.client.pipeline(transaction=False)
+            fakeredis = self.client.connection is None
             for name in names:
                 exists_pipe.hexists(name=self._ownership_name(),key=name)
             exists = exists_pipe.execute()
@@ -590,7 +591,7 @@ class Rediz(RedizConventions):
                         rejected.append({"ndx":ndx,"name":name,"write_key":None,"errror":"invalid write_key"})
                     else:
                         ttl = self._cost_based_ttl(value=value, budget=budget)
-                        new_pipe, intent = self._new_page(new_pipe,ndx=ndx, name=name,value=value,write_key=write_key, budget=budget)
+                        new_pipe, intent = self._new_page(new_pipe,ndx=ndx, name=name,value=value,write_key=write_key, budget=budget, fakeredis=fakeredis)
                         executed.append(intent)
                 else:
                     ignored_ndxs.append(ndx)
@@ -659,13 +660,13 @@ class Rediz(RedizConventions):
 
         return executed
 
-    def _new_obscure_page( self, pipe, ndx, name, value, write_key, budget):
+    def _new_obscure_page( self, pipe, ndx, name, value, write_key, budget, fakeredis=False):
         """ Almost the same as a new page """
-        pipe, intent = self._new_page( pipe=pipe, ndx=ndx, name=name, value=value, write_key=write_key, budget=budget )
+        pipe, intent = self._new_page( pipe=pipe, ndx=ndx, name=name, value=value, write_key=write_key, budget=budget, fakeredis=fakeredis )
         intent.update({"obscure":True})
         return pipe, intent
 
-    def _new_page( self, pipe, ndx, name, value, write_key, budget ):
+    def _new_page( self, pipe, ndx, name, value, write_key, budget, fakeredis=False ):
         """ Create new page:
               pipe         :  Redis pipeline that will be modified
             Returns also:
@@ -674,6 +675,18 @@ class Rediz(RedizConventions):
         # Establish ownership
         pipe.hset(name=self._ownership_name(),key=name,value=write_key)
         pipe.sadd(self._NAMES, name)
+        # Charge for stream creation
+        create_charge = budget*self._CREATE_COST
+        transaction_record = {"settlement_time": str(datetime.datetime.now()), "type": "create",
+                              "write_key": write_key, "amount":create_charge,"message":"charge for new stream creation","name":name}
+        pipe.hincrbyfloat(name=self._BALANCES, key=write_key, amount=create_charge)
+        if not fakeredis:
+            log_names = [self.transactions_name(),
+                         self.transactions_name(write_key=write_key),
+                         self.transactions_name(write_key=write_key, name=name)]
+            for ln in log_names:
+                pipe.xadd(name=ln, fields=transaction_record, maxlen=self.TRANSACTIONS_LIMIT)
+                pipe.expire(name=ln, time=self._TRANSACTIONS_TTL)
         # Then modify
         pipe, intent = self._modify_page(pipe=pipe,ndx=ndx,name=name,value=value,budget=budget)
         intent.update({"new":True,"write_key":write_key,"value":value})
@@ -1373,10 +1386,10 @@ class Rediz(RedizConventions):
                             # from more than one contributor, hopefully leading to more accurate percentiles
                             percentile_scenarios = list()
                             for window_ndx in range(num_windows):
-                                if len(percentile_scenarios) < 2:
+                                if len(percentile_scenarios) < 10:
                                     _ndx = scenarios_lookup[name][delay_ndx][window_ndx]
                                     percentile_scenarios = retrieved[_ndx]
-                                    some_percentiles = True
+                                    some_percentiles = len(percentile_scenarios)>0
                             percentiles[name][delay_ndx] = self._zmean_scenarios_percentile(percentile_scenarios=percentile_scenarios)
 
         # ---- Rewards and leaderboard update pipeline
@@ -1432,7 +1445,7 @@ class Rediz(RedizConventions):
                                                   "stream": name,
                                                   "delay":delay,
                                                   "value":value,
-                                                  "submissions":pool,
+                                                  "submissions_count":pool,
                                                   "submissions_close":num_rewarded,
                                                   "stream_owner_code":write_code,
                                                   "recipient_code":recipient_code}
@@ -1456,26 +1469,28 @@ class Rediz(RedizConventions):
             z_names   = list()
             z_curves  = list()
             z_write_keys = list()
-            for delay_ndx, delay in enumerate(self.DELAYS):
+            for delay_ndx, delay in enumerate(self.ZDELAYS):
                 percentiles1 = [ percentiles[name][delay_ndx] for name in names ]
-                num_names = len(names)
-                selections = list(itertools.combinations(list(range(num_names)), 1))
-                if with_copulas and num_names<=10:
-                    selections2 = list(itertools.combinations(list(range(num_names)), 2))
-                    selections3 = list(itertools.combinations(list(range(num_names)), 3))
-                    selections = selections + selections2 + selections3
+                legit = not( all( [ abs(p1-0.5)<1e-5 for p1 in percentiles1 ] ))
+                if legit:
+                    num_names = len(names)
+                    selections = list(itertools.combinations(list(range(num_names)), 1))
+                    if with_copulas and num_names<=10:
+                        selections2 = list(itertools.combinations(list(range(num_names)), 2))
+                        selections3 = list(itertools.combinations(list(range(num_names)), 3))
+                        selections = selections + selections2 + selections3
 
-                for selection in selections:
-                    selected_names   = [ names[o] for o in selection ]
-                    dim              = len(selection)
-                    z_budget         = sum( [ budgets[o] for o in selection ] ) / (dim**3)   # FIXME: Why int?
-                    selected_prctls  = [ percentiles1[o] for o in selection ]
-                    zcurve_value     = self.to_zcurve(selected_prctls)
-                    zname            = self.zcurve_name(selected_names, delay)
-                    z_names.append(zname)
-                    z_budgets.append(z_budget)
-                    z_curves.append(zcurve_value)
-                    z_write_keys.append(first_write_key)
+                    for selection in selections:
+                        selected_names   = [ names[o] for o in selection ]
+                        dim              = len(selection)
+                        z_budget         = sum( [ budgets[o] for o in selection ] ) / (dim**3)   # FIXME: Why int?
+                        selected_prctls  = [ percentiles1[o] for o in selection ]
+                        zcurve_value     = self.to_zcurve(selected_prctls)
+                        zname            = self.zcurve_name(selected_names, delay)
+                        z_names.append(zname)
+                        z_budgets.append(z_budget)
+                        z_curves.append(zcurve_value)
+                        z_write_keys.append(first_write_key)
             if z_names:
                 self._mset_implementation(budgets=z_budgets, names=z_names, values=z_curves, write_keys=z_write_keys, with_percentiles=False, with_copulas=False)
         return percentiles

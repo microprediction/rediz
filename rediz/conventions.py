@@ -81,6 +81,7 @@ class RedizConventions(MicroConventions):
         self.MIN_BALANCE = int(self.min_balance)             # FIXME: Get rid of MIN_BALANCE and use min_balance instead
         self.NUM_PREDICTIONS = int(self.num_predictions)     # Number of scenerios in a prediction batch
         self.DELAYS = delays or [1, 5]
+        self.ZDELAYS = [self.DELAYS[0],self.DELAYS[-1]]
         self.CONFIRMS_MAX = 5  # Maximum number of confirmations when using mset()
         self.NOISE = 0.1 / self.NUM_PREDICTIONS  # Tie-breaking / smoothing noise added to predictions
 
@@ -110,6 +111,7 @@ class RedizConventions(MicroConventions):
         self._MAX_TTL = int( max_ttl or 96*60*60 ) # Maximum TTL, useful for testing
         self._TRANSACTIONS_TTL = int( transactions_ttl or 24 * (60 * 60) )  # How long to keep transactions stream for inactive write_keys
         self._LEADERBOARD_TTL  = int( 24 * (60 * 60)*60 )  # How long to keep transactions stream for inactive write_keys
+        self._CREATE_COST = 500
 
     @staticmethod
     def assert_not_in_reserved_namespace(names, *args):
