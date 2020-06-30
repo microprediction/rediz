@@ -5,7 +5,7 @@ import pprint
 if __name__ == '__main__':
     rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
 
-    NAMES = ['cop.json','three_body_x.json','bronx_traffic_speed_on_change.json','cop.json','z3~three_body_x~three_body_y~three_body_z~10810.json','z2~three_body_x~three_body_y~910.json']
+    NAMES = ['die.json']
 
     cdfs = dict()
     for name in NAMES:

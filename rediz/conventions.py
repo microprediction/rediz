@@ -29,33 +29,10 @@ class RedizConventions(MicroConventions):
         if windows is None:
             windows = [1e-4, 1e-3,  1e-2]
         self.SEP = SEP  # TODO: Redundent now
-        self.COPY_SEP = self.SEP + "copy" + self.SEP
+        self.COPY_SEP      = self.SEP + "copy" + self.SEP
+        self.CANCEL_SEP    = self.SEP + "cancel" + self.SEP
         self.PREDICTION_SEP = self.SEP + "prediction" + self.SEP
 
-        # User facing conventions: transparent use of prefixing
-        # TODO: These are moved to MicroConventions ... can delete this soon
-
-        #self.DELAYED = "delayed" + self.SEP
-        #self.CDF = 'cdf'+self.SEP
-        #self.LINKS = "links" + self.SEP
-        #self.BACKLINKS = "backlinks" + self.SEP
-        #self.MESSAGES = "messages" + self.SEP
-        #self.HISTORY = "history" + self.SEP
-        #self.LAGGED = "lagged"+self.SEP
-        #self.LAGGED_VALUES = "lagged_values" + self.SEP
-        #self.LAGGED_TIMES = "lagged_times" + self.SEP
-        #self.SUBSCRIBERS = "subscribers" + self.SEP
-        #self.SUBSCRIPTIONS = "subscriptions" + self.SEP
-        #self.TRANSACTIONS = "transactions" + self.SEP
-        #self.PREDICTIONS = "predictions"+ self.SEP
-        #self.SAMPLES = "samples" + self.SEP
-        #self.BALANCE = "balance" + self.SEP
-        #self.PERFORMANCE = "performance" + self.SEP
-        #self.LEADERBOARD = "leaderboard" + self.SEP
-        #self.CUSTOM_LEADERBOARD = 'custom_leaderboard' + self.SEP
-        #self.BUDGETS = "budget" + self.SEP
-        #self.VOLUMES = "volumes" + self.SEP
-        #self.SUMMARY = "summary" + self.SEP
 
         # Transparent but parametrized
         self.HISTORY_LEN = int(history_len or 1000)
@@ -92,6 +69,7 @@ class RedizConventions(MicroConventions):
         self._BLACKLIST = self._obscurity + "blacklist"  # List of discarded keys
         self._NAMES = self._obscurity + "names"  # Redundant set of all names (needed for random sampling when collecting garbage)
         self._PROMISES = self._obscurity + "promises" + self.SEP  # Prefixes queues of operations that are indexed by epoch second
+        self._CANCELLATIONS = self._obscurity + "cancellations" + self.SEP  # Prefixes queues of operations that are indexed by minute
         self._POINTER = self._obscurity + "pointer"  # A convention used in history stream
         self._BALANCES = self._obscurity + "balances"  # Hash of all balances attributed to write_keys
         self._PREDICTIONS = self._obscurity + self.PREDICTIONS  # Prefix to a listing of contemporaneous predictions by horizon. Must be private as this contains write_keys
@@ -104,6 +82,7 @@ class RedizConventions(MicroConventions):
         self._DISCOUNT = 0.9            # Transfers
 
         # Other implementation config
+        self._CANCEL_GRACE = 45
         self._DELAY_GRACE = int(delay_grace or 5)  # Seconds beyond the schedule time when promise data expires
         self._DEFAULT_MODEL_STD = 1.0  # Noise added for self-prediction
         self._WINDOWS = windows  # Sizes of neighbourhoods around truth used in countback ... don't make too big or it hits performance
@@ -343,6 +322,9 @@ class RedizConventions(MicroConventions):
     def _copy_promise(self, source, destination):
         return source + self.COPY_SEP + destination
 
+    def _cancellation_queue_name(self, epoch_seconds):
+        return self._CANCELLATIONS + str(int(epoch_seconds))
+
     def _promise_queue_name(self, epoch_seconds):
         return self._PROMISES + str(int(epoch_seconds))
 
@@ -375,6 +357,10 @@ class RedizConventions(MicroConventions):
     def _prediction_promise(self, target, delay, predictions_name):
         """ Format for a promise that sits in a promise queue waiting to be inserted into samples::1::name, for instance """
         return predictions_name + self.PREDICTION_SEP + self._samples_name(name=target, delay=delay)
+
+    def _cancellation_promise(self, name, delay, write_key):
+        """ Format for a promise to cancel all submitted predictions sits in a cancel queue """
+        return write_key + self.CANCEL_SEP + self.horizon_name(name=name, delay=delay)
 
     def _interpret_delay(self, delay_name):
         """ Extract root name and delay in seconds as int from  delayed::600:name """
