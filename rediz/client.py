@@ -1235,7 +1235,7 @@ class Rediz(RedizConventions):
                          execution_report.append({"operation": "sadd", "destination":self._OWNERS + destination, "value": unique_owners})
                      except DataError:
                          report[destination] = "Failed to insert predictions to " + destination
-         else:
+             else:
                  raise Exception("bug - missing case ")
 
          execut = move_pipe.execute()
