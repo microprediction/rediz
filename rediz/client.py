@@ -1078,15 +1078,17 @@ class Rediz(RedizConventions):
         return balance - level
 
     def admin_bankruptcy(self,with_report=False):
-        """ Remove scenarios from bankrupt owners """
+        """
+            Force cancellations when owners of predictions are bankrupt
+        """
         name = self.client.srandmember(self._NAMES)
         delay = random.choice(self.DELAYS)
         write_keys = self._get_sample_owners(name,delay)
         discards = list()
         for write_key in write_keys:
             if self.bankrupt(write_key=write_key):
-                self.delete_scenarios(name=name,write_key=write_key,delay=delay)
-                self._confirm(write_key=write_key,data={"operation":"bankruptcy","name":name})
+                self._confirm(write_key=write_key, data={"operation": "bankruptcy", "time":str(datetime.datetime.now()),"epoch_time":time.time(),"name": name, "code":self.shash(write_key)})
+                self.cancel(name=name,write_key=write_key,delay=delay)
                 discards.append((name,write_key))
         return len(discards) if not with_report else {"discards":discards}
 
@@ -1284,6 +1286,10 @@ class Rediz(RedizConventions):
                 pipe.sadd(cancel_queue, cancellation)  # (3::3)
                 pipe.expire(name=cancel_queue, time=delay_seconds + 10*self._DELAY_GRACE)
             exec = pipe.execute()
+            confirmation = {'operation': 'withdraw', 'time': str(datetime.datetime.now()), 'name': name,
+                            'delays': delays, 'code': self.shash(write_key), 'epoch_time': time.time()}
+            self._confirm(write_key=write_key,data=confirmation)
+
             return 1 if all(exec) else 0
         return 0
 
@@ -1300,7 +1306,7 @@ class Rediz(RedizConventions):
         if self.is_valid_key(write_key ) and all(d in self.DELAYS for d in delays):
             delete_pipe = self.client.pipeline(transaction=True)  # <-- Important that transaction=True lest submissions and owners get out of sync
             code = self.animal_from_key(write_key)
-            confirmation = {'type': 'cancel', 'time': str(datetime.datetime.now()), 'success': True,'name': name, 'delays': delays,'participant': code, 'epoch_time':time.time() }
+            confirmation = {'type': 'cancel', 'subtype':'completed','time': str(datetime.datetime.now()), 'success': True,'name': name, 'delays': delays,'participant': code, 'epoch_time':time.time() }
             for delay in delays:
                 collective_predictions_name = self._predictions_name(name, delay)
                 keys = [ self._format_scenario( write_key, k) for k in range(self.num_predictions) ]
