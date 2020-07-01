@@ -1128,7 +1128,7 @@ class Rediz(RedizConventions):
     def _cancellation_rounded_time(self, t):
         return int(round(t,-2))
 
-    def admin_cancellations(self):
+    def admin_cancellations(self, with_report=False):
         """
               Look at queues of requests to cancel predictions, and process them
         """
@@ -1141,13 +1141,14 @@ class Rediz(RedizConventions):
             exists_pipe.exists(candidate)
         exists = exists_pipe.execute()
 
-        # If they exist get the members
+        # Get them if they exist
         get_pipe = self.client.pipeline()
         cancellation_queue_name = [promise for promise, exist in zip(candidates, exists) if exists]
         for collection_name in cancellation_queue_name:
             get_pipe.smembers(collection_name)
         collections = get_pipe.execute()
         self.client.delete(*cancellation_queue_name)
+
 
         # Perform cancellations
         individual_cancellations = list(itertools.chain(*collections))
@@ -1156,6 +1157,8 @@ class Rediz(RedizConventions):
                 write_key, horizon = cancellation.split(self.CANCEL_SEP)
                 name, delay = self.split_horizon_name(horizon)
                 self._delete_scenarios_implementation(name=name, write_key=write_key, delay=delay )
+
+        return sum(individual_cancellations) if not with_report else {'cancellations':individual_cancellations}
 
 
     def admin_promises(self, with_report=False):
@@ -1279,15 +1282,23 @@ class Rediz(RedizConventions):
         assert name == self._root_name(name)
         utc_epoch_now = time.time()
         pipe = self.client.pipeline()
+        cancel_queues = list()
         if self.is_valid_key(write_key):
             for delay_seconds in delays:
                 cancel_queue = self._cancellation_queue_name(self._cancellation_rounded_time(utc_epoch_now + delay_seconds))
                 cancellation = self._cancellation_promise(name=name, delay=delay_seconds,write_key=write_key)
                 pipe.sadd(cancel_queue, cancellation)  # (3::3)
                 pipe.expire(name=cancel_queue, time=delay_seconds + 10*self._DELAY_GRACE)
+                cancel_queues.append(cancel_queue)
             exec = pipe.execute()
+            DEBUG=True
+            if DEBUG:
+                retrieved = self.client.smembers(cancel_queues[0])
+                pprint(cancel_queues)
+            expected_exec = [1,True]*len(delays)
+            success = all( [ e1==e2 for e1,e2 in zip(exec,expected_exec)] )
             confirmation = {'operation': 'withdraw', 'time': str(datetime.datetime.now()), 'name': name,
-                            'delays': delays, 'code': self.shash(write_key), 'epoch_time': time.time()}
+                            'delays': delays, 'success':success, 'code': self.shash(write_key), 'epoch_time': time.time()}
             self._confirm(write_key=write_key,data=confirmation)
 
             return 1 if all(exec) else 0
@@ -1295,7 +1306,7 @@ class Rediz(RedizConventions):
 
 
     def _delete_scenarios_implementation(self, name, write_key, delay=None, delays=None):
-        """
+        """ Second phase of cancellation
               This is instantaneous deletion ... it is called by the admin when promises to delete are found at the right time.
         """
         if delays is None and delay is None:
@@ -1306,7 +1317,7 @@ class Rediz(RedizConventions):
         if self.is_valid_key(write_key ) and all(d in self.DELAYS for d in delays):
             delete_pipe = self.client.pipeline(transaction=True)  # <-- Important that transaction=True lest submissions and owners get out of sync
             code = self.animal_from_key(write_key)
-            confirmation = {'type': 'cancel', 'subtype':'completed','time': str(datetime.datetime.now()), 'success': True,'name': name, 'delays': delays,'participant': code, 'epoch_time':time.time() }
+            confirmation = {'type': 'cancel', 'time': str(datetime.datetime.now()), 'success': True,'name': name, 'delays': delays,'participant': code, 'epoch_time':time.time(),'explanation':'delayed withdrawal is complete' }
             for delay in delays:
                 collective_predictions_name = self._predictions_name(name, delay)
                 keys = [ self._format_scenario( write_key, k) for k in range(self.num_predictions) ]
@@ -1315,15 +1326,10 @@ class Rediz(RedizConventions):
                 delete_pipe.zrem(samples_name, *keys)                         # 1000
                 owners_name = self._sample_owners_name(name=name,delay=delay)
                 delete_pipe.srem(owners_name,write_key)                       # 1
-            exec = delete_pipe.execute()
-            expected_exec = [ self.num_predictions, self.num_predictions, 1]
-            alt_expected_exec = [ 0, self.num_predictions, 1]
-            if not ( all( ex==exp_ex for ex,exp_ex in zip(exec,expected_exec)) or all( ex==exp_ex for ex,exp_ex in zip(exec,alt_expected_exec))):
-                self._error(write_key=write_key,data={'operation':'cancel','name':name,'write_key':write_key,'example_key':keys[0],'delays':delays,'success':False,'reason':'execution mismatch','exec':exec,'expected_exec':expected_exec})
-                return False
-            else:
-                self._confirm(write_key=write_key, data=confirmation)
-                return True
+            _execut = delete_pipe.execute()
+
+            self._confirm(write_key=write_key, data=confirmation )
+
 
     def _get_scenarios_implementation(self, name, write_key, delay, cursor=0):
         """ Charge for this! Not encouraged as it should not be necessary, and it is inefficient to get scenarios back from the collective zset """
