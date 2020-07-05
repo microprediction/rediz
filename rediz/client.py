@@ -1317,7 +1317,7 @@ class Rediz(RedizConventions):
         if self.is_valid_key(write_key ) and all(d in self.DELAYS for d in delays):
             delete_pipe = self.client.pipeline(transaction=True)  # <-- Important that transaction=True lest submissions and owners get out of sync
             code = self.animal_from_key(write_key)
-            confirmation = {'type': 'cancel', 'time': str(datetime.datetime.now()), 'success': True,'name': name, 'delays': delays,'participant': code, 'epoch_time':time.time(),'explanation':'delayed withdrawal is complete' }
+            confirmation = {'operation': 'cancel', 'time': str(datetime.datetime.now()), 'success': True,'name': name, 'delays': delays,'participant': code, 'epoch_time':time.time(),'explanation':'delayed withdrawal is complete' }
             for delay in delays:
                 collective_predictions_name = self._predictions_name(name, delay)
                 keys = [ self._format_scenario( write_key, k) for k in range(self.num_predictions) ]

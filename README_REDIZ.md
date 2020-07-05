@@ -3,6 +3,12 @@
   
 At www.microprediction.org client requests using the microprediction library are (mostly) handled by the rediz library. 
   
+### Microprediction.Org 
+
+Microprediction.org is powered by rediz. 
+
+![](https://i.imgur.com/yKItXmT.png)
+  
 ## Publishing live data
 
 Repeatedly publishing scalar data to the same name creates a stream. 

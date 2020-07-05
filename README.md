@@ -4,6 +4,10 @@
 
 Server code for open community microprediction at www.microprediction.org.  
 
+### Microprediction.Org 
+
+![](https://i.imgur.com/yKItXmT.png)
+
 ### Overview 
 
 The python packages called "microprediction" (user client library) and "rediz" (system implementation using redis as transport) are demonstrated at www.microprediction.org, where they 
