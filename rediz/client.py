@@ -680,7 +680,7 @@ class Rediz(RedizConventions):
         pipe.hset(name=self._ownership_name(),key=name,value=write_key)
         pipe.sadd(self._NAMES, name)
         # Charge for stream creation
-        create_charge = budget*self._CREATE_COST
+        create_charge = -budget*self._CREATE_COST
         transaction_record = {"settlement_time": str(datetime.datetime.now()), "type": "create",
                               "write_key": write_key, "amount":create_charge,"message":"charge for new stream creation","name":name}
         pipe.hincrbyfloat(name=self._BALANCES, key=write_key, amount=create_charge)
