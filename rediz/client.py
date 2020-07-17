@@ -1457,8 +1457,8 @@ class Rediz(RedizConventions):
                 retrieve_pipe.smembers(self._sample_owners_name(name=name, delay=delay))    # List of owners
                 for window_ndx, window in enumerate(self._WINDOWS):
                     scenarios_lookup[name][delay_ndx][window_ndx] = len(retrieve_pipe)
-                    retrieve_pipe.zrangebyscore(name=samples_name, min=value - window, max=value + window, withscores=False, start=0, num=25)
-                    # FIXME: This introduces bias toward selecting the bottom of the bucket ... do we want to make two calls instead?
+                    retrieve_pipe.zrangebyscore(name=samples_name,    min=value,    max=value + 0.5*window, withscores=False, start=0, num=25)
+                    retrieve_pipe.zrevrangebyscore(name=samples_name, max=value, min=value - 0.5*window, withscores=False, start=0, num=25)
         retrieved = retrieve_pipe.execute()
 
         #---- Compute percentiles by zooming out until we have enough points ---
@@ -1478,7 +1478,9 @@ class Rediz(RedizConventions):
                             for window_ndx in range(num_windows):
                                 if len(percentile_scenarios) < 10:
                                     _ndx = scenarios_lookup[name][delay_ndx][window_ndx]
-                                    percentile_scenarios = retrieved[_ndx]
+                                    percentile_scenarios_up = retrieved[_ndx]
+                                    percentile_scenarios_dn = retrieved[_ndx+1]
+                                    percentile_scenarios = percentile_scenarios_dn + percentile_scenarios_up
                                     some_percentiles = len(percentile_scenarios)>0
                             percentiles[name][delay_ndx] = self._zmean_scenarios_percentile(percentile_scenarios=percentile_scenarios)
 
@@ -1611,12 +1613,13 @@ class Rediz(RedizConventions):
         if len(rewarded_scenarios) == 0:
             carryover = Counter({self._RESERVE: 1.0 * pool / self.num_predictions})
             game_payments.update(carryover)
+
         else:
             winners = [self._scenario_owner(ticket) for ticket in rewarded_scenarios]
             reward = (1.0 * pool / self.num_predictions) / len(winners)  # Could augment this to use kernel or whatever
             payouts = Counter(dict([(w, reward * c) for w, c in Counter(winners).items()]))
-
             game_payments.update(payouts)
+
         if abs(sum(game_payments.values())) > 0.1:
             # This can occur if owners gets out of sync with the scenario hash ... which it should not
             # FIXME: Fail gracefully and raise system alert and/or garbage cleanup of owner::samples::delay::name versus samples::delay::name
