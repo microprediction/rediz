@@ -29,7 +29,7 @@ if __name__ == '__main__':
 
     if False:
         # if not working, trace into actual deletion ... but it looks like it is working.
-        rdz._delete_scenarios_implementation(name='bart_delays.json', write_key=FlATHAT_STOAT, delay=delay)
+        rdz._delete_scenarios_implementation(name='bart_delays.json', write_key=FLATHAT_STOAT, delay=delay)
         # It could be that the promise isn't/wasn't processed correctly, however, so _delete_scenarios never got called (though then there should be no cancellation confirm either)
 
     # Tentative conclusion: rdz._cancel_implementation  (which should probably be renamed withdraw) is working fine but maybe not called properly from flask
