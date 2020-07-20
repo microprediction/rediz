@@ -1328,6 +1328,8 @@ class Rediz(RedizConventions):
                 delete_pipe.srem(owners_name,write_key)                       # 1
             _execut = delete_pipe.execute()
 
+            confirmation.update({'execute':_execut})
+
             self._confirm(write_key=write_key, data=confirmation )
 
 
