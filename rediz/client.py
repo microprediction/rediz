@@ -162,6 +162,27 @@ class Rediz(RedizConventions):
     def get_budget(self, name):
         return self.client.hget(name=self.BUDGETS, key=name)
 
+    def get_repository(self, write_key):
+        """ Accepts write_key or code """
+        return self.client.hget(name=self._REPOS, key=self.shash(write_key)) if self.is_valid_key(write_key) else self.client.hget(name=self._REPOS, key=write_key)
+
+    def set_repository(self, write_key, url):
+        if self.is_valid_key(write_key):
+            code = self.shash(write_key)
+            return self.client.hset(name=self._REPOS, key=code, value=url)
+        else:
+            self._error(write_key=write_key,data={'operation':'set_repo','write_key':write_key,'url':url,'message':'write key not valid'})
+            return 0
+
+    def delete_repository(self, write_key):
+        if self.is_valid_key(write_key):
+            code = self.shash(write_key)
+            return self.client.hdel(self._REPOS, code)
+        else:
+            self._error(write_key=write_key, data={'operation': 'delete_repo', 'write_key': write_key,'message': 'write key not valid'})
+            return 0
+
+
     def get_budgets(self):
         return self._nice_and_ordered( self.client.hgetall(name=self.BUDGETS) )
 
@@ -269,7 +290,8 @@ class Rediz(RedizConventions):
         try:
             return Rediz.key_difficulty(write_key)
         except:
-            return 0 
+            return 0
+
 
     def set( self, name, value, write_key, budget=10 ):
         """ Set name=value and initiate clearing, derived zscore market etc """

@@ -80,6 +80,7 @@ class RedizConventions(MicroConventions):
         self._DONATION_PASSWORD = MicroConventions.shash(self._obscurity)  # Write key donation password
         self._DONORS = "donors"
         self._DISCOUNT = 0.9            # Transfers
+        self._REPOS = self._obscurity + "repos"
 
         # Other implementation config
         self._CANCEL_GRACE = 45
