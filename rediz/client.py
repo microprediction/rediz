@@ -348,11 +348,14 @@ class Rediz(RedizConventions):
         assert int(delay) in self.DELAYS,"Invalid choice of delay"
         assert self.is_valid_key(write_key),"Invalid write_key"
         if self.bankrupt(write_key=write_key):
-            self._error(write_key=write_key,data={'operation':'submit','success':False,'reason':'bankruptcy','name':name})
-            return False
-        else:
-            fvalues = list(map(float,values))
-            return self._set_scenarios_implementation(name=name, values=fvalues, delay=delay, write_key=write_key)
+            leaderboard = self._get_leaderboard_implementation(name=name, delay=delay, readable=False, count=10000)
+            code = self.shash(key=write_key)
+            if (code not in leaderboard) or (leaderboard[code]<-1.0):
+                self._error(write_key=write_key,data={'operation':'submit','success':False,'reason':'bankruptcy','name':name})
+                return False
+
+        fvalues = list(map(float,values))
+        return self._set_scenarios_implementation(name=name, values=fvalues, delay=delay, write_key=write_key)
 
     def delete_all_scenarios(self, write_key):
         active = self.get_active(write_key=write_key)
