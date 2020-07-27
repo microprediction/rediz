@@ -1104,14 +1104,17 @@ class Rediz(RedizConventions):
             Force cancellations when owners of predictions are bankrupt
         """
         name = self.client.srandmember(self._NAMES)
-        delay = random.choice(self.DELAYS)
-        write_keys = self._get_sample_owners(name,delay)
         discards = list()
-        for write_key in write_keys:
-            if self.bankrupt(write_key=write_key):
-                self._confirm(write_key=write_key, data={"operation": "bankruptcy", "time":str(datetime.datetime.now()),"epoch_time":time.time(),"name": name, "code":self.shash(write_key)})
-                self.cancel(name=name,write_key=write_key,delay=delay)
-                discards.append((name,write_key))
+        for delay in self.DELAYS:
+            write_keys  = self._get_sample_owners(name,delay)
+            leaderboard = self._get_leaderboard_implementation(name=name, delay=delay, readable=False, count=10000)
+            losers = [ key for key in write_keys if (self.shash(key) in leaderboard) and (leaderboard[self.shash(key)]<-1.0) ]
+
+            for write_key in losers:
+                if self.bankrupt(write_key=write_key):
+                    self._confirm(write_key=write_key, data={"operation": "bankruptcy", "time":str(datetime.datetime.now()),"epoch_time":time.time(),"name": name, "code":self.shash(write_key)})
+                    self.cancel(name=name,write_key=write_key,delay=delay)
+                    discards.append((name,write_key))
         return len(discards) if not with_report else {"discards":discards}
 
     def admin_garbage_collection(self, fraction=0.1, with_report=False ):

@@ -1,17 +1,17 @@
 
 from rediz.client import Rediz
-from rediz.rediz_test_config import REDIZ_TEST_CONFIG
+from rediz.collider_config_private import REDIZ_COLLIDER_CONFIG, EXACTABLE_FOX, DOODLE_MAMMAL
 
-EXACTABLE_FOX = REDIZ_TEST_CONFIG['EXACTABLE_FOX']
+URLS = {EXACTABLE_FOX:'https://github.com/microprediction/echochamber',
+        DOODLE_MAMMAL:'https://gist.github.com/microprediction/7b1bcaae0eb012c5a51f0c2ce9c81246'}
 
-def test_repo():
-    URL = 'https://github.com/microprediction/echochamber'
-    rdz = Rediz(**REDIZ_TEST_CONFIG)
-    write_key = EXACTABLE_FOX
-    rdz.set_repo(write_key=write_key, url=URL)
-    url_back_1 = rdz.get_repo(rdz.shash(write_key))
-    url_back_2 = rdz.get_repo(write_key)
-    assert url_back_1==URL
-    assert url_back_2==URL
-    rdz.delete_repo(write_key=write_key)
+if __name__=="__main__":
+    for write_key, url in URLS.items():
+        rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
+        rdz.set_repository(write_key=write_key, url=url)
+        url_back_1 = rdz.get_repository(rdz.shash(write_key))
+        url_back_2 = rdz.get_repository(write_key)
+        assert url_back_1==url
+        assert url_back_2==url
+        print(url_back_2)
 
