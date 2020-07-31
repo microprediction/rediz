@@ -1,4 +1,5 @@
 rediz/collider_config_private.py
+rediz/rediz_test_config_private.py
 unbump.sh
 tmp_*.json
 *x.py
