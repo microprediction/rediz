@@ -22,12 +22,13 @@ setup(
     ],
     packages=["rediz"],
     test_suite='pytest',
-    tests_require=['pytest','microconventions','fakeredis'],
+    tests_require=['pytest', 'microconventions', 'fakeredis'],
     include_package_data=True,
-    install_requires=["microconventions>=0.0.7","fakeredis","getjson","redis","sortedcontainers","numpy","pymorton","scipy","pathlib"],
+    install_requires=["microconventions>=0.0.7", "fakeredis", "getjson", "redis", "sortedcontainers", "numpy",
+                      "pymorton", "scipy", "pathlib"],
     entry_points={
         "console_scripts": [
             "rediz=rediz.__main__:main",
         ]
-     },
-     )
+    },
+)
