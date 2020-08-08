@@ -12,6 +12,8 @@ except:
 test_config_url = os.getenv('TEST_CONFIG_URL')
 test_config_failover_url = os.getenv('TEST_CONFIG_FAILOVER_URL')
 REDIZ_TEST_CONFIG = getjson(url=test_config_url,failover_url=test_config_failover_url)
+if REDIZ_TEST_CONFIG is None:
+    raise Exception('Could not get configuration')
 
 if platform=='darwin':
     REDIZ_TEST_CONFIG['DUMP']=True
