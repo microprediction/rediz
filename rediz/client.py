@@ -220,8 +220,8 @@ class Rediz(RedizConventions):
     #        Leaderboards
     # ---------------------------
 
-    def get_leaderboard(self, name=None, delay=None, count=1200):
-        return self._get_leaderboard_implementation(name=name, delay=delay, count=count)
+    def get_leaderboard(self, name=None, delay=None, count=1200, with_repos=False):
+        return self._get_leaderboard_implementation(name=name, delay=delay, count=count, with_repos=with_repos)
 
     def get_previous_monthly_overall_leaderboard(self):
         last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
@@ -1952,15 +1952,25 @@ class Rediz(RedizConventions):
             pipe.sismember(self._sample_owners_name(name=name, delay=delay), write_key)
         return pipe.execute()
 
-    def _get_leaderboard_implementation(self, name, delay, count, readable=True):
+    def _get_leaderboard_implementation_with_repos(self, leaderboard, readable):
+        hash_to_url_dict = self.client.hgetall(name=self._REPOS)
+        return OrderedDict(
+            [(self.animal_from_code(code), (score, hash_to_url_dict.get(code, None))) for code, score in leaderboard]
+            ) if readable else dict([(code, (score, hash_to_url_dict.get(code, None))) for code, score in leaderboard])
+
+    def _get_leaderboard_implementation(self, name, delay, count, readable=True, with_repos=False):
         pname = self.leaderboard_name(name=name, delay=delay)
         leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
+        if with_repos:
+            return self._get_leaderboard_implementation_with_repos(leaderboard, readable)
         return OrderedDict([(self.animal_from_code(code), score) for code, score in leaderboard]) if readable else dict(
             leaderboard)
 
-    def _get_custom_leaderboard_implementation(self, sponsor_code, dt, count, readable=True, name=None):
+    def _get_custom_leaderboard_implementation(self, sponsor_code, dt, count, readable=True, name=None, with_repos=False):
         pname = self.custom_leaderboard_name(sponsor=sponsor_code, dt=dt, name=name)
         leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
+        if with_repos:
+            return self._get_leaderboard_implementation_with_repos(leaderboard, readable)
         return OrderedDict([(self.animal_from_code(code), score) for code, score in leaderboard]) if readable else dict(
             leaderboard)
 
