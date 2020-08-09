@@ -223,12 +223,12 @@ class Rediz(RedizConventions):
     def get_leaderboard(self, name=None, delay=None, count=1200, with_repos=False):
         return self._get_leaderboard_implementation(name=name, delay=delay, count=count, with_repos=with_repos)
 
-    def get_previous_monthly_overall_leaderboard(self):
+    def get_previous_monthly_overall_leaderboard(self, with_repos=False):
         last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
-        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=last_month_day, count=200)
+        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=last_month_day, count=200, with_repos=with_repos)
 
-    def get_monthly_overall_leaderboard(self):
-        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=datetime.datetime.now(), count=200)
+    def get_monthly_overall_leaderboard(self, with_repos=False):
+        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=datetime.datetime.now(), count=200, with_repos=with_repos)
 
     # By sponsor ...
     # Allow user to pass either a write_key or a write_code (recall code = shash(key) )
@@ -239,37 +239,37 @@ class Rediz(RedizConventions):
         elif self.animal_from_code(sponsor):
             return sponsor
 
-    def get_regular_monthly_sponsored_leaderboard(self, sponsor):
+    def get_regular_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         """ Excludes z's """
         code = self.code_from_code_or_key(sponsor)
         if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='mystream')
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='mystream', with_repos=with_repos)
 
-    def get_zscore_monthly_sponsored_leaderboard(self, sponsor):
+    def get_zscore_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z1~')
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z1~', with_repos=with_repos)
 
-    def get_bivariate_monthly_sponsored_leaderboard(self, sponsor):
+    def get_bivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z2~')
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z2~', with_repos=with_repos)
 
-    def get_trivariate_monthly_sponsored_leaderboard(self, sponsor):
+    def get_trivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z3~')
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z3~', with_repos=with_repos)
 
-    def get_monthly_sponsored_leaderboard(self, sponsor):
+    def get_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=datetime.datetime.now(), count=200)
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=datetime.datetime.now(), count=200, with_repos=with_repos)
 
-    def get_previous_monthly_sponsored_leaderboard(self, sponsor):
+    def get_previous_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
             last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=last_month_day, count=200)
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=last_month_day, count=200, with_repos=with_repos)
 
     def get_messages(self, name, write_key):
         if self._authorize(name=name, write_key=write_key):

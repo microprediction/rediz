@@ -9,6 +9,6 @@ if __name__ == '__main__':
 
     leaderboards = dict()
     for name in NAMES:
-        leaderboards[name] = rdz.get_leaderboard(name=name,delay=rdz.DELAYS[1],count=10)
+        leaderboards[name] = rdz.get_leaderboard(name=name,delay=rdz.DELAYS[1],count=10,with_repos=True)
 
     pprint.pprint(leaderboards)
