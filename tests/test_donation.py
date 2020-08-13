@@ -16,7 +16,7 @@ def test_donate():
     donors = rdz.get_donors()
     assert len(list(donors.keys()))>1
 
-def test_donate_remote():
+def dont_test_donate_remote():
     rdz = Rediz(**REDIZ_TEST_CONFIG)
     DONATION_PASSWORD = rdz.get_donation_password()
     ob = rdz._obscurity

@@ -1,6 +1,7 @@
 import os
 from sys import  platform
 from getjson import getjson
+from rediz.conventions import MICRO_CONVENTIONS_ARGS
 
 # Load a couple of environment variables for local testing.
 # These are secrets on github.
@@ -17,3 +18,8 @@ if REDIZ_TEST_CONFIG is None:
 
 if platform=='darwin':
     REDIZ_TEST_CONFIG['DUMP']=True
+
+REDIZ_FAKE_CONFIG = REDIZ_TEST_CONFIG['FAKE']
+for arg in MICRO_CONVENTIONS_ARGS:
+    if arg not in REDIZ_FAKE_CONFIG:
+        raise Exception('Need to update REDIZ_FAKE_CONFIG to include '+arg)

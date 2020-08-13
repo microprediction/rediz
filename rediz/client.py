@@ -4,7 +4,7 @@ from collections import Counter, OrderedDict
 from typing import List, Union, Any, Optional
 from redis.client import list_or_args
 from redis.exceptions import DataError
-from .conventions import RedizConventions, REDIZ_CONVENTIONS_ARGS, KeyList, NameList, ValueList
+from .conventions import RedizConventions, REDIZ_CONVENTIONS_ARGS, MICRO_CONVENTIONS_ARGS, KeyList, NameList, ValueList
 from rediz.utilities import get_json_safe, has_nan, shorten, stem
 from pprint import pprint
 
@@ -14,10 +14,10 @@ from pprint import pprint
 # and delay mechanisms. Intended for collectivized short term (e.g. 1 minute or 15 minutes) prediction.
 
 PY_REDIS_ARGS = (
-'host', 'port', 'db', 'username', 'password', 'socket_timeout', 'socket_keepalive', 'socket_keepalive_options',
-'connection_pool', 'unix_socket_path', 'encoding', 'encoding_errors', 'charset', 'errors',
-'decode_responses', 'retry_on_timeout', 'ssl', 'ssl_keyfile', 'ssl_certfile', 'ssl_cert_reqs', 'ssl_ca_certs',
-'ssl_check_hostname', 'max_connections', 'single_connection_client', 'health_check_interval', 'client_name')
+    'host', 'port', 'db', 'username', 'password', 'socket_timeout', 'socket_keepalive', 'socket_keepalive_options',
+    'connection_pool', 'unix_socket_path', 'encoding', 'encoding_errors', 'charset', 'errors',
+    'decode_responses', 'retry_on_timeout', 'ssl', 'ssl_keyfile', 'ssl_certfile', 'ssl_cert_reqs', 'ssl_ca_certs',
+    'ssl_check_hostname', 'max_connections', 'single_connection_client', 'health_check_interval', 'client_name')
 FAKE_REDIS_ARGS = ('decode_responses',)
 
 
@@ -27,7 +27,11 @@ class Rediz(RedizConventions):
 
     def __init__(self, **kwargs):
         # Set some system parameters
-        conventions_kwargs = dict([(k, v) for k, v in kwargs.items() if k in REDIZ_CONVENTIONS_ARGS])
+        conventions_kwargs = dict([(k, v) for k, v in kwargs.items() if k in REDIZ_CONVENTIONS_ARGS or k in MICRO_CONVENTIONS_ARGS])
+        for arg in MICRO_CONVENTIONS_ARGS:
+            if not arg in conventions_kwargs:
+                raise Exception('Must supply '+arg)
+
         super().__init__(**conventions_kwargs)
         # Initialize Rediz instance. Expects host, password, port   ... or default to fakeredis
         for k in conventions_kwargs.keys():
@@ -92,7 +96,7 @@ class Rediz(RedizConventions):
     def get_predictions(self, name, delay=None, delays=None):
         return self._get_predictions_implementation(name=name, delay=delay, delays=delays)
 
-    def get_cdf(self, name, delay, values, top=10, min_balance=-5000):
+    def get_cdf(self, name, delay, values, top=10, min_balance=-50000000):
         """
         :param values:   Abscissa for CDF
         :param top:      Number of top participants to use
@@ -225,10 +229,12 @@ class Rediz(RedizConventions):
 
     def get_previous_monthly_overall_leaderboard(self, with_repos=False):
         last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
-        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=last_month_day, count=200, with_repos=with_repos)
+        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=last_month_day, count=200,
+                                                           with_repos=with_repos)
 
     def get_monthly_overall_leaderboard(self, with_repos=False):
-        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=datetime.datetime.now(), count=200, with_repos=with_repos)
+        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=datetime.datetime.now(), count=200,
+                                                           with_repos=with_repos)
 
     # By sponsor ...
     # Allow user to pass either a write_key or a write_code (recall code = shash(key) )
@@ -243,33 +249,39 @@ class Rediz(RedizConventions):
         """ Excludes z's """
         code = self.code_from_code_or_key(sponsor)
         if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='mystream', with_repos=with_repos)
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='mystream',
+                                                               with_repos=with_repos)
 
     def get_zscore_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z1~', with_repos=with_repos)
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z1~',
+                                                               with_repos=with_repos)
 
     def get_bivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z2~', with_repos=with_repos)
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z2~',
+                                                               with_repos=with_repos)
 
     def get_trivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z3~', with_repos=with_repos)
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z3~',
+                                                               with_repos=with_repos)
 
     def get_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=datetime.datetime.now(), count=200, with_repos=with_repos)
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=datetime.datetime.now(), count=200,
+                                                               with_repos=with_repos)
 
     def get_previous_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
             last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=last_month_day, count=200, with_repos=with_repos)
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=last_month_day, count=200,
+                                                               with_repos=with_repos)
 
     def get_messages(self, name, write_key):
         if self._authorize(name=name, write_key=write_key):
@@ -1427,19 +1439,19 @@ class Rediz(RedizConventions):
         lb = self._get_leaderboard_implementation(name=name, delay=delay, readable=False, count=top)
         included = [write_key for write_key, balance in lb.items() if balance > min_balance]
         if num:
-            h = max(100.0 / num, 0.00001) * max([abs(v) for v in values] + [1.0])
+            h = min(0.1, max(5.0 / num, 0.00001)) * max([abs(v) for v in values] + [1.0])
             for value in values:
                 score_pipe.zrevrangebyscore(name=self._predictions_name(name=name, delay=delay), max=value,
                                             min=value - h, start=0, num=5, withscores=False)
                 score_pipe.zrangebyscore(name=self._predictions_name(name=name, delay=delay), min=value,
-                                           max=value + h, start=0, num=5, withscores=False)
+                                         max=value + h, start=0, num=5, withscores=False)
 
             execut = score_pipe.execute()
-            execut_combined = RedizConventions.chunker(execut,n=len(values))
-            execut_merged = [ lst[0]+lst[1] for lst in execut_combined ]
+            execut_combined = RedizConventions.chunker(execut, n=len(values))
+            execut_merged = [lst[0] + lst[1] for lst in execut_combined]
             prtcls = [
                 self._zmean_scenarios_percentile(percentile_scenarios=ex, included_codes=included) if ex else np.NaN for
-                ex in execut_merged ]
+                ex in execut_merged]
             valid = [(v, p) for v, p in zip(values, prtcls) if not np.isnan(p) and abs(p - 0.5) > 1e-6]
 
             # Make CDF monotone using avg of min and max envelopes running from each direction
@@ -1519,7 +1531,7 @@ class Rediz(RedizConventions):
             if success:
                 self._confirm(**confirmation)
             if not (success) or warn:
-                confirmation.update({'antipated_execut':anticipated_execut, 'actual_execut':execut})
+                confirmation.update({'antipated_execut': anticipated_execut, 'actual_execut': execut})
                 self._error(**confirmation)
 
             return confirmation if verbose else success
@@ -1956,7 +1968,7 @@ class Rediz(RedizConventions):
         hash_to_url_dict = self.client.hgetall(name=self._REPOS)
         return OrderedDict(
             [(self.animal_from_code(code), (score, hash_to_url_dict.get(code, None))) for code, score in leaderboard]
-            ) if readable else dict([(code, (score, hash_to_url_dict.get(code, None))) for code, score in leaderboard])
+        ) if readable else dict([(code, (score, hash_to_url_dict.get(code, None))) for code, score in leaderboard])
 
     def _get_leaderboard_implementation(self, name, delay, count, readable=True, with_repos=False):
         pname = self.leaderboard_name(name=name, delay=delay)
@@ -1966,7 +1978,8 @@ class Rediz(RedizConventions):
         return OrderedDict([(self.animal_from_code(code), score) for code, score in leaderboard]) if readable else dict(
             leaderboard)
 
-    def _get_custom_leaderboard_implementation(self, sponsor_code, dt, count, readable=True, name=None, with_repos=False):
+    def _get_custom_leaderboard_implementation(self, sponsor_code, dt, count, readable=True, name=None,
+                                               with_repos=False):
         pname = self.custom_leaderboard_name(sponsor=sponsor_code, dt=dt, name=name)
         leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
         if with_repos:

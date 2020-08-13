@@ -15,7 +15,10 @@ DelayList = List[Optional[int]]
 
 SEP = "::"
 
-REDIZ_CONVENTIONS_ARGS = ('history_len', 'delays','lagged_len', 'max_ttl', 'error_ttl', 'transactions_ttl','error_limit', 'num_predictions','windows','obscurity','delay_grace','instant_recall')
+#TODO: move to microconventions
+REDIZ_CONVENTIONS_ARGS = ('history_len', 'delays','lagged_len', 'max_ttl', 'error_ttl',
+                          'transactions_ttl','error_limit', 'windows','obscurity',
+                          'delay_grace','instant_recall')
 MICRO_CONVENTIONS_ARGS = ('num_predictions','min_len','min_balance','delays')
 
 class RedizConventions(MicroConventions):
@@ -24,7 +27,7 @@ class RedizConventions(MicroConventions):
                   error_limit=None, num_predictions=None, windows=None,
                   obscurity=None, delay_grace=None, instant_recall=None, min_len=None, min_balance=None ):
 
-        super().__init__(min_len=min_len,min_balance=min_balance,num_predictions=num_predictions)
+        super().__init__(min_len=min_len,min_balance=min_balance,num_predictions=num_predictions,delays=delays)
 
         if windows is None:
             windows = [1e-4, 1e-3,  1e-2]
