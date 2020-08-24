@@ -27,10 +27,11 @@ class Rediz(RedizConventions):
 
     def __init__(self, **kwargs):
         # Set some system parameters
-        conventions_kwargs = dict([(k, v) for k, v in kwargs.items() if k in REDIZ_CONVENTIONS_ARGS or k in MICRO_CONVENTIONS_ARGS])
+        conventions_kwargs = dict(
+            [(k, v) for k, v in kwargs.items() if k in REDIZ_CONVENTIONS_ARGS or k in MICRO_CONVENTIONS_ARGS])
         for arg in MICRO_CONVENTIONS_ARGS:
             if not arg in conventions_kwargs:
-                raise Exception('Must supply '+arg)
+                raise Exception('Must supply ' + arg)
 
         super().__init__(**conventions_kwargs)
         # Initialize Rediz instance. Expects host, password, port   ... or default to fakeredis
@@ -1088,8 +1089,8 @@ class Rediz(RedizConventions):
 
     def _transfer_implementation(self, source_write_key, recipient_write_key, amount, as_record=False):
         """ Debit and credit write_keys """
-        transaction_record = {"settlement_time": str(datetime.datetime.now()), "type": "transfer",
-                              "source": self.shash(source_write_key), "recipient": self.shash(recipient_write_key)}
+        transfer_confirm = {"time": str(datetime.datetime.now()), "operation": "transfer", "epoch_time": time.time(),
+                            "source": self.shash(source_write_key), "recipient": self.shash(recipient_write_key)}
         success = 0
         if self.is_valid_key(source_write_key) and self.key_difficulty(source_write_key) >= self.MIN_LEN - 1:
             if self.is_valid_key(recipient_write_key):
@@ -1100,9 +1101,9 @@ class Rediz(RedizConventions):
                     maximum_to_give = max(0, source_distance)
                     if amount is None:
                         amount = maximum_to_give
-                    given = min(maximum_to_give, maximum_to_receive, amount)
+                    given = min([maximum_to_give, maximum_to_receive, amount])
                     received = given * self._DISCOUNT
-                    transaction_record.update(
+                    transfer_confirm.update(
                         {'max_to_give': maximum_to_give, 'max_to_receive': maximum_to_receive, 'given': given,
                          'received': received})
                     if given > 0.1:
@@ -1112,27 +1113,21 @@ class Rediz(RedizConventions):
                         execut = pipe.execute()
                         success = 1
                     else:
-                        transaction_record.update(
+                        transfer_confirm.update(
                             {'reason': 'Not in a position to give, or not in a position to receive'})
                 else:
-                    transaction_record.update({"reason": "Cannot transfer to a key balance above -1.0"})
+                    transfer_confirm.update({"reason": "Cannot transfer to a key balance above -1.0"})
             else:
-                transaction_record.update({"reason": "Invalid recipient write_key"})
+                transfer_confirm.update({"reason": "Invalid recipient write_key"})
         else:
-            transaction_record.update(
+            transfer_confirm.update(
                 {"reason": "Invalid source write_key, must be " + str(self.MIN_LEN - 1) + " difficulty."})
 
-        # Logging
-        transaction_record.update({"success": success})
-        log_names = [self.transactions_name(write_key=source_write_key),
-                     self.transactions_name(write_key=recipient_write_key)
-                     ]
-        log_pipe = self.client.pipeline(transaction=False)
-        for ln in log_names:
-            log_pipe.xadd(name=ln, fields=transaction_record, maxlen=self.TRANSACTIONS_LIMIT)
-            log_pipe.expire(name=ln, time=60 * 60 * 24)  # Don't expire for 24 hours after any transfer
-        log_pipe.execute()
-        return success if not as_record else transaction_record
+        # Logging confirms
+        transfer_confirm.update({"success": success})
+        self._confirm(write_key=source_write_key, data=transfer_confirm)
+        self._confirm(write_key=recipient_write_key, data=transfer_confirm)
+        return success if not as_record else transfer_confirm
 
     def bankruptcy(self, write_key_len):
         if write_key_len <= 8:
@@ -1693,7 +1688,7 @@ class Rediz(RedizConventions):
                     for selection in selections:
                         selected_names = [names[o] for o in selection]
                         dim = len(selection)
-                        z_budget = sum([budgets[o] for o in selection]) / (dim ** 3)  # FIXME: Why int?
+                        z_budget = sum([budgets[o] for o in selection]) / (10*dim)  # FIXME: Why int?
                         selected_prctls = [percentiles1[o] for o in selection]
                         zcurve_value = self.to_zcurve(selected_prctls)
                         zname = self.zcurve_name(selected_names, delay)
@@ -1934,7 +1929,9 @@ class Rediz(RedizConventions):
 
     def _get_transactions_implementation(self, min, max, count, write_key=None, name=None, delay=None):
         trnsctns = self.transactions_name(write_key=write_key, name=name, delay=delay)
-        return self.client.xrevrange(name=trnsctns, min=min, max=max, count=count)
+        data = self.client.xrevrange(name=trnsctns, min=min, max=max, count=count)
+        # TODO: Return as numbers??
+        return data
 
     def get_names(self):
         return list(self.client.smembers(self._NAMES))
