@@ -1480,7 +1480,17 @@ class Rediz(RedizConventions):
             noise = np.random.randn(self.num_predictions).tolist()
             jiggered_values = [v + n * self.NOISE for v, n in zip(values, noise)]
             jiggered_values.sort()
-            assert len(set(jiggered_values)) == len(jiggered_values), "coincidence??"
+            if  len(set(jiggered_values)) != len(jiggered_values):
+                print('----- submission error ----- ')
+                num_unique = len(set(values))
+                num_jiggled_unique = len(set(values))
+                print('Values...')
+                pprint(values)
+                print('Jigged values ...')
+                pprint(jiggered_values)
+                error_message = "Cannot accept submission as there are "+str(num_unique)+" unique values ("+str(num_jiggled_unique)+" unique after noise added)"
+                print(error_message,flush=True)
+                raise Exception(error_message)
             predictions = dict(
                 [(self._format_scenario(write_key=write_key, k=k), v) for k, v in enumerate(jiggered_values)])
 
