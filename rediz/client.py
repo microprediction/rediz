@@ -1484,10 +1484,11 @@ class Rediz(RedizConventions):
                 print('----- submission error ----- ')
                 num_unique = len(set(values))
                 num_jiggled_unique = len(set(values))
-                print('Values...')
-                pprint(values)
-                print('Jigged values ...')
-                pprint(jiggered_values)
+                if False:
+                    print('Values...')
+                    pprint(values)
+                    print('Jigged values ...')
+                    pprint(jiggered_values)
                 error_message = "Cannot accept submission as there are "+str(num_unique)+" unique values ("+str(num_jiggled_unique)+" unique after noise added)"
                 print(error_message,flush=True)
                 raise Exception(error_message)
