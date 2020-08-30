@@ -1658,6 +1658,7 @@ class Rediz(RedizConventions):
 
                             transaction_record = {"settlement_time": str(datetime.datetime.now()),
                                                   "amount": rescaled_amount,
+                                                  "budget": budget,
                                                   "stream": name,
                                                   "delay": delay,
                                                   "value": value,
