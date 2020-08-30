@@ -1525,7 +1525,7 @@ class Rediz(RedizConventions):
                             'some_values': values[:5], 'success': success, 'warn': warn}
             if success:
                 self._confirm(**confirmation)
-            if not (success) or warn:
+            if not success or warn:
                 confirmation.update({'antipated_execut': anticipated_execut, 'actual_execut': execut})
                 self._error(**confirmation)
 
@@ -1536,6 +1536,8 @@ class Rediz(RedizConventions):
 
     def _msettle(self, names, values, budgets, with_percentiles, write_keys, with_copulas):
         """ Parallel version of settle  """
+
+        half_winners = int(math.ceil(self.NUM_WINNERS))
 
         assert len(set(names)) == len(names), "mget() cannot be used with repeated names"
         retrieve_pipe = self.client.pipeline()
@@ -1558,9 +1560,9 @@ class Rediz(RedizConventions):
                 for window_ndx, window in enumerate(self._WINDOWS):
                     scenarios_lookup[name][delay_ndx][window_ndx] = len(retrieve_pipe)
                     retrieve_pipe.zrangebyscore(name=samples_name, min=value, max=value + 0.5 * window,
-                                                withscores=False, start=0, num=25)
+                                                withscores=False, start=0, num=half_winners)
                     retrieve_pipe.zrevrangebyscore(name=samples_name, max=value, min=value - 0.5 * window,
-                                                   withscores=False, start=0, num=25)
+                                                   withscores=False, start=0, num=half_winners)
         retrieved = retrieve_pipe.execute()
 
         # ---- Compute percentiles by zooming out until we have enough points ---
@@ -1606,6 +1608,8 @@ class Rediz(RedizConventions):
                             if len(rewarded_scenarios) == 0:
                                 _ndx = scenarios_lookup[name][delay_ndx][window_ndx]
                                 rewarded_scenarios = retrieved[_ndx]
+                                winning_window_ndx = window_ndx
+                        winning_window = self._WINDOWS[winning_window_ndx]
                         num_rewarded = len(rewarded_scenarios)
 
                         game_payments = self._game_payments(pool=pool, participant_set=participant_set,
@@ -1646,11 +1650,22 @@ class Rediz(RedizConventions):
                             pipe.hincrbyfloat(name=self.performance_name(write_key=recipient),
                                               key=self.horizon_name(name=name, delay=delay), amount=rescaled_amount)
                             # Transactions logs:
+                            maxed_out = num_rewarded == 2 * half_winners
+                            mass = num_rewarded / pool if pool > 0.0 else 0.
+                            density = mass / winning_window
+                            reliable = 0 if maxed_out else 1
+                            breakeven = self.num_predictions*num_rewarded/pool if pool>0 else 0
+
                             transaction_record = {"settlement_time": str(datetime.datetime.now()),
                                                   "amount": rescaled_amount,
                                                   "stream": name,
                                                   "delay": delay,
                                                   "value": value,
+                                                  "window": winning_window,
+                                                  "mass": mass,
+                                                  "density": density,
+                                                  "average": breakeven,
+                                                  "reliable": reliable,
                                                   "submissions_count": pool,
                                                   "submissions_close": num_rewarded,
                                                   "stream_owner_code": write_code,
@@ -1688,7 +1703,7 @@ class Rediz(RedizConventions):
                     for selection in selections:
                         selected_names = [names[o] for o in selection]
                         dim = len(selection)
-                        z_budget = sum([budgets[o] for o in selection]) / (10*dim)  # FIXME: Why int?
+                        z_budget = sum([budgets[o] for o in selection]) / (10 * dim)  # FIXME: Why int?
                         selected_prctls = [percentiles1[o] for o in selection]
                         zcurve_value = self.to_zcurve(selected_prctls)
                         zname = self.zcurve_name(selected_names, delay)
@@ -1726,13 +1741,16 @@ class Rediz(RedizConventions):
             return mean_prctl
 
     def _game_payments(self, pool, participant_set, rewarded_scenarios):
-        game_payments = Counter(dict((p, -1.0) for p in participant_set))
-
         if len(rewarded_scenarios) == 0:
-            carryover = Counter({self._RESERVE: 1.0 * pool / self.num_predictions})
-            game_payments.update(carryover)
-
+            do_carryover = np.random.rand() < 0.05
+            if do_carryover:
+                game_payments = Counter(dict((p, -1.0) for p in participant_set))
+                carryover = Counter({self._RESERVE: 1.0 * pool / self.num_predictions})
+                game_payments.update(carryover)
+            else:
+                game_payments = Counter()
         else:
+            game_payments = Counter(dict((p, -1.0) for p in participant_set))
             winners = [self._scenario_owner(ticket) for ticket in rewarded_scenarios]
             reward = (1.0 * pool / self.num_predictions) / len(winners)  # Could augment this to use kernel or whatever
             payouts = Counter(dict([(w, reward * c) for w, c in Counter(winners).items()]))
