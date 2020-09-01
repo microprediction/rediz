@@ -59,8 +59,8 @@ def evolve():
     noise  = [ 0.1*np.random.randn() for v in values ]
     noisy_values = [ v + n for v,n in zip(values,noise ) ]
     rdz = Rediz(**REDIZ_TEST_CONFIG)
-    budgets = [ 10., 10., 10. ]
-    res = rdz.cset(names=NAMES, write_key=REDIZ_TEST_CONFIG['write_key'], values=noisy_values, budgets=budgets)
+    budget = 10.
+    res = rdz.cset(names=NAMES, write_key=REDIZ_TEST_CONFIG['write_key'], values=noisy_values, budget=budget)
 
 def test_three_body():
     # Fail fast ...

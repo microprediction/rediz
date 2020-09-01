@@ -1,16 +1,19 @@
-import fakeredis, sys, math, json, redis, time, random, itertools, datetime
+import fakeredis, math, json, redis, time, random, itertools, datetime
 import numpy as np
 from collections import Counter, OrderedDict
-from typing import List, Union, Any, Optional
+from typing import List, Any, Optional
 from redis.client import list_or_args
 from redis.exceptions import DataError
 from .conventions import RedizConventions, REDIZ_CONVENTIONS_ARGS, MICRO_CONVENTIONS_ARGS, KeyList, NameList, ValueList
-from rediz.utilities import get_json_safe, has_nan, shorten, stem
+from rediz.utilities import get_json_safe, shorten, stem
 from pprint import pprint
+from microconventions import LeaderboardVariety
+from microconventions.type_conventions import Activity
+from logging import warning
 
 # REDIZ
 # -----
-# Implements a write-permissioned shared REDIS value store with subscription, history, prediction, clearing
+# Implements a write permissioned shared REDIS value store with subscription, history, prediction, clearing
 # and delay mechanisms. Intended for collectivized short term (e.g. 1 minute or 15 minutes) prediction.
 
 PY_REDIS_ARGS = (
@@ -40,7 +43,7 @@ class Rediz(RedizConventions):
         self.client = self.make_redis_client(**kwargs)
 
     # --------------------------------------------------------------------------
-    #            Public interface - getters
+    #            Getters etc
     # --------------------------------------------------------------------------
 
     def card(self):
@@ -90,9 +93,6 @@ class Rediz(RedizConventions):
 
     def get_samples(self, name, delay=None, delays=None):
         return self._get_samples_implementation(name=name, delay=delay, delays=delays)
-
-    def get_index(self):
-        return self._get_index_implementation()
 
     def get_predictions(self, name, delay=None, delays=None):
         return self._get_predictions_implementation(name=name, delay=delay, delays=delays)
@@ -225,64 +225,17 @@ class Rediz(RedizConventions):
     #        Leaderboards
     # ---------------------------
 
-    def get_leaderboard(self, name=None, delay=None, count=1200, with_repos=False):
-        return self._get_leaderboard_implementation(name=name, delay=delay, count=count, with_repos=with_repos)
+    def get_leaderboard(self, variety, count=1200, with_repos=False, **kwargs):
+        leaderboard_variety = LeaderboardVariety[variety] if isinstance(variety, str) else variety
+        return self._get_leaderboard_implementation(variety=leaderboard_variety, count=count, with_repos=with_repos,
+                                                    **kwargs)
 
-    def get_previous_monthly_overall_leaderboard(self, with_repos=False):
-        last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
-        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=last_month_day, count=200,
-                                                           with_repos=with_repos)
-
-    def get_monthly_overall_leaderboard(self, with_repos=False):
-        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=datetime.datetime.now(), count=200,
-                                                           with_repos=with_repos)
-
-    # By sponsor ...
-    # Allow user to pass either a write_key or a write_code (recall code = shash(key) )
-
-    def code_from_code_or_key(self, sponsor):
-        if self.is_valid_key(sponsor):
-            return self.shash(sponsor)
-        elif self.animal_from_code(sponsor):
-            return sponsor
-
-    def get_regular_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
-        """ Excludes z's """
-        code = self.code_from_code_or_key(sponsor)
-        if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='mystream',
-                                                               with_repos=with_repos)
-
-    def get_zscore_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
-        code = self.code_from_code_or_key(sponsor)
-        if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z1~',
-                                                               with_repos=with_repos)
-
-    def get_bivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
-        code = self.code_from_code_or_key(sponsor)
-        if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z2~',
-                                                               with_repos=with_repos)
-
-    def get_trivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
-        code = self.code_from_code_or_key(sponsor)
-        if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z3~',
-                                                               with_repos=with_repos)
-
-    def get_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
-        code = self.code_from_code_or_key(sponsor)
-        if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=datetime.datetime.now(), count=200,
-                                                               with_repos=with_repos)
-
-    def get_previous_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
-        code = self.code_from_code_or_key(sponsor)
-        if code:
-            last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=last_month_day, count=200,
-                                                               with_repos=with_repos)
+    def code_from_code_or_key(self, code_or_key):
+        # TODO: Remove after microconventions 0.2.5 pushed
+        if self.is_valid_key(code_or_key):
+            return self.shash(code_or_key)
+        elif self.animal_from_code(code_or_key):
+            return code_or_key
 
     def get_messages(self, name, write_key):
         if self._authorize(name=name, write_key=write_key):
@@ -292,44 +245,62 @@ class Rediz(RedizConventions):
     #            Public interface  (set/delete streams)
     # --------------------------------------------------------------------------
 
-    def mtouch(self, names, write_key, budgets=None):
-        budgets = budgets or [1 for _ in names]
-        return self._mtouch_implementation(names=names, write_key=write_key, budgets=budgets)
+    def mtouch(self, names, write_key, operation='mtouch'):
+        if self.permitted_to_mset(write_key=write_key):
+            budgets = [self.maximum_stream_budget(write_key=write_key) for _ in names]
+            return self._mtouch_implementation(names=names, write_key=write_key, budgets=budgets)
+        else:
+            error_data = {'operation': operation, 'message': 'Not permitted with write_key supplied', 'success': False}
+            self._error(write_key=write_key, data=error_data)
+            return error_data
 
-    def touch(self, name, write_key, budget=1):
-        return self._touch_implementation(name=name, write_key=write_key, budget=budget)
+    def touch(self, name: str, write_key: str):
+        return self.mtouch(names=[name], write_key=write_key)
 
     @staticmethod
-    def muid_difficulty(write_key):
+    def safe_difficulty(write_key):
+        # TODO: Should not need this
         try:
             return Rediz.key_difficulty(write_key)
-        except:
+        except Exception:
+            warning('safe_difficulty cannot be deprecated yet, apparently!')
             return 0
 
-    def set(self, name, value, write_key, budget=10):
+    def set(self, name, value, write_key, budget=1.):
         """ Set name=value and initiate clearing, derived zscore market etc """
         assert RedizConventions.is_plain_name(name), "Expecting plain name"
         assert RedizConventions.is_valid_key(write_key), "Invalid write_key"
-        if self.muid_difficulty(write_key) < self.min_len:
-            reason = "Write key isn't sufficiently rare to create or update a stream. Must be difficulty " + str(
-                self.min_len)
+        if not self.permitted_to_set(write_key=write_key):
+            reason = "Write key isn't sufficiently rare to create or update a stream"
             self._error(write_key=write_key, operation='set', success=False, reason=reason)
             return False
         else:
+            budget = min(self.maximum_stream_budget(write_key=write_key), budget)
             return self._mset_implementation(name=name, value=value, write_key=write_key, return_args=None,
                                              budget=budget, with_percentiles=True)
 
-    def cset(self, names: NameList, values: ValueList, budgets: List[int], write_key):
-        if self.muid_difficulty(write_key) < self.min_len + 1:
-            reason = "Write key isn't sufficiently rare to request joint distributions. Must be difficulty " + str(
-                self.min_len + 1)
+    def cset(self, names: NameList, values: ValueList, write_key: str, budget: float = 1.0):
+        if not self.permitted_to_cset(write_key=write_key):
+            reason = "Write key isn't sufficiently rare to request joint distributions."
             self._error(write_key=write_key, operation='set', success=False, reason=reason)
             return False
         else:
-            return self.mset(names=names, values=values, budgets=budgets, write_key=write_key, with_copulas=True)
+            budget = min(budget, self.maximum_stream_budget(write_key=write_key))
+            budgets = [budget / len(names) for _ in names]
+            return self._mset(names=names, values=values, budgets=budgets, write_key=write_key, with_copulas=True)
 
-    def mset(self, names: NameList, values: ValueList, budgets: List[int], write_key=None, write_keys=None,
-             with_copulas=False):
+    def mset(self, names: NameList, values: ValueList, write_key: str, budget: float = 1.0):
+        if not self.permitted_to_mset(write_key=write_key) or len(names) > 10:
+            reason = "Write key isn't sufficiently rare to request mset, or too many names."
+            self._error(write_key=write_key, operation='mset', success=False, reason=reason)
+            return False
+        else:
+            budget = min(budget, self.maximum_stream_budget(write_key=write_key))
+            budgets = [budget / len(names) for _ in names]
+            return self._mset(names=names, values=values, budgets=budgets, write_key=write_key, with_copulas=False)
+
+    def _mset(self, names: NameList, values: ValueList, budgets: List[float], write_key=None, write_keys=None,
+              with_copulas=False):
         """ Apply set() for multiple names and values, with copula derived streams optionally """  # Todo: disallow calling with multiple write_keys
         is_plain = [RedizConventions.is_plain_name(name) for name in names]
         if not len(names) == len(values):
@@ -359,23 +330,37 @@ class Rediz(RedizConventions):
     #            Public interface  (set/delete scenarios)
     # --------------------------------------------------------------------------
 
-    def set_scenarios(self, name, values, delay, write_key, verbose=False):
+    def submit(self, name, values, delay, write_key, verbose=False):
         """ Supply scenarios for scalar value taken by name
                values :   [ float ]  len  self.num_predictions
         """
-        assert len(values) == self.num_predictions
-        assert int(delay) in self.DELAYS, "Invalid choice of delay"
-        assert self.is_valid_key(write_key), "Invalid write_key"
+        error_data = {'operation': 'submit',
+                      'success': 0,
+                      'invalid write key': not self.is_valid_key(write_key),
+                      'incorrect number of predictions': len(values) != self.num_predictions,
+                      'not permitted': not self.permitted_to_submit(write_key=write_key),
+                      }
+        reasons = ['invalid write key', 'incorrect number of predictions', 'not permitted']
+        for reason in reasons:
+            if error_data[reason]:
+                self._error(write_key=write_key, data=error_data)
+                return error_data if verbose else False
+
         if self.bankrupt(write_key=write_key):
+            # Bankruptcy might restrict submission, but not if the balance is close to positive.
             leaderboard = self._get_leaderboard_implementation(name=name, delay=delay, readable=False, count=10000)
-            code = self.shash(key=write_key)
+            code = self.shash(write_key=write_key)
             if (code not in leaderboard) or (leaderboard[code] < -1.0):
-                self._error(write_key=write_key,
-                            data={'operation': 'submit', 'success': False, 'reason': 'bankruptcy', 'name': name})
-                return False
+                error_data.update({'reason': 'bankruptcy'})
+                self._error(write_key=write_key, data=error_data)
+                return error_data if verbose else False
 
         fvalues = list(map(float, values))
         return self._set_scenarios_implementation(name=name, values=fvalues, delay=delay, write_key=write_key)
+
+    def set_scenarios(self, name, values, delay, write_key, verbose=False):
+        warning('set_scenarios is deprecated. Use submit instead')
+        return self.submit(name=name, values=values, delay=delay, write_key=write_key, verbose=verbose)
 
     def delete_all_scenarios(self, write_key):
         active = self.get_active(write_key=write_key)
@@ -387,7 +372,7 @@ class Rediz(RedizConventions):
         return limit > 0
 
     def delete_scenarios(self, name, write_key, delay=None, delays=None):
-        """ This will be deprecated in favor of cancel ... """
+        warning('delete_scenarios is deprecated. Use cancel instead. ')
         return self._delete_scenarios_implementation(name=name, write_key=write_key, delay=delay, delays=delays)
 
     def cancel(self, name, write_key, delay=None, delays=None):
@@ -404,12 +389,20 @@ class Rediz(RedizConventions):
     def delete_performance(self, write_key):
         return self.client.delete(self.performance_name(write_key=write_key))
 
-    def delete_leaderboard(self, write_key, name, delay=None):
-        if self._authorize(name=name, write_key=write_key):
-            self._delete_leaderboard_implementation(name=name, delay=delay)
+    def delete_leaderboard(self, write_key, variety, name, **kwargs):
+        """ Sponsors can delete (i.e. reset) leaderboards that they control """
+        variety = LeaderboardVariety[str(variety)]
+        message = {'operation': 'delete_leaderboard', 'exec': 0}
+        message.update(kwargs)
+        if 'name' in str(variety) or 'sponsor' in str(variety):
+            if self._authorize(name=name, write_key=write_key):
+                sponsor = self.shash(write_key)
+                exec = self._delete_leaderboard_implementation(variety=variety, name=name, sponsor=sponsor, **kwargs)
+                message.update({'exec': exec})
+        return message
 
-    def _delete_leaderboard_implementation(self, name, delay):
-        self.client.delete(self.leaderboard_name(name=name, delay=delay))
+    def _delete_leaderboard_implementation(self, variety, name, **kwargs):
+        return self.client.delete(self.leaderboard_name(leaderboard_variety=variety, name=name, **kwargs))
 
     # --------------------------------------------------------------------------
     #            Donations of MUIDs
@@ -420,9 +413,9 @@ class Rediz(RedizConventions):
         donor = donor or 'anonymous'
         if password == official_password:
             len = self.key_difficulty(write_key)
-            if len >= self.MIN_LEN:
+            if self.permitted_to_set(write_key=write_key):
                 if self.client.sadd(self.donation_name(len=len), write_key):
-                    importance = 16 ** (len - self.MIN_LEN)
+                    importance = 16 ** (len - self.MIN_DIFFICULTIES[Activity.set])
                     self.client.hincrby(name=self.donors_name(), key=donor.lower(), amount=importance)
                 return {"operation": "donation", "success": True, "message": "Thanks, you can view it at",
                         "url": self.base_url + "donations/all".replace('//', '/')} if verbose else 1
@@ -492,6 +485,7 @@ class Rediz(RedizConventions):
 
     def _authorize(self, name, write_key):
         """ Check write_key against official records """
+        # Only the stream owner can modify it
         return write_key == self._authority(name=name)
 
     def _mauthorize(self, names, write_keys):
@@ -516,9 +510,9 @@ class Rediz(RedizConventions):
     # --------------------------------------------------------------------------
 
     def _mset_implementation(self, names: Optional[NameList] = None, values: Optional[ValueList] = None,
-                             write_keys: Optional[KeyList] = None, budgets: Optional[List[int]] = None,
+                             write_keys: Optional[KeyList] = None, budgets: Optional[List[float]] = None,
                              name: Optional[str] = None, value: Optional[Any] = None, write_key: Optional[str] = None,
-                             budget: Optional[int] = None,
+                             budget: Optional[float] = None,
                              return_args: Optional[List[str]] = None, with_percentiles=False, with_copulas=False):
 
         if return_args is None:
@@ -535,13 +529,16 @@ class Rediz(RedizConventions):
         # Execute assignment (creates temporary execution logs)
         execution_log = self._pipelined_set(names=names, values=values, write_keys=write_keys, budgets=budgets)
 
-        # Ensure there is at least one baseline prediction and occasionally update it
+        # Ensure there is at least one (truly shitty) baseline prediction and occasionally update it
         pools = self._pools(names, self.DELAYS)
         for nm, v, wk in zip(names, values, write_keys):
             if self.is_scalar_value(v):
                 for delay_ndx, delay in enumerate(self.DELAYS):
-                    if np.random.rand() < 1 / 20 or pools[nm][delay_ndx] == 0:
+                    if np.random.rand() < 1 / 20 and pools[nm][delay_ndx] < 4:
                         self._baseline_prediction(name=nm, value=v, write_key=wk, delay=delay)
+                    elif pools[nm][delay_ndx] >= 3:
+                        # We can step aside now that two others are fighting it out.
+                        self._cancel_implementation(name=nm, write_key=wk, delay=delay)
 
         # Rewards, percentiles ... but only for scalar floats
         # Settlement also triggers the derived market for zscores
@@ -862,7 +859,7 @@ class Rediz(RedizConventions):
                 self._delete_implementation(zname)
 
     def _delete_implementation(self, names, *args):
-        """ Removes all traces of name """
+        """ Removes all traces of name (except leaderboards) """
 
         names = list_or_args(names, args)
         names = [n for n in names if n is not None]
@@ -928,6 +925,8 @@ class Rediz(RedizConventions):
         delete_pipe.srem(self._NAMES, *names)
         delete_pipe.hdel(self._ownership_name(), *names)
 
+        # TODO: Expire the leaderboards also
+
         del_exec = delete_pipe.execute()
 
         return sum((1 for r in del_exec if r))
@@ -965,12 +964,12 @@ class Rediz(RedizConventions):
 
     def _touch_implementation(self, name, write_key, budget, example_value=3.145):
         """ Extend life of stream """
-        exec = self.client.expire(name=name, time=self._cost_based_ttl(value=example_value, budget=budget))
-        self._confirm(write_key=write_key, operation='touch', name=name, execution=exec)
-        if not exec:
+        execut = self.client.expire(name=name, time=self._cost_based_ttl(value=example_value, budget=budget))
+        self._confirm(write_key=write_key, operation='touch', name=name, execution=execut)
+        if not execut:
             self._warn(write_key=write_key, operation='touch', error='expiry not set ... names may not exist',
-                       name=name, exec=exec)
-        return exec
+                       name=name, exec=execut)
+        return execut
 
     def _mtouch_implementation(self, names, write_key, budgets, example_value=3.145):
         """ Extend life of multiple streams """
@@ -1092,11 +1091,13 @@ class Rediz(RedizConventions):
         transfer_confirm = {"time": str(datetime.datetime.now()), "operation": "transfer", "epoch_time": time.time(),
                             "source": self.shash(source_write_key), "recipient": self.shash(recipient_write_key)}
         success = 0
-        if self.is_valid_key(source_write_key) and self.key_difficulty(source_write_key) >= self.MIN_LEN - 1:
-            if self.is_valid_key(recipient_write_key):
+        can_give = self.permitted_to_give(write_key=source_write_key)
+        can_receive = self.permitted_to_receive(write_key=recipient_write_key)
+        if can_give:
+            if can_receive:
                 recipient_balance = self.get_balance(write_key=recipient_write_key)
                 if recipient_balance < -1.0:
-                    source_distance = self.distance_to_bankruptcy(source_write_key)
+                    source_distance = self.distance_to_bankruptcy(write_key=source_write_key)
                     maximum_to_receive = -recipient_balance  # Cannot make a balance positive
                     maximum_to_give = max(0, source_distance)
                     if amount is None:
@@ -1118,10 +1119,10 @@ class Rediz(RedizConventions):
                 else:
                     transfer_confirm.update({"reason": "Cannot transfer to a key balance above -1.0"})
             else:
-                transfer_confirm.update({"reason": "Invalid recipient write_key"})
+                transfer_confirm.update({"reason": "Invalid recipient write_key difficulty"})
         else:
             transfer_confirm.update(
-                {"reason": "Invalid source write_key, must be " + str(self.MIN_LEN - 1) + " difficulty."})
+                {"reason": "Invalid source write_key, not difficult enought."})
 
         # Logging confirms
         transfer_confirm.update({"success": success})
@@ -1129,18 +1130,16 @@ class Rediz(RedizConventions):
         self._confirm(write_key=recipient_write_key, data=transfer_confirm)
         return success if not as_record else transfer_confirm
 
-    def bankruptcy(self, write_key_len):
-        if write_key_len <= 8:
-            return -0.01
-        return -1.0 * (abs(self.min_balance) * (16 ** (write_key_len - 9)))
-
-    def bankrupt(self, write_key):
-        return self.distance_to_bankruptcy(write_key=write_key) < 0
-
-    def distance_to_bankruptcy(self, write_key):
-        level = self.bankruptcy(self.key_difficulty(write_key))
-        balance = self.get_balance(write_key=write_key)
-        return balance - level
+    def admin_shrinkage(self):
+        leaderboard_name = self.client.rpop(self._SHRINK_QUEUE)
+        if leaderboard_name is not None:
+            weight = 1 - self.SHRINKAGE
+            temporary_key = 'temporary_' + ''.join([random.choice(['a', 'b', 'c']) for _ in range(20)])
+            shrink_pipe = self.client.pipeline(transaction=True)
+            shrink_pipe.zunionstore(dest=temporary_key, keys={leaderboard_name: weight})
+            shrink_pipe.zunionstore(dest=leaderboard_name, keys={temporary_key: 1})
+            exec = shrink_pipe.execute()
+            return {leaderboard_name: exec}
 
     def admin_bankruptcy(self, with_report=False):
         """
@@ -1218,11 +1217,11 @@ class Rediz(RedizConventions):
         cancellation_queue_name = [promise for promise, exist in zip(candidates, exists) if exists]
         for collection_name in cancellation_queue_name:
             get_pipe.smembers(collection_name)
-        collections = get_pipe.execute()
+        cancel_collections = get_pipe.execute()
         self.client.delete(*cancellation_queue_name)
 
         # Perform cancellations
-        individual_cancellations = list(itertools.chain(*collections))
+        individual_cancellations = list(itertools.chain(*cancel_collections))
         for cancellation in individual_cancellations:
             if self.CANCEL_SEP in cancellation:
                 write_key, horizon = cancellation.split(self.CANCEL_SEP)
@@ -1328,7 +1327,7 @@ class Rediz(RedizConventions):
     # --------------------------------------------------------------------------
 
     def _baseline_prediction(self, name, value, write_key, delay):
-        # As a finer point, we should really be using the delay times here and sampling by time not lag ... but it is just a lazy benchmark anyway
+        # So bad !!!
         lagged_values = self._get_lagged_implementation(name, with_times=False, with_values=True, to_float=True,
                                                         start=0, end=None, count=self.num_predictions)
         predictions = self.empirical_predictions(lagged_values=lagged_values)
@@ -1480,7 +1479,7 @@ class Rediz(RedizConventions):
             noise = np.random.randn(self.num_predictions).tolist()
             jiggered_values = [v + n * self.NOISE for v, n in zip(values, noise)]
             jiggered_values.sort()
-            if  len(set(jiggered_values)) != len(jiggered_values):
+            if len(set(jiggered_values)) != len(jiggered_values):
                 print('----- submission error ----- ')
                 num_unique = len(set(values))
                 num_jiggled_unique = len(set(values))
@@ -1489,8 +1488,9 @@ class Rediz(RedizConventions):
                     pprint(values)
                     print('Jigged values ...')
                     pprint(jiggered_values)
-                error_message = "Cannot accept submission as there are "+str(num_unique)+" unique values ("+str(num_jiggled_unique)+" unique after noise added)"
-                print(error_message,flush=True)
+                error_message = "Cannot accept submission as there are " + str(num_unique) + " unique values (" + str(
+                    num_jiggled_unique) + " unique after noise added)"
+                print(error_message, flush=True)
                 raise Exception(error_message)
             predictions = dict(
                 [(self._format_scenario(write_key=write_key, k=k), v) for k, v in enumerate(jiggered_values)])
@@ -1530,13 +1530,13 @@ class Rediz(RedizConventions):
 
             success = all(
                 _close(actual, anticipate) for actual, anticipate in itertools.zip_longest(execut, anticipated_execut))
-            warn = not (all(a1 == a2) for a1, a2 in itertools.zip_longest(execut, anticipated_execut))
+            do_warn = not (all([a1 == a2 for a1, a2 in itertools.zip_longest(execut, anticipated_execut)]))
 
             confirmation = {'write_key': write_key, 'operation': 'submit', 'name': name, 'delays': delays,
-                            'some_values': values[:5], 'success': success, 'warn': warn}
+                            'some_values': values[:5], 'success': success, 'warn': do_warn}
             if success:
                 self._confirm(**confirmation)
-            if not success or warn:
+            if not success or do_warn:
                 confirmation.update({'antipated_execut': anticipated_execut, 'actual_execut': execut})
                 self._error(**confirmation)
 
@@ -1548,7 +1548,7 @@ class Rediz(RedizConventions):
     def _msettle(self, names, values, budgets, with_percentiles, write_keys, with_copulas):
         """ Parallel version of settle  """
 
-        half_winners = int(math.ceil(self.NUM_WINNERS))
+        HALF_WINNERS = int(math.ceil(self.NUM_WINNERS))
 
         assert len(set(names)) == len(names), "mget() cannot be used with repeated names"
         retrieve_pipe = self.client.pipeline()
@@ -1571,9 +1571,9 @@ class Rediz(RedizConventions):
                 for window_ndx, window in enumerate(self._WINDOWS):
                     scenarios_lookup[name][delay_ndx][window_ndx] = len(retrieve_pipe)
                     retrieve_pipe.zrangebyscore(name=samples_name, min=value, max=value + 0.5 * window,
-                                                withscores=False, start=0, num=half_winners)
+                                                withscores=False, start=0, num=HALF_WINNERS)
                     retrieve_pipe.zrevrangebyscore(name=samples_name, max=value, min=value - 0.5 * window,
-                                                   withscores=False, start=0, num=half_winners)
+                                                   withscores=False, start=0, num=HALF_WINNERS)
         retrieved = retrieve_pipe.execute()
 
         # ---- Compute percentiles by zooming out until we have enough points ---
@@ -1628,24 +1628,7 @@ class Rediz(RedizConventions):
                         payments.update(game_payments)
 
                     if len(payments):
-                        leaderboard_names = [self.leaderboard_name(),
-                                             self.leaderboard_name(name=name),
-                                             self.leaderboard_name(name=None, delay=delay),
-                                             self.leaderboard_name(name=name, delay=delay),
-                                             self.custom_leaderboard_name(sponsor=None, name=None),  # Overall all time
-                                             self.custom_leaderboard_name(sponsor=sponsor, name=None),
-                                             # Sponsor category
-                                             self.custom_leaderboard_name(sponsor=sponsor, name=name),
-                                             # Sponsor and cateogry
-                                             self.custom_leaderboard_name(sponsor=sponsor, dt=datetime.datetime.now()),
-                                             # Sponsor and month
-                                             self.custom_leaderboard_name(sponsor=sponsor, name=name,
-                                                                          dt=datetime.datetime.now()),
-                                             # Sponsor and category and month
-                                             self.custom_leaderboard_name(sponsor=sponsor, name=name,
-                                                                          dt=datetime.datetime.now()),
-                                             # Sponsor this month
-                                             ]
+                        leaderboard_names = self.leaderboard_names_to_update(name=name, delay=delay, sponsor=sponsor)
                         for (recipient, amount) in payments.items():
                             # Record keeping
                             rescaled_amount = budget * float(amount)
@@ -1657,15 +1640,16 @@ class Rediz(RedizConventions):
                             # Leaderboards
                             for lb in leaderboard_names:
                                 pipe.zincrby(name=lb, value=recipient_code, amount=rescaled_amount)
+
                             # Performance
                             pipe.hincrbyfloat(name=self.performance_name(write_key=recipient),
                                               key=self.horizon_name(name=name, delay=delay), amount=rescaled_amount)
                             # Transactions logs:
-                            maxed_out = num_rewarded == 2 * half_winners
+                            maxed_out = num_rewarded == 2 * HALF_WINNERS
                             mass = num_rewarded / pool if pool > 0.0 else 0.
                             density = mass / winning_window
                             reliable = 0 if maxed_out else 1
-                            breakeven = self.num_predictions*num_rewarded/pool if pool>0 else 0
+                            breakeven = self.num_predictions * num_rewarded / pool if pool > 0 else 0
 
                             transaction_record = {"settlement_time": str(datetime.datetime.now()),
                                                   "amount": rescaled_amount,
@@ -1691,6 +1675,13 @@ class Rediz(RedizConventions):
                                 pipe.expire(name=ln, time=self._TRANSACTIONS_TTL)
                         for lb in leaderboard_names:
                             pipe.expire(name=lb, time=self._LEADERBOARD_TTL)
+                            try:
+                                # Sometimes leave a note for admin_shrinkage
+                                memory = self.leaderboard_memory_from_name(lb)
+                                if np.random.rand() < 1. / (memory * self.SHRINKAGE):
+                                    pipe.lpush(self._SHRINK_QUEUE, *leaderboard_names)
+                            except AttributeError:
+                                pass
 
         settle_exec = pipe.execute()  # No checks here
 
@@ -1715,7 +1706,7 @@ class Rediz(RedizConventions):
                     for selection in selections:
                         selected_names = [names[o] for o in selection]
                         dim = len(selection)
-                        z_budget = sum([budgets[o] for o in selection]) / (10 * dim)  # FIXME: Why int?
+                        z_budget = self.DERIVED_BUDGET_RATIO * sum([budgets[o] for o in selection])
                         selected_prctls = [percentiles1[o] for o in selection]
                         zcurve_value = self.to_zcurve(selected_prctls)
                         zname = self.zcurve_name(selected_names, delay)
@@ -1861,6 +1852,7 @@ class Rediz(RedizConventions):
 
     def _get_prefixed_implementation(self, prefixed_name):
         """ Interpret things like  delayed::15::air-pressure.json cdf::70::air-pressure.json etc """
+        # Horrid mess. Should move this into conventions
         assert self.SEP in prefixed_name, "Expecting prefixed name with " + self.SEP
         parts = prefixed_name.split(self.SEP)
         if len(parts) == 2:
@@ -1876,7 +1868,8 @@ class Rediz(RedizConventions):
             elif ps == self.LAGGED_VALUES:
                 data = self.get_lagged_values(name=parts[-1])
             elif ps == self.CDF:
-                data = self.get_cdf(name=parts[-1])
+                nm, dly = self.split_horizon_name(prefixed_name)
+                data = self.get_cdf(name=nm, delay=dly)
             elif ps == self.LAGGED:
                 data = self.get_lagged(name=parts[-1])
             elif ps == self.LAGGED_TIMES:
@@ -1978,7 +1971,6 @@ class Rediz(RedizConventions):
         return horizons
 
     def get_active(self, write_key):
-        # FIXME: MUST PIPELINE THIS
         keys = self.get_horizon_names()
         names, delays = self.split_horizon_names(keys)
         active = self.is_active(write_key=write_key, names=names, delays=delays)
@@ -1991,28 +1983,19 @@ class Rediz(RedizConventions):
             pipe.sismember(self._sample_owners_name(name=name, delay=delay), write_key)
         return pipe.execute()
 
+    def _get_leaderboard_implementation(self, variety, count, readable=True, with_repos=False, **kwargs):
+        pname = self.leaderboard_name(variety=variety, **kwargs)
+        leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
+        if with_repos:
+            return self._get_leaderboard_implementation_with_repos(leaderboard, readable)
+        return OrderedDict([(self.animal_from_code(code), score) for code, score in leaderboard]) if readable else dict(
+            leaderboard)
+
     def _get_leaderboard_implementation_with_repos(self, leaderboard, readable):
         hash_to_url_dict = self.client.hgetall(name=self._REPOS)
         return OrderedDict(
             [(self.animal_from_code(code), (score, hash_to_url_dict.get(code, None))) for code, score in leaderboard]
         ) if readable else dict([(code, (score, hash_to_url_dict.get(code, None))) for code, score in leaderboard])
-
-    def _get_leaderboard_implementation(self, name, delay, count, readable=True, with_repos=False):
-        pname = self.leaderboard_name(name=name, delay=delay)
-        leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
-        if with_repos:
-            return self._get_leaderboard_implementation_with_repos(leaderboard, readable)
-        return OrderedDict([(self.animal_from_code(code), score) for code, score in leaderboard]) if readable else dict(
-            leaderboard)
-
-    def _get_custom_leaderboard_implementation(self, sponsor_code, dt, count, readable=True, name=None,
-                                               with_repos=False):
-        pname = self.custom_leaderboard_name(sponsor=sponsor_code, dt=dt, name=name)
-        leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
-        if with_repos:
-            return self._get_leaderboard_implementation_with_repos(leaderboard, readable)
-        return OrderedDict([(self.animal_from_code(code), score) for code, score in leaderboard]) if readable else dict(
-            leaderboard)
 
     def _get_links_implementation(self, name, delay=None, delays=None):
         """ Set of outgoing links created by name owner """
@@ -2042,12 +2025,6 @@ class Rediz(RedizConventions):
     def _get_samples_implementation(self, name, delay=None, delays=None, obscure=True):
         return self._get_distribution(namer=self._samples_name, name=name, delay=delay, delays=delays, obscure=obscure)
 
-    def _get_index_implementation(self):
-        ownership = list(self.client.hgetall(self._OWNERSHIP))
-        obscured = [(name, self.animal_from_key(key)) for name, key in ownership.items()]
-        obscured.sort(key=lambda t: len(t[1]))
-        return obscured
-
     def _get_distribution(self, namer, name, delay=None, delays=None, obscure=True):
         """ Get predictions or samples and obfuscate (hash) the write keys """
         singular = delays is None
@@ -2070,13 +2047,15 @@ class Rediz(RedizConventions):
         " Stream summary "
 
         def delay_level(name, delay):
-            things = [self.leaderboard_name(name=name, delay=delay), self.delayed_name(name=name, delay=delay),
-                      self.links_name(name=name, delay=delay)]
+            things = [
+                self.leaderboard_name(variety=LeaderboardVariety.name_and_delay, name=name, delay=delay),
+                self.delayed_name(name=name, delay=delay),
+                self.links_name(name=name, delay=delay)]
             return dict([(thing, get_json_safe(thing=thing, getter=self.get)) for thing in things])
 
         def top_level(name):
             things = [name, self.lagged_values_name(name), self.lagged_times_name(name),
-                      self.leaderboard_name(name=name),
+                      self.leaderboard_name(variety=LeaderboardVariety.name, name=name),
                       self.backlinks_name(name), self.subscribers_name(name),
                       self.subscriptions_name(name), self.history_name(name),
                       self.messages_name(name)]
