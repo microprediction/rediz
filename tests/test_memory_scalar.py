@@ -45,7 +45,7 @@ def do_scalar(rdz):
         for model_key in MODEL_KEYS:
             predict_values = list(np.random.randn(rdz.NUM_PREDICTIONS))
             time.sleep(0.05)
-            rdz.set_scenarios(name=NAME, values=predict_values, write_key=model_key, delay=rdz.DELAYS[0])
+            rdz.submit(name=NAME, values=predict_values, write_key=model_key, delay=rdz.DELAYS[0])
 
 
     memory_report = rdz._size(NAME,with_report=True)

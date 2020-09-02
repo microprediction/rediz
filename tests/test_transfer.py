@@ -2,7 +2,7 @@ from rediz.client import Rediz
 from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 
 
-def test_transfers():
+def dont_test_transfers():
     do_test_transfer(source_balance=0.0,  recipient_balance=-100.0, amount=10.0, expected_given=10.0, expected_success=1)
     do_test_transfer(source_balance=50.0, recipient_balance=50.0,   amount=20.0, expected_given=0.0, expected_success=0)
 

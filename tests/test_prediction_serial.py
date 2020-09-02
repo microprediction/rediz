@@ -36,7 +36,7 @@ def model(rdz, target, write_key):
         x_samples = x_samples[:rdz.NUM_PREDICTIONS]
         noise = np.random.randn(rdz.NUM_PREDICTIONS)
         jiggered = [x + 0.1 * n for x, n in zip(x_samples, noise)]
-    set_res = rdz.set_scenarios(name=target, values=jiggered, write_key=write_key, delay=rdz.DELAYS[0])
+    set_res = rdz.submit(name=target, values=jiggered, write_key=write_key, delay=rdz.DELAYS[0])
     return set_res
 
 
@@ -101,8 +101,7 @@ def tear_down(rdz, target, target_key, model_key, model_key1, model_key2, model_
               "backlinks": backlinks,
               "subscriptions": subscriptions,
               "subscribers": subscribers,
-              "confirms": confirms,
-              "leaderboards": leaderboards
+              "confirms": confirms
               }
 
     dump(report)
