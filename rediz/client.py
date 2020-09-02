@@ -97,12 +97,17 @@ class Rediz(RedizConventions):
     def get_predictions(self, name, delay=None, delays=None):
         return self._get_predictions_implementation(name=name, delay=delay, delays=delays)
 
-    def get_cdf(self, name, delay, values, top=10, min_balance=-50000000):
-        """
-        :param values:   Abscissa for CDF
+    def get_cdf(self, name:str, delay, values:[float]=None, top=10, min_balance=-50000000):
+        """ Retrieve 'x' and 'y' values representing an approximate CDF
+        :param values:   Abscissa for CDF ... if not supplied it will try to figure out something
         :param top:      Number of top participants to use
-        :return:
+        :return:  {'x':[float],'y':[float]}
         """
+        delay = int(delay)
+        # TODO: Change to min_rating instead of min_balance
+        if values is None:
+            lagged_values = self.get_lagged_values(name=name)
+            values = self.cdf_values(lagged_values=lagged_values,num=20,as_discrete=None)
         return self._get_cdf_implementation(name=name, delay=delay, values=values, top=top, min_balance=min_balance)
 
     def get_reserve(self):

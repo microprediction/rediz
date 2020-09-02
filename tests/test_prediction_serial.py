@@ -59,6 +59,8 @@ def tear_down(rdz, target, target_key, model_key, model_key1, model_key2, model_
             lb = rdz.get_leaderboard(variety=LeaderboardVariety.sponsor_and_delay, sponsor=target_code, delay=delay)
 
     samples = rdz.get_samples(name=target, delay=1)
+    the_cdf = rdz.get_cdf(name=target, delay=rdz.DELAYS[0])
+    the_cdf_custom = rdz.get_cdf(name=target, delay=rdz.DELAYS[0], values=[-1.0,1.0])
     lagged = rdz.get_lagged(name=target)
     owners = rdz.client.smembers(rdz._sample_owners_name(name=target, delay=1))
     predictions = rdz.get_predictions(name=target, delay=1)
@@ -75,6 +77,7 @@ def tear_down(rdz, target, target_key, model_key, model_key1, model_key2, model_
     rdz.delete_all_scenarios(write_key=model_key1)
 
     bankruptcy_report = rdz.admin_bankruptcy(with_report=True)
+    shrinkage_report = rdz.admin_shrinkage()
 
     if len(list(samples.values())):
         sample_std = np.nanstd(list(samples.values()))
@@ -101,7 +104,8 @@ def tear_down(rdz, target, target_key, model_key, model_key1, model_key2, model_
               "backlinks": backlinks,
               "subscriptions": subscriptions,
               "subscribers": subscribers,
-              "confirms": confirms
+              "confirms": confirms,
+              "cdf": the_cdf,
               }
 
     dump(report)
