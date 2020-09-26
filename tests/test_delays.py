@@ -25,7 +25,7 @@ def do_test_delay_string(rdz):
     rdz._delete_implementation(NAME)
     time.sleep(0.1)
     WRITE_KEY = BELLEHOOD_BAT
-    assert Rediz.safe_difficulty(write_key=WRITE_KEY) > 5, "MUID NOT WORKING ?! "
+    assert Rediz.muid_difficulty(write_key=WRITE_KEY)>5, "MUID NOT WORKING ?! "
     prctl = rdz.set( name = NAME,  value = "living in the past",  write_key=WRITE_KEY )
     time.sleep(3)
     prctl = rdz.set( name = NAME,  value = "living in the present",  write_key=WRITE_KEY )

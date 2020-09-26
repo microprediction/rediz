@@ -49,7 +49,7 @@ def test_admin_garbage_collection(num=100):
     write_keys = [ BELLEHOOD_BAT for _ in names ]
     values = ["from test_admin_garbage_collection" for _ in write_keys ]
     budgets = [ 1 for _ in range(num) ]
-    mset_res = rdz._mset(names=names, write_keys=write_keys, values=values, budgets=budgets)
+    mset_res = rdz.mset(names=names,write_keys=write_keys,values=values, budgets=budgets)
     assert len(mset_res)==len(names)
     expire_pipe = rdz.client.pipeline()
     for name in names:
@@ -85,7 +85,7 @@ def test_find_orphans_low_cardinality_test(num=20):
         value  = "a string to store"
         values = [value for _ in names ]
         budgets = [ 7 for _ in names ]
-        title = rdz._mset(names=names, write_key=write_key, values=values, budgets=budgets)
+        title = rdz.mset(names=names,write_key=write_key,values=values, budgets=budgets)
         assert rdz.client.exists(*names)==len(names), "Names were not created as expected."
         for name in names:
             rdz.client.expire(name=name,time=5*60)
