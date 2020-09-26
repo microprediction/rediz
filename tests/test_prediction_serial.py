@@ -72,7 +72,6 @@ def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_k
     rdz.delete_all_scenarios(write_key=model_key1)
     rdz.delete_all_scenarios(write_key=model_key1)
     bankruptcy_report = rdz.admin_bankruptcy(with_report=True)
-    shrinkage_report = rdz.admin_shrinkage()
 
     if len(list(samples.values())):
         sample_std = np.nanstd(list(samples.values()))
