@@ -353,7 +353,7 @@ class Rediz(RedizConventions):
 
         if self.bankrupt(write_key=write_key):
             # Bankruptcy might restrict submission, but not if the balance is close to positive.
-            leaderboard = self._get_leaderboard_implementation(variety=LeaderboardVariety.name_and_delay, name=name, delay=delay, readable=False, count=10000)
+            leaderboard = self._get_leaderboard_implementation(name=name, delay=delay, readable=False, count=10000)
             code = self.shash(write_key=write_key)
             if (code not in leaderboard) or (leaderboard[code] < -1.0):
                 error_data.update({'reason': 'bankruptcy'})
@@ -1154,8 +1154,7 @@ class Rediz(RedizConventions):
         discards = list()
         for delay in self.DELAYS:
             write_keys = self._get_sample_owners(name, delay)
-            leaderboard = self._get_leaderboard_implementation(variety=LeaderboardVariety.name_and_delay,
-                                                               name=name, delay=delay, readable=False, count=10000)
+            leaderboard = self._get_leaderboard_implementation(name=name, delay=delay, readable=False, count=10000)
             losers = [key for key in write_keys if
                       (self.shash(key) in leaderboard) and (leaderboard[self.shash(key)] < -1.0)]
 
@@ -1371,7 +1370,7 @@ class Rediz(RedizConventions):
                 pipe.expire(name=cancel_queue, time=delay_seconds + 10 * self._DELAY_GRACE)
                 cancel_queues.append(cancel_queue)
             exec = pipe.execute()
-            DEBUG = False
+            DEBUG = True
             if DEBUG:
                 retrieved = self.client.smembers(cancel_queues[0])
                 pprint(cancel_queues)
@@ -1436,8 +1435,7 @@ class Rediz(RedizConventions):
 
         score_pipe = self.client.pipeline()
         num = self.client.zcard(name=self._predictions_name(name=name, delay=delay))
-        lb = self._get_leaderboard_implementation(variety=LeaderboardVariety.name_and_delay, name=name,
-                                                  delay=delay, readable=False, count=top)
+        lb = self._get_leaderboard_implementation(name=name, delay=delay, readable=False, count=top)
         included = [write_key for write_key, balance in lb.items() if balance > min_balance]
         if num:
             h = min(0.1, max(5.0 / num, 0.00001)) * max([abs(v) for v in values] + [1.0])
@@ -1894,7 +1892,7 @@ class Rediz(RedizConventions):
             elif ps == self.TRANSACTIONS:
                 data = self.get_transactions(write_key=stem(parts[-1]))
             elif ps == self.LEADERBOARD:
-                data = self.get_leaderboard(variety=LeaderboardVariety.name,name=parts[-1])
+                data = self.get_leaderboard(name=parts[-1])
             else:
                 data = None
         elif len(parts) == 3:
@@ -1910,10 +1908,7 @@ class Rediz(RedizConventions):
             elif ps == self.TRANSACTIONS:
                 data = self.get_transactions(write_key=parts[1], name=parts[2])
             elif ps == self.LEADERBOARD:
-                # e.g. parts = 'leaderboard','name','blah.json'
-                variety = LeaderboardVariety[parts[1]]
-                lb_dict = self.leaderboard_name_as_dict(leaderboard_name=prefixed_name)
-                data = self.get_leaderboard(variety=variety,**lb_dict)
+                data = self.get_leaderboard(name=parts[2], delay=int(parts[1]))
             else:
                 data = None
         else:
