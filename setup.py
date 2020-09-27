@@ -24,7 +24,7 @@ setup(
     test_suite='pytest',
     tests_require=['pytest', 'microconventions', 'fakeredis'],
     include_package_data=True,
-    install_requires=["microconventions==0.1.0", "fakeredis", "getjson", "redis", "sortedcontainers", "numpy",
+    install_requires=["microconventions==0.4.6", "fakeredis", "getjson", "redis", "sortedcontainers", "numpy",
                       "pymorton", "scipy", "pathlib"],
     entry_points={
         "console_scripts": [
