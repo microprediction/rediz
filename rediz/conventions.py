@@ -187,6 +187,18 @@ class RedizConventions(MicroConventions):
         delays = [d for _, d in names_delays]
         return names, delays
 
+    def overall_monthly_sponsored_leaderboard_name(self, sponsor):
+        return self.custom_leaderboard_name(sponsor=sponsor, name=None)
+
+    def regular_monthly_sponsored_leaderboard_name(self,sponsor):
+        return self.custom_leaderboard_name(sponsor=sponsor, name='name.json')
+
+    def bivariate_monthly_sponsored_leaderboard_name(self,sponsor):
+        return self.custom_leaderboard_name(sponsor=sponsor, name='z2~whatever.json')
+
+    def trivariate_monthly_sponsored_leaderboard_name(self, sponsor):
+        return self.custom_leaderboard_name(sponsor=sponsor, name='z3~whatever.json')
+
     def custom_leaderboard_name(self, sponsor, name=None, dt=None):
         """ Names for leaderboards with a given sponsor
         :param sponsor:  str

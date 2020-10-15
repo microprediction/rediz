@@ -251,6 +251,34 @@ class Rediz(RedizConventions):
         elif self.animal_from_code(sponsor):
             return sponsor
 
+    def delete_regular_monthly_sponsored_leaderboard(self, write_key):
+        sponsor = self.shash(write_key)
+        self._delete_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='regular.json')
+
+    def multiply_regular_monthly_sponsored_leaderboard(self, write_key, weight=0.9):
+        sponsor = self.shash(write_key)
+        self._multiply_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='regular.json', weight=weight)
+
+    def delete_overall_monthly_sponsored_leaderboard(self, write_key):
+        sponsor = self.shash(write_key)
+        self._delete_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name=None)
+
+    def multiply_bivariate_monthly_sponsored_leaderboard(self, write_key, weight=0.9):
+        sponsor = self.shash(write_key)
+        self._multiply_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='z2~blah.json', weight=weight)
+
+    def delete_bivariate_monthly_sponsored_leaderboard(self, write_key):
+        sponsor = self.shash(write_key)
+        self._delete_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='z2~blah.json')
+
+    def multiply_trivariate_monthly_sponsored_leaderboard(self, write_key, weight=0.9):
+        sponsor = self.shash(write_key)
+        self._multiply_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='z3~blah.json',weight=weight)
+
+    def delete_trivariate_monthly_sponsored_leaderboard(self, write_key):
+        sponsor = self.shash(write_key)
+        self._delete_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='z3~blah.json')
+
     def get_regular_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         """ Excludes z's """
         code = self.code_from_code_or_key(sponsor)
@@ -2010,6 +2038,20 @@ class Rediz(RedizConventions):
             return self._get_leaderboard_implementation_with_repos(leaderboard, readable)
         return OrderedDict([(self.animal_from_code(code), score) for code, score in leaderboard]) if readable else dict(
             leaderboard)
+
+    def _delete_custom_leaderboard_implementation(self, sponsor_code, dt, name=None):
+        pname = self.custom_leaderboard_name(sponsor=sponsor_code, dt=dt, name=name)
+        self.client.delete(pname)
+
+    def _multiply_custom_leaderboard_implementation(self, sponsor_code, dt, name=None, weight=0.9):
+        pname = self.custom_leaderboard_name(sponsor=sponsor_code, dt=dt, name=name)
+        temporary_key = 'temporary_' + pname + ''.join([random.choice(['a', 'b', 'c']) for _ in range(20)])
+        shrink_pipe = self.client.pipeline(transaction=True)
+        shrink_pipe.zunionstore(dest=temporary_key, keys={pname: weight})
+        shrink_pipe.zunionstore(dest=pname, keys={temporary_key: 1})
+        shrink_pipe.expire(name=temporary_key, time=1)
+        exec = shrink_pipe.execute()
+
 
     def _get_custom_leaderboard_implementation(self, sponsor_code, dt, count, readable=True, name=None,
                                                with_repos=False):
