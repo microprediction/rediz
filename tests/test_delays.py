@@ -1,6 +1,6 @@
 from rediz.client import Rediz
 import json, time
-from rediz.rediz_test_config import REDIZ_TEST_CONFIG
+from rediz.rediz_test_config import REDIZ_TEST_CONFIG, REDIZ_FAKE_CONFIG
 BELLEHOOD_BAT = REDIZ_TEST_CONFIG['BELLEHOOD_BAT']
 
 # rm tmp*.json; pip install -e . ; python -m pytest tests/test_delays.py ; cat tmp_delays.json
@@ -14,7 +14,7 @@ def test_delay_real():
     do_test_lags_and_delays(rdz)
 
 def test_delay_fake():
-    rdz = Rediz()
+    rdz = Rediz(**REDIZ_FAKE_CONFIG)
     do_test_delay_string(rdz)
     do_test_lags_and_delays(rdz)
 

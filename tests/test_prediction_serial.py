@@ -43,6 +43,7 @@ def do_setup(rdz,target):
 def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_key3, num_exec=0):
 
     target_code = rdz.shash(target_key)
+
     leaderboards = {'overall':rdz.get_leaderboard(),
                     'sponsor':rdz.get_monthly_sponsored_leaderboard(sponsor=target_code),
     'monthly_sponsored':rdz.get_monthly_sponsored_leaderboard(sponsor=target_code),
@@ -70,7 +71,6 @@ def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_k
     rdz.delete_all_scenarios(write_key=model_key1)
     rdz.delete_all_scenarios(write_key=model_key1)
     rdz.delete_all_scenarios(write_key=model_key1)
-
     bankruptcy_report = rdz.admin_bankruptcy(with_report=True)
 
     if len(list(samples.values())):

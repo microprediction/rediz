@@ -1,6 +1,6 @@
 from rediz.client import Rediz
 import json, os, uuid, time
-from rediz.rediz_test_config import REDIZ_TEST_CONFIG
+from rediz.rediz_test_config import REDIZ_TEST_CONFIG, REDIZ_FAKE_CONFIG
 BELLEHOOD_BAT = REDIZ_TEST_CONFIG['BELLEHOOD_BAT']
 TASTEABLE_BEE = REDIZ_TEST_CONFIG['TASTEABLE_BEE']
 
@@ -11,7 +11,7 @@ def dump(obj,name="tmp_links.json"):
         json.dump(obj,open(name,"w"))
 
 def test_fake():
-    rdz_fake = Rediz(delay_grace=60, delay_seconds=[1,5])
+    rdz_fake = Rediz(delay_grace=60, **REDIZ_FAKE_CONFIG)
     do_test_link(rdz_fake)
 
 def test_real():

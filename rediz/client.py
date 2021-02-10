@@ -4,7 +4,7 @@ from collections import Counter, OrderedDict
 from typing import List, Union, Any, Optional
 from redis.client import list_or_args
 from redis.exceptions import DataError
-from .conventions import RedizConventions, REDIZ_CONVENTIONS_ARGS, KeyList, NameList, ValueList
+from .conventions import RedizConventions, REDIZ_CONVENTIONS_ARGS, MICRO_CONVENTIONS_ARGS, KeyList, NameList, ValueList
 from rediz.utilities import get_json_safe, has_nan, shorten, stem
 from pprint import pprint
 
@@ -14,10 +14,10 @@ from pprint import pprint
 # and delay mechanisms. Intended for collectivized short term (e.g. 1 minute or 15 minutes) prediction.
 
 PY_REDIS_ARGS = (
-'host', 'port', 'db', 'username', 'password', 'socket_timeout', 'socket_keepalive', 'socket_keepalive_options',
-'connection_pool', 'unix_socket_path', 'encoding', 'encoding_errors', 'charset', 'errors',
-'decode_responses', 'retry_on_timeout', 'ssl', 'ssl_keyfile', 'ssl_certfile', 'ssl_cert_reqs', 'ssl_ca_certs',
-'ssl_check_hostname', 'max_connections', 'single_connection_client', 'health_check_interval', 'client_name')
+    'host', 'port', 'db', 'username', 'password', 'socket_timeout', 'socket_keepalive', 'socket_keepalive_options',
+    'connection_pool', 'unix_socket_path', 'encoding', 'encoding_errors', 'charset', 'errors',
+    'decode_responses', 'retry_on_timeout', 'ssl', 'ssl_keyfile', 'ssl_certfile', 'ssl_cert_reqs', 'ssl_ca_certs',
+    'ssl_check_hostname', 'max_connections', 'single_connection_client', 'health_check_interval', 'client_name')
 FAKE_REDIS_ARGS = ('decode_responses',)
 
 
@@ -27,7 +27,12 @@ class Rediz(RedizConventions):
 
     def __init__(self, **kwargs):
         # Set some system parameters
-        conventions_kwargs = dict([(k, v) for k, v in kwargs.items() if k in REDIZ_CONVENTIONS_ARGS])
+        conventions_kwargs = dict(
+            [(k, v) for k, v in kwargs.items() if k in REDIZ_CONVENTIONS_ARGS or k in MICRO_CONVENTIONS_ARGS])
+        for arg in MICRO_CONVENTIONS_ARGS:
+            if not arg in conventions_kwargs:
+                raise Exception('Must supply ' + arg)
+
         super().__init__(**conventions_kwargs)
         # Initialize Rediz instance. Expects host, password, port   ... or default to fakeredis
         for k in conventions_kwargs.keys():
@@ -92,12 +97,17 @@ class Rediz(RedizConventions):
     def get_predictions(self, name, delay=None, delays=None):
         return self._get_predictions_implementation(name=name, delay=delay, delays=delays)
 
-    def get_cdf(self, name, delay, values, top=10, min_balance=-5000):
-        """
-        :param values:   Abscissa for CDF
+    def get_cdf(self, name:str, delay, values:[float]=None, top=10, min_balance=-50000000):
+        """ Retrieve 'x' and 'y' values representing an approximate CDF
+        :param values:   Abscissa for CDF ... if not supplied it will try to figure out something
         :param top:      Number of top participants to use
-        :return:
+        :return:  {'x':[float],'y':[float]}
         """
+        delay = int(delay)
+        # TODO: Change to min_rating instead of min_balance
+        if values is None:
+            lagged_values = self.get_lagged_values(name=name)
+            values = self.cdf_values(lagged_values=lagged_values,num=20,as_discrete=None)
         return self._get_cdf_implementation(name=name, delay=delay, values=values, top=top, min_balance=min_balance)
 
     def get_reserve(self):
@@ -231,10 +241,12 @@ class Rediz(RedizConventions):
 
     def get_previous_monthly_overall_leaderboard(self, with_repos=False):
         last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
-        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=last_month_day, count=200, with_repos=with_repos)
+        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=last_month_day, count=200,
+                                                           with_repos=with_repos)
 
     def get_monthly_overall_leaderboard(self, with_repos=False):
-        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=datetime.datetime.now(), count=200, with_repos=with_repos)
+        return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=datetime.datetime.now(), count=200,
+                                                           with_repos=with_repos)
 
     # By sponsor ...
     # Allow user to pass either a write_key or a write_code (recall code = shash(key) )
@@ -245,37 +257,71 @@ class Rediz(RedizConventions):
         elif self.animal_from_code(sponsor):
             return sponsor
 
+    def delete_regular_monthly_sponsored_leaderboard(self, write_key):
+        sponsor = self.shash(write_key)
+        self._delete_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='regular.json')
+
+    def multiply_regular_monthly_sponsored_leaderboard(self, write_key, weight=0.9):
+        sponsor = self.shash(write_key)
+        self._multiply_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='regular.json', weight=weight)
+
+    def delete_overall_monthly_sponsored_leaderboard(self, write_key):
+        sponsor = self.shash(write_key)
+        self._delete_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name=None)
+
+    def multiply_bivariate_monthly_sponsored_leaderboard(self, write_key, weight=0.9):
+        sponsor = self.shash(write_key)
+        self._multiply_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='z2~blah.json', weight=weight)
+
+    def delete_bivariate_monthly_sponsored_leaderboard(self, write_key):
+        sponsor = self.shash(write_key)
+        self._delete_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='z2~blah.json')
+
+    def multiply_trivariate_monthly_sponsored_leaderboard(self, write_key, weight=0.9):
+        sponsor = self.shash(write_key)
+        self._multiply_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='z3~blah.json',weight=weight)
+
+    def delete_trivariate_monthly_sponsored_leaderboard(self, write_key):
+        sponsor = self.shash(write_key)
+        self._delete_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='z3~blah.json')
+
     def get_regular_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         """ Excludes z's """
         code = self.code_from_code_or_key(sponsor)
         if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='mystream', with_repos=with_repos)
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='mystream',
+                                                               with_repos=with_repos)
 
     def get_zscore_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z1~', with_repos=with_repos)
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z1~',
+                                                               with_repos=with_repos)
 
     def get_bivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z2~', with_repos=with_repos)
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z2~',
+                                                               with_repos=with_repos)
 
     def get_trivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z3~', with_repos=with_repos)
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z3~',
+                                                               with_repos=with_repos)
 
     def get_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=datetime.datetime.now(), count=200, with_repos=with_repos)
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=datetime.datetime.now(), count=200,
+                                                               with_repos=with_repos)
 
     def get_previous_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
             last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
-            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=last_month_day, count=200, with_repos=with_repos)
+            return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=last_month_day, count=200,
+                                                               with_repos=with_repos)
 
     def get_messages(self, name, write_key):
         if self._authorize(name=name, write_key=write_key):
@@ -1082,8 +1128,8 @@ class Rediz(RedizConventions):
 
     def _transfer_implementation(self, source_write_key, recipient_write_key, amount, as_record=False):
         """ Debit and credit write_keys """
-        transaction_record = {"settlement_time": str(datetime.datetime.now()), "type": "transfer",
-                              "source": self.shash(source_write_key), "recipient": self.shash(recipient_write_key)}
+        transfer_confirm = {"time": str(datetime.datetime.now()), "operation": "transfer", "epoch_time": time.time(),
+                            "source": self.shash(source_write_key), "recipient": self.shash(recipient_write_key)}
         success = 0
         if self.is_valid_key(source_write_key) and self.key_difficulty(source_write_key) >= self.MIN_LEN - 1:
             if self.is_valid_key(recipient_write_key):
@@ -1094,9 +1140,9 @@ class Rediz(RedizConventions):
                     maximum_to_give = max(0, source_distance)
                     if amount is None:
                         amount = maximum_to_give
-                    given = min(maximum_to_give, maximum_to_receive, amount)
+                    given = min([maximum_to_give, maximum_to_receive, amount])
                     received = given * self._DISCOUNT
-                    transaction_record.update(
+                    transfer_confirm.update(
                         {'max_to_give': maximum_to_give, 'max_to_receive': maximum_to_receive, 'given': given,
                          'received': received})
                     if given > 0.1:
@@ -1106,27 +1152,21 @@ class Rediz(RedizConventions):
                         execut = pipe.execute()
                         success = 1
                     else:
-                        transaction_record.update(
+                        transfer_confirm.update(
                             {'reason': 'Not in a position to give, or not in a position to receive'})
                 else:
-                    transaction_record.update({"reason": "Cannot transfer to a key balance above -1.0"})
+                    transfer_confirm.update({"reason": "Cannot transfer to a key balance above -1.0"})
             else:
-                transaction_record.update({"reason": "Invalid recipient write_key"})
+                transfer_confirm.update({"reason": "Invalid recipient write_key"})
         else:
-            transaction_record.update(
+            transfer_confirm.update(
                 {"reason": "Invalid source write_key, must be " + str(self.MIN_LEN - 1) + " difficulty."})
 
-        # Logging
-        transaction_record.update({"success": success})
-        log_names = [self.transactions_name(write_key=source_write_key),
-                     self.transactions_name(write_key=recipient_write_key)
-                     ]
-        log_pipe = self.client.pipeline(transaction=False)
-        for ln in log_names:
-            log_pipe.xadd(name=ln, fields=transaction_record, maxlen=self.TRANSACTIONS_LIMIT)
-            log_pipe.expire(name=ln, time=60 * 60 * 24)  # Don't expire for 24 hours after any transfer
-        log_pipe.execute()
-        return success if not as_record else transaction_record
+        # Logging confirms
+        transfer_confirm.update({"success": success})
+        self._confirm(write_key=source_write_key, data=transfer_confirm)
+        self._confirm(write_key=recipient_write_key, data=transfer_confirm)
+        return success if not as_record else transfer_confirm
 
     def bankruptcy(self, write_key_len):
         if write_key_len <= 8:
@@ -1433,19 +1473,19 @@ class Rediz(RedizConventions):
         lb = self._get_leaderboard_implementation(name=name, delay=delay, readable=False, count=top)
         included = [write_key for write_key, balance in lb.items() if balance > min_balance]
         if num:
-            h = max(100.0 / num, 0.00001) * max([abs(v) for v in values] + [1.0])
+            h = min(0.1, max(5.0 / num, 0.00001)) * max([abs(v) for v in values] + [1.0])
             for value in values:
                 score_pipe.zrevrangebyscore(name=self._predictions_name(name=name, delay=delay), max=value,
                                             min=value - h, start=0, num=5, withscores=False)
                 score_pipe.zrangebyscore(name=self._predictions_name(name=name, delay=delay), min=value,
-                                           max=value + h, start=0, num=5, withscores=False)
+                                         max=value + h, start=0, num=5, withscores=False)
 
             execut = score_pipe.execute()
-            execut_combined = RedizConventions.chunker(execut,n=len(values))
-            execut_merged = [ lst[0]+lst[1] for lst in execut_combined ]
+            execut_combined = RedizConventions.chunker(execut, n=len(values))
+            execut_merged = [lst[0] + lst[1] for lst in execut_combined]
             prtcls = [
                 self._zmean_scenarios_percentile(percentile_scenarios=ex, included_codes=included) if ex else np.NaN for
-                ex in execut_merged ]
+                ex in execut_merged]
             valid = [(v, p) for v, p in zip(values, prtcls) if not np.isnan(p) and abs(p - 0.5) > 1e-6]
 
             # Make CDF monotone using avg of min and max envelopes running from each direction
@@ -1479,7 +1519,18 @@ class Rediz(RedizConventions):
             noise = np.random.randn(self.num_predictions).tolist()
             jiggered_values = [v + n * self.NOISE for v, n in zip(values, noise)]
             jiggered_values.sort()
-            assert len(set(jiggered_values)) == len(jiggered_values), "coincidence??"
+            if  len(set(jiggered_values)) != len(jiggered_values):
+                print('----- submission error ----- ')
+                num_unique = len(set(values))
+                num_jiggled_unique = len(set(values))
+                if False:
+                    print('Values...')
+                    pprint(values)
+                    print('Jigged values ...')
+                    pprint(jiggered_values)
+                error_message = "Cannot accept submission as there are "+str(num_unique)+" unique values ("+str(num_jiggled_unique)+" unique after noise added)"
+                print(error_message,flush=True)
+                raise Exception(error_message)
             predictions = dict(
                 [(self._format_scenario(write_key=write_key, k=k), v) for k, v in enumerate(jiggered_values)])
 
@@ -1524,8 +1575,8 @@ class Rediz(RedizConventions):
                             'some_values': values[:5], 'success': success, 'warn': warn}
             if success:
                 self._confirm(**confirmation)
-            if not (success) or warn:
-                confirmation.update({'antipated_execut':anticipated_execut, 'actual_execut':execut})
+            if not success or warn:
+                confirmation.update({'antipated_execut': anticipated_execut, 'actual_execut': execut})
                 self._error(**confirmation)
 
             return confirmation if verbose else success
@@ -1535,6 +1586,8 @@ class Rediz(RedizConventions):
 
     def _msettle(self, names, values, budgets, with_percentiles, write_keys, with_copulas):
         """ Parallel version of settle  """
+
+        half_winners = int(math.ceil(self.NUM_WINNERS))
 
         assert len(set(names)) == len(names), "mget() cannot be used with repeated names"
         retrieve_pipe = self.client.pipeline()
@@ -1557,9 +1610,9 @@ class Rediz(RedizConventions):
                 for window_ndx, window in enumerate(self._WINDOWS):
                     scenarios_lookup[name][delay_ndx][window_ndx] = len(retrieve_pipe)
                     retrieve_pipe.zrangebyscore(name=samples_name, min=value, max=value + 0.5 * window,
-                                                withscores=False, start=0, num=25)
+                                                withscores=False, start=0, num=half_winners)
                     retrieve_pipe.zrevrangebyscore(name=samples_name, max=value, min=value - 0.5 * window,
-                                                   withscores=False, start=0, num=25)
+                                                   withscores=False, start=0, num=half_winners)
         retrieved = retrieve_pipe.execute()
 
         # ---- Compute percentiles by zooming out until we have enough points ---
@@ -1605,6 +1658,8 @@ class Rediz(RedizConventions):
                             if len(rewarded_scenarios) == 0:
                                 _ndx = scenarios_lookup[name][delay_ndx][window_ndx]
                                 rewarded_scenarios = retrieved[_ndx]
+                                winning_window_ndx = window_ndx
+                        winning_window = self._WINDOWS[winning_window_ndx]
                         num_rewarded = len(rewarded_scenarios)
 
                         game_payments = self._game_payments(pool=pool, participant_set=participant_set,
@@ -1617,6 +1672,8 @@ class Rediz(RedizConventions):
                                              self.leaderboard_name(name=None, delay=delay),
                                              self.leaderboard_name(name=name, delay=delay),
                                              self.custom_leaderboard_name(sponsor=None, name=None),  # Overall all time
+                                             self.custom_leaderboard_name(sponsor=None, name=None,
+                                                                          dt=datetime.datetime.now()),  # This month
                                              self.custom_leaderboard_name(sponsor=sponsor, name=None),
                                              # Sponsor category
                                              self.custom_leaderboard_name(sponsor=sponsor, name=name),
@@ -1627,8 +1684,7 @@ class Rediz(RedizConventions):
                                                                           dt=datetime.datetime.now()),
                                              # Sponsor and category and month
                                              self.custom_leaderboard_name(sponsor=sponsor, name=name,
-                                                                          dt=datetime.datetime.now()),
-                                             # Sponsor this month
+                                                                          dt=datetime.datetime.now())
                                              ]
                         for (recipient, amount) in payments.items():
                             # Record keeping
@@ -1645,11 +1701,23 @@ class Rediz(RedizConventions):
                             pipe.hincrbyfloat(name=self.performance_name(write_key=recipient),
                                               key=self.horizon_name(name=name, delay=delay), amount=rescaled_amount)
                             # Transactions logs:
+                            maxed_out = num_rewarded == 2 * half_winners
+                            mass = num_rewarded / pool if pool > 0.0 else 0.
+                            density = mass / winning_window
+                            reliable = 0 if maxed_out else 1
+                            breakeven = self.num_predictions*num_rewarded/pool if pool>0 else 0
+
                             transaction_record = {"settlement_time": str(datetime.datetime.now()),
                                                   "amount": rescaled_amount,
+                                                  "budget": budget,
                                                   "stream": name,
                                                   "delay": delay,
                                                   "value": value,
+                                                  "window": winning_window,
+                                                  "mass": mass,
+                                                  "density": density,
+                                                  "average": breakeven,
+                                                  "reliable": reliable,
                                                   "submissions_count": pool,
                                                   "submissions_close": num_rewarded,
                                                   "stream_owner_code": write_code,
@@ -1687,7 +1755,7 @@ class Rediz(RedizConventions):
                     for selection in selections:
                         selected_names = [names[o] for o in selection]
                         dim = len(selection)
-                        z_budget = sum([budgets[o] for o in selection]) / (dim ** 3)  # FIXME: Why int?
+                        z_budget = sum([budgets[o] for o in selection]) / (10 * dim)  # FIXME: Why int?
                         selected_prctls = [percentiles1[o] for o in selection]
                         zcurve_value = self.to_zcurve(selected_prctls)
                         zname = self.zcurve_name(selected_names, delay)
@@ -1725,13 +1793,16 @@ class Rediz(RedizConventions):
             return mean_prctl
 
     def _game_payments(self, pool, participant_set, rewarded_scenarios):
-        game_payments = Counter(dict((p, -1.0) for p in participant_set))
-
         if len(rewarded_scenarios) == 0:
-            carryover = Counter({self._RESERVE: 1.0 * pool / self.num_predictions})
-            game_payments.update(carryover)
-
+            do_carryover = np.random.rand() < 0.05
+            if do_carryover:
+                game_payments = Counter(dict((p, -1.0) for p in participant_set))
+                carryover = Counter({self._RESERVE: 1.0 * pool / self.num_predictions})
+                game_payments.update(carryover)
+            else:
+                game_payments = Counter()
         else:
+            game_payments = Counter(dict((p, -1.0) for p in participant_set))
             winners = [self._scenario_owner(ticket) for ticket in rewarded_scenarios]
             reward = (1.0 * pool / self.num_predictions) / len(winners)  # Could augment this to use kernel or whatever
             payouts = Counter(dict([(w, reward * c) for w, c in Counter(winners).items()]))
@@ -1928,7 +1999,9 @@ class Rediz(RedizConventions):
 
     def _get_transactions_implementation(self, min, max, count, write_key=None, name=None, delay=None):
         trnsctns = self.transactions_name(write_key=write_key, name=name, delay=delay)
-        return self.client.xrevrange(name=trnsctns, min=min, max=max, count=count)
+        data = self.client.xrevrange(name=trnsctns, min=min, max=max, count=count)
+        # TODO: Return as numbers??
+        return data
 
     def get_names(self):
         return list(self.client.smembers(self._NAMES))
@@ -1962,7 +2035,7 @@ class Rediz(RedizConventions):
         hash_to_url_dict = self.client.hgetall(name=self._REPOS)
         return OrderedDict(
             [(self.animal_from_code(code), (score, hash_to_url_dict.get(code, None))) for code, score in leaderboard]
-            ) if readable else dict([(code, (score, hash_to_url_dict.get(code, None))) for code, score in leaderboard])
+        ) if readable else dict([(code, (score, hash_to_url_dict.get(code, None))) for code, score in leaderboard])
 
     def _get_leaderboard_implementation(self, name, delay, count, readable=True, with_repos=False):
         pname = self.leaderboard_name(name=name, delay=delay)
@@ -1972,7 +2045,22 @@ class Rediz(RedizConventions):
         return OrderedDict([(self.animal_from_code(code), score) for code, score in leaderboard]) if readable else dict(
             leaderboard)
 
-    def _get_custom_leaderboard_implementation(self, sponsor_code, dt, count, readable=True, name=None, with_repos=False):
+    def _delete_custom_leaderboard_implementation(self, sponsor_code, dt, name=None):
+        pname = self.custom_leaderboard_name(sponsor=sponsor_code, dt=dt, name=name)
+        self.client.delete(pname)
+
+    def _multiply_custom_leaderboard_implementation(self, sponsor_code, dt, name=None, weight=0.9):
+        pname = self.custom_leaderboard_name(sponsor=sponsor_code, dt=dt, name=name)
+        temporary_key = 'temporary_' + pname + ''.join([random.choice(['a', 'b', 'c']) for _ in range(20)])
+        shrink_pipe = self.client.pipeline(transaction=True)
+        shrink_pipe.zunionstore(dest=temporary_key, keys={pname: weight})
+        shrink_pipe.zunionstore(dest=pname, keys={temporary_key: 1})
+        shrink_pipe.expire(name=temporary_key, time=1)
+        exec = shrink_pipe.execute()
+
+
+    def _get_custom_leaderboard_implementation(self, sponsor_code, dt, count, readable=True, name=None,
+                                               with_repos=False):
         pname = self.custom_leaderboard_name(sponsor=sponsor_code, dt=dt, name=name)
         leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
         if with_repos:

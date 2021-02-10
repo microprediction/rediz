@@ -1,10 +1,11 @@
 
 from rediz import Rediz
+from rediz.rediz_test_config import REDIZ_FAKE_CONFIG
 
 
 def test_is_valid_name():
 
-    nc = Rediz()
+    nc = Rediz(**REDIZ_FAKE_CONFIG)
     s = 'dog-7214.json'
     assert nc.is_valid_name(s), "oops"
     for s in ["25824ee3-d9bf-4923-9be7-19d6c2aafcee.json"]:

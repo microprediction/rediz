@@ -15,7 +15,10 @@ DelayList = List[Optional[int]]
 
 SEP = "::"
 
-REDIZ_CONVENTIONS_ARGS = ('history_len', 'delays','lagged_len', 'max_ttl', 'error_ttl', 'transactions_ttl','error_limit', 'num_predictions','windows','obscurity','delay_grace','instant_recall')
+#TODO: move to microconventions
+REDIZ_CONVENTIONS_ARGS = ('history_len', 'delays','lagged_len', 'max_ttl', 'error_ttl',
+                          'transactions_ttl','error_limit', 'windows','obscurity',
+                          'delay_grace','instant_recall')
 MICRO_CONVENTIONS_ARGS = ('num_predictions','min_len','min_balance','delays')
 
 class RedizConventions(MicroConventions):
@@ -24,7 +27,7 @@ class RedizConventions(MicroConventions):
                   error_limit=None, num_predictions=None, windows=None,
                   obscurity=None, delay_grace=None, instant_recall=None, min_len=None, min_balance=None ):
 
-        super().__init__(min_len=min_len,min_balance=min_balance,num_predictions=num_predictions)
+        super().__init__(min_len=min_len,min_balance=min_balance,num_predictions=num_predictions,delays=delays)
 
         if windows is None:
             windows = [1e-4, 1e-3,  1e-2]
@@ -60,7 +63,8 @@ class RedizConventions(MicroConventions):
         self.DELAYS = delays or [1, 5]
         self.ZDELAYS = [self.DELAYS[0],self.DELAYS[-1]]
         self.CONFIRMS_MAX = 5  # Maximum number of confirmations when using mset()
-        self.NOISE = 0.1 / self.NUM_PREDICTIONS  # Tie-breaking / smoothing noise added to predictions
+        self.NOISE = 0.1 / self.num_predictions  # Tie-breaking / smoothing noise added to predictions
+        self.NUM_WINNERS = 10   # Maximum number of winning tickets
 
         # Implementation details: private reserved redis keys and prefixes.
         self._obscurity = (obscurity or "obscure") + self.SEP
@@ -183,6 +187,18 @@ class RedizConventions(MicroConventions):
         names = [n for n, _ in names_delays]
         delays = [d for _, d in names_delays]
         return names, delays
+
+    def overall_monthly_sponsored_leaderboard_name(self, sponsor):
+        return self.custom_leaderboard_name(sponsor=sponsor, name=None)
+
+    def regular_monthly_sponsored_leaderboard_name(self,sponsor):
+        return self.custom_leaderboard_name(sponsor=sponsor, name='name.json')
+
+    def bivariate_monthly_sponsored_leaderboard_name(self,sponsor):
+        return self.custom_leaderboard_name(sponsor=sponsor, name='z2~whatever.json')
+
+    def trivariate_monthly_sponsored_leaderboard_name(self, sponsor):
+        return self.custom_leaderboard_name(sponsor=sponsor, name='z3~whatever.json')
 
     def custom_leaderboard_name(self, sponsor, name=None, dt=None):
         """ Names for leaderboards with a given sponsor

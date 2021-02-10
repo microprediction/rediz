@@ -1,7 +1,7 @@
 from rediz.client import Rediz
 import json, os, uuid
 import numpy as np
-from rediz.rediz_test_config import REDIZ_TEST_CONFIG
+from rediz.rediz_test_config import REDIZ_TEST_CONFIG, REDIZ_FAKE_CONFIG
 BELLEHOOD_BAT = REDIZ_TEST_CONFIG['BELLEHOOD_BAT']
 
 # python -m pytest tests/test_helpers.py ; cat tmp_helpers.json
@@ -52,7 +52,7 @@ def dump(obj,name="tmp_helpers.json"):
     json.dump(obj,open(name,"w"))
 
 def test_various_fake_and_real():
-    rdz_fake = Rediz()
+    rdz_fake = Rediz(**REDIZ_FAKE_CONFIG)
     rdz_real = Rediz(**REDIZ_TEST_CONFIG)
     for rdz in [rdz_fake,rdz_real]:
         do_test_exists_delete(rdz)
@@ -63,14 +63,14 @@ def test_various_fake_and_real():
 
 
 def test__streams_support():
-    rdz = Rediz(decode_responses=True)  # Use fakeredis
+    rdz = Rediz(decode_responses=True, **REDIZ_FAKE_CONFIG)  # Use fakeredis
     assert rdz._streams_support()==False, "Test failed because now fakeredis supports streams?!"
 
 def random_name():
     return random_key()+'.json'
 
 def test_card_fake():
-    rdz = Rediz()
+    rdz = Rediz(**REDIZ_FAKE_CONFIG)
     assert rdz.card()==0
     title = {'name':rdz.random_name(),'write_key':BELLEHOOD_BAT}
     rdz.set(value="32",**title)
@@ -160,7 +160,7 @@ def test_coerce_outputs():
 
 
 def test_morton():
-    rdz     = Rediz()
+    rdz     = Rediz(**REDIZ_TEST_CONFIG)
     for dim in [2,3]:
         for _ in range(100):
             prtcls  = list(np.random.rand(dim))
@@ -182,7 +182,7 @@ def show_morton_distribution():
     """ Verify that zcurves are N(0,1) """
     import matplotlib.pyplot as plt
     from scipy.stats import probplot
-    rdz = Rediz()
+    rdz = Rediz(**REDIZ_TEST_CONFIG)
     zs = list()
     for dim in [2, 3]:
         for _ in range(10000):

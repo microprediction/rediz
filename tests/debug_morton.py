@@ -1,9 +1,10 @@
 
 from rediz.client import Rediz
+from rediz.rediz_test_config import REDIZ_TEST_CONFIG
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits import mplot3d
-rdz = Rediz()
+rdz = Rediz(**REDIZ_TEST_CONFIG)
 from scipy import stats
 import math
 
