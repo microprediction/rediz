@@ -196,6 +196,12 @@ class Rediz(RedizConventions):
                         data={'operation': 'delete_repo', 'write_key': write_key, 'message': 'write key not valid'})
             return 0
 
+    def get_awards(self, write_key):
+        """ Accepts write_key or code """
+        val = self.client.hget(name=self._AWARDS, key=self.shash(write_key)) if self.is_valid_key(
+            write_key) else self.client.hget(name=self._AWARDS, key=write_key)
+        return json.loads(val)
+
     def get_budgets(self):
         return self._nice_and_ordered(self.client.hgetall(name=self.BUDGETS))
 
