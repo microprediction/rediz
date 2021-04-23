@@ -255,7 +255,7 @@ class Rediz(RedizConventions):
         sponsor = self.shash(write_key)
         self._delete_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='regular.json')
 
-    def multiply_regular_monthly_sponsored_leaderboard(self, write_key, weight=0.9):
+    def multiply_regular_monthly_sponsored_leaderboard(self, write_key, weight=0.97):
         sponsor = self.shash(write_key)
         self._multiply_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='regular.json', weight=weight)
 
