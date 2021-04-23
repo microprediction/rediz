@@ -1,0 +1,32 @@
+
+// This swaps the IE friendly JS when the user agent is IE and loads in a few JS libraries that are necessary
+<script src="//cdn.jsdelivr.net/bluebird/3.5.0/bluebird.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/fetch/2.0.3/fetch.js"></script>
+<script src="https://f.hubspotusercontent10.net/hubfs/7940611/polyfill.min.js"></script>
+
+<script> 
+if(/MSIE \d|Trident.*rv:/.test(navigator.userAgent)){
+        var utils = document.createElement('script');
+        utils.setAttribute('src','{{ get_asset_url("/Intech Dashboard/js/utils-ie.js") }}');
+        document.head.appendChild(utils);
+        var search = document.createElement('script');
+        search.setAttribute('src','{{ get_asset_url("/Intech Dashboard/js/stream_search-ie.js") }}');
+        document.head.appendChild(search);
+        var dash = document.createElement('script');
+        dash.setAttribute('src','{{ get_asset_url("/Intech Dashboard/js/stream-dashboard-ie.js") }}');
+        document.head.appendChild(dash);
+        console.log('yes ie');
+                       }
+                       else{
+        console.log('not ie');
+        var utils = document.createElement('script');
+        utils.setAttribute('src','{{ get_asset_url("/Intech Dashboard/js/utils.js") }}');
+        document.head.appendChild(utils);
+        var search = document.createElement('script');
+        search.setAttribute('src','{{ get_asset_url("/Intech Dashboard/js/stream_search.js") }}');
+        document.head.appendChild(search);
+        var dash = document.createElement('script');
+        dash.setAttribute('src','{{ get_asset_url("/Intech Dashboard/js/stream-dashboard.js") }}');
+        document.head.appendChild(dash);
+                       }
+</script> 
