@@ -7,7 +7,7 @@ README = (HERE / "README.md").read_text()
 
 setup(
     name="rediz",
-    version="0.14.0",
+    version="0.14.1",
     description="Powering community nowcasts at www.microprediction.org",
     long_description=README,
     long_description_content_type="text/markdown",
@@ -24,7 +24,7 @@ setup(
     test_suite='pytest',
     tests_require=['pytest', 'microconventions', 'fakeredis'],
     include_package_data=True,
-    install_requires=["microconventions==0.4.6", "fakeredis", "getjson", "redis", "sortedcontainers", "numpy",
+    install_requires=["microconventions>=0.5.1", "fakeredis", "getjson", "redis", "sortedcontainers", "numpy",
                       "pymorton", "scipy", "pathlib"],
     entry_points={
         "console_scripts": [
