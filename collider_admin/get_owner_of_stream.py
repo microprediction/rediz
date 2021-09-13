@@ -3,7 +3,7 @@ from rediz.collider_config_private import REDIZ_COLLIDER_CONFIG
 import pprint
 
 name = 'electricity-fueltype-nyiso-wind.json'
-name = 'electricity-load-nyiso-overall.json'
+name = 'emojitracker-twitter-heavy_black_heart.json'
 
 if __name__ == '__main__':
     rdz = Rediz(**REDIZ_COLLIDER_CONFIG)

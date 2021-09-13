@@ -187,6 +187,29 @@ class Rediz(RedizConventions):
                                                    'message': 'write key not valid'})
             return 0
 
+    def _get_email(self, key_or_code):
+        """ DO NOT EXPOSE TO CLIENT """
+        code = self.code_from_code_or_key(key_or_code)
+        return self.client.hget(name=self._EMAILS, key=code)
+
+    def set_email(self, write_key, email):
+        if self.is_valid_key(write_key):
+            code = self.shash(write_key)
+            return self.client.hset(name=self._EMAILS, key=code, value=email)
+        else:
+            self._error(write_key=write_key, data={'operation': 'set_email', 'write_key': write_key, 'email': email,
+                                                   'message': 'write key not valid'})
+            return 0
+
+    def delete_email(self, write_key):
+        if self.is_valid_key(write_key):
+            code = self.shash(write_key)
+            return self.client.hdel(self._EMAILS, code)
+        else:
+            self._error(write_key=write_key,
+                        data={'operation': 'delete_email', 'write_key': write_key, 'message': 'write key not valid'})
+            return 0
+
     def delete_repository(self, write_key):
         if self.is_valid_key(write_key):
             code = self.shash(write_key)
@@ -285,12 +308,12 @@ class Rediz(RedizConventions):
         sponsor = self.shash(write_key)
         self._delete_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='z3~blah.json')
 
-    def get_regular_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
+    def get_regular_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=False):
         """ Excludes z's """
         code = self.code_from_code_or_key(sponsor)
         if code:
             return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='mystream',
-                                                               with_repos=with_repos)
+                                                               with_repos=with_repos, readable=readable)
 
     def get_zscore_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)

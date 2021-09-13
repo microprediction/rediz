@@ -58,7 +58,9 @@ class AdminRediz(RedizConventions):
         """
         if self.is_valid_key(write_key):
             write_key = self.shash(write_key)
-        curr_award_dict = json.loads(self.client.hget(name=self._AWARDS, key=write_key))
+
+        curr_award_json = self.client.hget(name=self._AWARDS, key=write_key)
+        curr_award_dict = json.loads(curr_award_json) if curr_award_json is not None else {}
         curr_award_dict.update(award_dict)
         return self.client.hset(name=self._AWARDS, key=write_key, value=json.dumps(curr_award_dict))
 

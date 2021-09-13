@@ -5,7 +5,7 @@ import pprint
 if __name__ == '__main__':
     rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
 
-    NAMES = ['die.json']
+    NAMES = ['emojitracker-twitter-heavy_black_heart.json']
 
     cdfs = dict()
     for name in NAMES:

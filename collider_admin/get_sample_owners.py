@@ -6,7 +6,7 @@ from rediz.collider_config_private import BOOZE_MAMMAL
 
 if __name__ == '__main__':
     rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
-    for name in ['z2~three_body_y~three_body_z~70.json']:
+    for name in ['emojitracker-twitter-heavy_black_heart.json']:
         delay = 910
         owners = rdz._get_sample_owners(name=name,delay=delay)
         print("---Owners---")

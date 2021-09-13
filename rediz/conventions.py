@@ -86,6 +86,7 @@ class RedizConventions(MicroConventions):
         self._DISCOUNT = 0.9            # Transfers
         self._REPOS = self._obscurity + "repos"
         self._AWARDS = self._obscurity + "awards"
+        self._EMAILS = self._obscurity + "emails"
 
         # Other implementation config
         self._CANCEL_GRACE = 45

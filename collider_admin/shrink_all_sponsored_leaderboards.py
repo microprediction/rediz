@@ -5,7 +5,7 @@ from rediz.client import Rediz
 from rediz.collider_config_private import REDIZ_COLLIDER_CONFIG, OFFCAST_GOOSE, EMBLOSSOM_MOTH
 from pprint import pprint
 
-WEIGHT = 0.5  # Start of month
+WEIGHT = 0.99  #
 
 
 if __name__ == '__main__':
