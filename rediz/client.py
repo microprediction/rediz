@@ -308,7 +308,7 @@ class Rediz(RedizConventions):
         sponsor = self.shash(write_key)
         self._delete_custom_leaderboard_implementation(sponsor_code=sponsor, dt=None, name='z3~blah.json')
 
-    def get_regular_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=False):
+    def get_regular_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=True):
         """ Excludes z's """
         code = self.code_from_code_or_key(sponsor)
         if code:
