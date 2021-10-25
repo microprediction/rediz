@@ -267,9 +267,9 @@ class Rediz(RedizConventions):
         return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=last_month_day, count=200,
                                                            with_repos=with_repos)
 
-    def get_monthly_overall_leaderboard(self, with_repos=False):
+    def get_monthly_overall_leaderboard(self, with_repos=False, readable=True):
         return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=datetime.datetime.now(), count=200,
-                                                           with_repos=with_repos)
+                                                           with_repos=with_repos, readable=readable)
 
     # By sponsor ...
     # Allow user to pass either a write_key or a write_code (recall code = shash(key) )
@@ -315,29 +315,29 @@ class Rediz(RedizConventions):
             return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='mystream',
                                                                with_repos=with_repos, readable=readable)
 
-    def get_zscore_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
+    def get_zscore_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
             return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z1~',
-                                                               with_repos=with_repos)
+                                                               with_repos=with_repos, readable=readable)
 
-    def get_bivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
+    def get_bivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
             return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z2~',
-                                                               with_repos=with_repos)
+                                                               with_repos=with_repos, readable=readable)
 
-    def get_trivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
+    def get_trivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
             return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z3~',
-                                                               with_repos=with_repos)
+                                                               with_repos=with_repos, readable=readable)
 
-    def get_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
+    def get_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=False):
         code = self.code_from_code_or_key(sponsor)
         if code:
             return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=datetime.datetime.now(), count=200,
-                                                               with_repos=with_repos)
+                                                               with_repos=with_repos, readable=readable)
 
     def get_previous_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
         code = self.code_from_code_or_key(sponsor)
@@ -2062,7 +2062,8 @@ class Rediz(RedizConventions):
 
     def _get_leaderboard_implementation(self, name, delay, count, readable=True, with_repos=False):
         pname = self.leaderboard_name(name=name, delay=delay)
-        leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
+        unsorted_leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
+        leaderboard = sorted(unsorted_leaderboard, key=lambda x: x[1], reverse=True)
         if with_repos:
             return self._get_leaderboard_implementation_with_repos(leaderboard, readable)
         return OrderedDict([(self.animal_from_code(code), score) for code, score in leaderboard]) if readable else dict(
@@ -2082,14 +2083,39 @@ class Rediz(RedizConventions):
         exec = shrink_pipe.execute()
 
 
+    def _readable(self, leaderboard):
+        """
+        :param leaderboard: [ (code, score) ]
+        :return:
+        """
+        readable = [(self.animal_from_code(code), score) for code, score in leaderboard]
+        from collections import Counter
+        animals = [ a for (a,s) in readable ]
+        animal_counter = Counter(animals)
+        need_renaming = [ animal for animal, count in animal_counter.items() if count>1 ]
+
+        def unambiguous_animal_name(code):
+            short_name = self.animal_from_code(code)
+            if short_name in need_renaming:
+                n = len(short_name.replace(' ',''))
+                suffix = code[n:n+4]
+                return short_name+' '+suffix
+            else:
+                return short_name
+
+        return OrderedDict([(unambiguous_animal_name(code), score) for code, score in leaderboard] )
+
+
+
     def _get_custom_leaderboard_implementation(self, sponsor_code, dt, count, readable=True, name=None,
                                                with_repos=False):
         pname = self.custom_leaderboard_name(sponsor=sponsor_code, dt=dt, name=name)
-        leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
+        unsorted_leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
+        leaderboard = sorted(unsorted_leaderboard, key=lambda x: x[1], reverse=True)
         if with_repos:
             return self._get_leaderboard_implementation_with_repos(leaderboard, readable)
-        return OrderedDict([(self.animal_from_code(code), score) for code, score in leaderboard]) if readable else dict(
-            leaderboard)
+        return self._readable(leaderboard) if readable else OrderedDict(leaderboard)
+
 
     def _get_links_implementation(self, name, delay=None, delays=None):
         """ Set of outgoing links created by name owner """
