@@ -5,7 +5,7 @@ from pprint import pprint
 
 if __name__ == '__main__':
     rdz = Rediz(**REDIZ_COLLIDER_CONFIG)
-    pprint( rdz.get_bivariate_monthly_sponsored_leaderboard(sponsor=EMBLOSSOM_MOTH, readable=True) )
+    pprint( rdz.get_bivariate_monthly_sponsored_leaderboard(sponsor=EMBLOSSOM_MOTH, readable=True, with_repos=True) )
     print(EMBLOSSOM_MOTH)
 
 

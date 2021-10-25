@@ -2056,9 +2056,7 @@ class Rediz(RedizConventions):
 
     def _get_leaderboard_implementation_with_repos(self, leaderboard, readable):
         hash_to_url_dict = self.client.hgetall(name=self._REPOS)
-        return OrderedDict(
-            [(self.animal_from_code(code), (score, hash_to_url_dict.get(code, None))) for code, score in leaderboard]
-        ) if readable else dict([(code, (score, hash_to_url_dict.get(code, None))) for code, score in leaderboard])
+        return self._readable(leaderboard, hash_to_url_dict) if readable else dict([(code, (score, hash_to_url_dict.get(code, None))) for code, score in leaderboard])
 
     def _get_leaderboard_implementation(self, name, delay, count, readable=True, with_repos=False):
         pname = self.leaderboard_name(name=name, delay=delay)
@@ -2083,7 +2081,7 @@ class Rediz(RedizConventions):
         exec = shrink_pipe.execute()
 
 
-    def _readable(self, leaderboard):
+    def _readable(self, leaderboard, hash_to_url_dict=None):
         """
         :param leaderboard: [ (code, score) ]
         :return:
@@ -2102,10 +2100,10 @@ class Rediz(RedizConventions):
                 return short_name+' '+suffix
             else:
                 return short_name
-
-        return OrderedDict([(unambiguous_animal_name(code), score) for code, score in leaderboard] )
-
-
+        if hash_to_url_dict is not None:
+            return OrderedDict([(unambiguous_animal_name(code), (score,hash_to_url_dict.get(code,None) )) for code, score in leaderboard] )
+        else:
+            return OrderedDict([(unambiguous_animal_name(code), score) for code, score in leaderboard] )
 
     def _get_custom_leaderboard_implementation(self, sponsor_code, dt, count, readable=True, name=None,
                                                with_repos=False):
