@@ -259,13 +259,13 @@ class Rediz(RedizConventions):
     #        Leaderboards
     # ---------------------------
 
-    def get_leaderboard(self, name=None, delay=None, count=1200, with_repos=False):
-        return self._get_leaderboard_implementation(name=name, delay=delay, count=count, with_repos=with_repos)
+    def get_leaderboard(self, name=None, delay=None, count=1200, with_repos=False, readable=True):
+        return self._get_leaderboard_implementation(name=name, delay=delay, count=count, with_repos=with_repos, readable=readable)
 
-    def get_previous_monthly_overall_leaderboard(self, with_repos=False):
+    def get_previous_monthly_overall_leaderboard(self, with_repos=False, readable=True):
         last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
         return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=last_month_day, count=200,
-                                                           with_repos=with_repos)
+                                                           with_repos=with_repos, readable=readable)
 
     def get_monthly_overall_leaderboard(self, with_repos=False, readable=True):
         return self._get_custom_leaderboard_implementation(sponsor_code=None, dt=datetime.datetime.now(), count=200,
@@ -2064,8 +2064,7 @@ class Rediz(RedizConventions):
         leaderboard = sorted(unsorted_leaderboard, key=lambda x: x[1], reverse=True)
         if with_repos:
             return self._get_leaderboard_implementation_with_repos(leaderboard, readable)
-        return OrderedDict([(self.animal_from_code(code), score) for code, score in leaderboard]) if readable else dict(
-            leaderboard)
+        return self._readable(leaderboard) if readable else OrderedDict(leaderboard)
 
     def _delete_custom_leaderboard_implementation(self, sponsor_code, dt, name=None):
         pname = self.custom_leaderboard_name(sponsor=sponsor_code, dt=dt, name=name)
