@@ -315,31 +315,31 @@ class Rediz(RedizConventions):
             return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='mystream',
                                                                with_repos=with_repos, readable=readable)
 
-    def get_zscore_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=False):
+    def get_zscore_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=True):
         code = self.code_from_code_or_key(sponsor)
         if code:
             return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z1~',
                                                                with_repos=with_repos, readable=readable)
 
-    def get_bivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=False):
+    def get_bivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=True):
         code = self.code_from_code_or_key(sponsor)
         if code:
             return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z2~',
                                                                with_repos=with_repos, readable=readable)
 
-    def get_trivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=False):
+    def get_trivariate_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=True):
         code = self.code_from_code_or_key(sponsor)
         if code:
             return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=None, count=200, name='z3~',
                                                                with_repos=with_repos, readable=readable)
 
-    def get_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=False):
+    def get_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=True):
         code = self.code_from_code_or_key(sponsor)
         if code:
             return self._get_custom_leaderboard_implementation(sponsor_code=code, dt=datetime.datetime.now(), count=200,
                                                                with_repos=with_repos, readable=readable)
 
-    def get_previous_monthly_sponsored_leaderboard(self, sponsor, with_repos=False):
+    def get_previous_monthly_sponsored_leaderboard(self, sponsor, with_repos=False, readable=True):
         code = self.code_from_code_or_key(sponsor)
         if code:
             last_month_day = datetime.datetime.now().replace(day=1) - datetime.timedelta(days=2)
@@ -2111,7 +2111,7 @@ class Rediz(RedizConventions):
         unsorted_leaderboard = list(reversed(self.client.zrange(name=pname, start=-count, end=-1, withscores=True)))
         leaderboard = sorted(unsorted_leaderboard, key=lambda x: x[1], reverse=True)
         if with_repos:
-            return self._get_leaderboard_implementation_with_repos(leaderboard, readable)
+            return self._get_leaderboard_implementation_with_repos(leaderboard=leaderboard, readable=readable)
         return self._readable(leaderboard) if readable else OrderedDict(leaderboard)
 
 
