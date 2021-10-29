@@ -59,7 +59,7 @@ def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_k
     samples       = rdz.get_samples(name=target, delay=1,write_key=target_key)
     lagged        = rdz.get_lagged(name=target)
     owners        = rdz.client.smembers(rdz._sample_owners_name(name=target,delay=1))
-    predictions   = rdz.get_predictions(name=target, delay=1)
+    predictions   = rdz.get_predictions(name=target, delay=1, write_key=target_key)
     cdf           = rdz.get_cdf(name=target,delay=1,values=[0.0, 1.0])
     links         = rdz._get_links_implementation(name=target, delay=1)
     backlinks     = rdz._get_backlinks_implementation(name=target)
