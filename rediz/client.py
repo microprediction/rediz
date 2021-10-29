@@ -88,14 +88,16 @@ class Rediz(RedizConventions):
         names = list_or_args(names, args)
         return self._get_implementation(names=names)
 
-    def get_samples(self, name, delay=None, delays=None):
-        return self._get_samples_implementation(name=name, delay=delay, delays=delays)
-
     def get_index(self):
         return self._get_index_implementation()
 
-    def get_predictions(self, name, delay=None, delays=None):
-        return self._get_predictions_implementation(name=name, delay=delay, delays=delays)
+    def get_predictions(self, write_key, name, delay=None, delays=None):
+        if self._authorize(name=name,write_key=write_key):
+            return self._get_predictions_implementation(name=name, delay=delay, delays=delays)
+        else:
+            self._error(write_key=write_key, data={'operation': 'get_predictions', 'write_key': write_key, 'name': name,
+                                                   'message': 'write key not valid'})
+
 
     def get_cdf(self, name:str, delay, values:[float]=None, top=10, min_balance=-50000000):
         """ Retrieve 'x' and 'y' values representing an approximate CDF
@@ -1485,6 +1487,11 @@ class Rediz(RedizConventions):
         # Requires maintenance of a sketch which is left for future work
         # A hack is provided in the client library for now
         raise NotImplementedError()
+
+
+    def _get_samples(self, name, delay):
+        return self.client.zrange(name=self._predictions_name(name=name,delay=delay), start=0,end=-1)
+
 
     def _get_cdf_implementation(self, name, delay, values, top, min_balance):
         """" Possibly we need to split logic into continuous and discrete cases :( """
