@@ -1495,10 +1495,6 @@ class Rediz(RedizConventions):
         raise NotImplementedError()
 
 
-    def _get_samples(self, name, delay):
-        return self.client.zrange(name=self._predictions_name(name=name,delay=delay), start=0,end=-1)
-
-
     def _get_cdf_implementation(self, name, delay, values, top, min_balance):
         """" Possibly we need to split logic into continuous and discrete cases :( """
         assert name == self._root_name(name), "get_cdf expects root name"
