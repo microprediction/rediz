@@ -56,7 +56,7 @@ def tear_down(rdz,target, target_key, model_key, model_key1, model_key2, model_k
     'monthly_zscore_leaderboard': rdz.get_zscore_monthly_sponsored_leaderboard(sponsor=target_code)
                     }
 
-    samples       = rdz.get_samples(name=target, delay=1)
+    samples       = rdz.get_samples(name=target, delay=1,write_key=target_key)
     lagged        = rdz.get_lagged(name=target)
     owners        = rdz.client.smembers(rdz._sample_owners_name(name=target,delay=1))
     predictions   = rdz.get_predictions(name=target, delay=1)
@@ -144,7 +144,7 @@ def do_serial( rdz ):
         num_exec += rdz.admin_promises()
 
     # Should have promises executed by now...
-    samples = rdz.get_samples(name=target,delay=1)
+    samples = rdz.get_samples(name=target,delay=1,write_key=target_key)
 
     if False:
         import matplotlib.pyplot as plt
@@ -159,7 +159,7 @@ def do_serial( rdz ):
         assert model(rdz, target, model_key1)
         assert model(rdz, target, model_key2)
         assert model(rdz, target, model_key3)
-        samples = rdz.get_samples(name=target, delay=1)
+        samples = rdz.get_samples(name=target, delay=1, write_key=target_key)
 
     tear_down(rdz, target, target_key, model_key, model_key1, model_key2, model_key3, num_exec)
 
