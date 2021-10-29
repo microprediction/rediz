@@ -42,10 +42,10 @@ def do_setup(rdz,targets):
 
 def tear_down(rdz,targets, target_key, model_key, model_key1, model_key2, model_key3, num_exec=0):
     for target in targets:
-        samples       = rdz._get_samples(name=target, delay=1)
+        samples       = rdz.get_samples(name=target, delay=1, write_key=target_key)
         lagged        = rdz.get_lagged(name=target)
         owners        = rdz.client.smembers(rdz._sample_owners_name(name=target,delay=1))
-        predictions   = rdz.get_predictions(name=target, delay=1)
+        predictions   = rdz.get_predictions(name=target, delay=1,write_key=target_key)
         cdf           = rdz.get_cdf(name=target,delay=1,values=[0.0, 1.0])
         links         = rdz._get_links_implementation(name=target, delay=1)
         backlinks     = rdz._get_backlinks_implementation(name=target)
@@ -130,7 +130,7 @@ def do_serial( rdz ):
         num_exec += rdz.admin_promises()
 
     # Should have promises executed by now...
-    samples = rdz._get_samples(name=targets[0],delay=1)
+    samples = rdz.get_samples(name=targets[0],delay=1,write_key=target_key)
 
     if False:
         import matplotlib.pyplot as plt
@@ -146,7 +146,7 @@ def do_serial( rdz ):
             model(rdz, target, model_key1)
             model(rdz, target, model_key2)
             model(rdz, target, model_key3)
-        samples = rdz._get_samples(name=target[0], delay=1)
+        samples = rdz.get_samples(name=target[0], delay=1,write_key=target_key)
 
     tear_down(rdz=rdz, targets=targets, target_key=target_key, model_key=model_key, model_key1=model_key1, model_key2=model_key2, model_key3=model_key3, num_exec=num_exec)
 
