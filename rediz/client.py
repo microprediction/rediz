@@ -98,6 +98,12 @@ class Rediz(RedizConventions):
             self._error(write_key=write_key, data={'operation': 'get_predictions', 'write_key': write_key, 'name': name,
                                                    'message': 'write key not valid'})
 
+    def get_samples(self, write_key, name, delay=None, delays=None):
+        if self._authorize(name=name, write_key=write_key):
+            return self._get_samples_implementation(name=name, delay=delay, delays=delays)
+        else:
+            self._error(write_key=write_key, data={'operation': 'get_samples', 'write_key': write_key, 'name': name,
+                                                   'message': 'write key not valid'})
 
     def get_cdf(self, name:str, delay, values:[float]=None, top=10, min_balance=-50000000):
         """ Retrieve 'x' and 'y' values representing an approximate CDF
