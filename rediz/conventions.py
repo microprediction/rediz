@@ -437,7 +437,8 @@ class RedizConventions(MicroConventions):
 
     def _cost_based_distribution_ttl(self,budget):
         """ Time to live for samples ... mostly budget independent """
-        return int( max(self.DELAYS)+self._DELAY_GRACE+60+budget )
+        return 60*60*24*3
+        #return int( max(self.DELAYS)+self._DELAY_GRACE+60+budget )
 
     # --------------------------------------------------------------------------
     #            Redis version/capability inference
