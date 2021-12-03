@@ -63,8 +63,8 @@ class RedizConventions(MicroConventions):
         self.DELAYS = delays or [1, 5]
         self.ZDELAYS = [self.DELAYS[0],self.DELAYS[-1]]
         self.CONFIRMS_MAX = 5  # Maximum number of confirmations when using mset()
-        self.NOISE = 0.1 / self.num_predictions  # Tie-breaking / smoothing noise added to predictions
-        self.NUM_WINNERS = 10   # Maximum number of winning tickets
+        self.NOISE = 0.01 / self.num_predictions  # Tie-breaking / smoothing noise added to predictions
+        self.NUM_WINNERS = 20   # Maximum number of winning tickets
 
         # Implementation details: private reserved redis keys and prefixes.
         self._obscurity = (obscurity or "obscure") + self.SEP

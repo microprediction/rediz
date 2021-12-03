@@ -1826,7 +1826,7 @@ class Rediz(RedizConventions):
 
     def _game_payments(self, pool, participant_set, rewarded_scenarios):
         if len(rewarded_scenarios) == 0:
-            do_carryover = np.random.rand() < 0.05
+            do_carryover = np.random.rand() < 0.00 # For future use
             if do_carryover:
                 game_payments = Counter(dict((p, -1.0) for p in participant_set))
                 carryover = Counter({self._RESERVE: 1.0 * pool / self.num_predictions})
@@ -1836,6 +1836,7 @@ class Rediz(RedizConventions):
         else:
             game_payments = Counter(dict((p, -1.0) for p in participant_set))
             winners = [self._scenario_owner(ticket) for ticket in rewarded_scenarios]
+            # n_participants = pool / self.num_predictions
             reward = (1.0 * pool / self.num_predictions) / len(winners)  # Could augment this to use kernel or whatever
             payouts = Counter(dict([(w, reward * c) for w, c in Counter(winners).items()]))
             game_payments.update(payouts)
