@@ -1626,7 +1626,7 @@ class Rediz(RedizConventions):
     def _msettle(self, names, values, budgets, with_percentiles, write_keys, with_copulas):
         """ Parallel version of settle  """
 
-        half_winners = int(math.ceil(self.NUM_WINNERS))
+        half_winners = int(math.ceil(self.NUM_WINNERS/2))
 
         assert len(set(names)) == len(names), "mget() cannot be used with repeated names"
         retrieve_pipe = self.client.pipeline()
