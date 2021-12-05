@@ -1548,19 +1548,26 @@ class Rediz(RedizConventions):
             values = sorted(values)
 
             # Jigger sorted predictions
+            min_abs_value = min([abs(vi) for vi in values])
+            if min_abs_value>1e5:
+                noise_ratio = math.sqrt(min_abs_value/1e5)
+            else:
+                noise_ratio = 1.0
             noise = np.random.randn(self.num_predictions).tolist()
-            jiggered_values = [v + n * self.NOISE for v, n in zip(values, noise)]
+            jiggered_values = [v + noise_ratio*n * self.NOISE for v, n in zip(values, noise)]
+
             jiggered_values.sort()
             if  len(set(jiggered_values)) != len(jiggered_values):
                 print('----- submission error ----- ')
                 num_unique = len(set(values))
                 num_jiggled_unique = len(set(values))
-                if False:
+                if True:
                     print('Values...')
                     pprint(values)
                     print('Jigged values ...')
                     pprint(jiggered_values)
-                error_message = "Cannot accept submission as there are "+str(num_unique)+" unique values ("+str(num_jiggled_unique)+" unique after noise added)"
+                some_values = ','.join( [ str(v) for v in values[:5] ] )
+                error_message = "Cannot accept submission as there are "+str(num_unique)+" unique values ("+str(num_jiggled_unique)+" unique after noise added). Some values are "+some_values
                 print(error_message,flush=True)
                 raise Exception(error_message)
             predictions = dict(
@@ -1661,7 +1668,7 @@ class Rediz(RedizConventions):
                             # Zoom out window for percentiles ... want a few so we can average zscores
                             # from more than one contributor, hopefully leading to more accurate percentiles
                             percentile_scenarios = list()
-                            for window_ndx in range(num_windows):
+                            for window_ndx, window_used in enumerate(self._WINDOWS):
                                 if len(percentile_scenarios) < 10:
                                     _ndx = scenarios_lookup[name][delay_ndx][window_ndx]
                                     percentile_scenarios_up = retrieved[_ndx]
