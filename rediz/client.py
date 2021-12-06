@@ -1557,17 +1557,20 @@ class Rediz(RedizConventions):
             jiggered_values = [v + noise_ratio*n * self.NOISE for v, n in zip(values, noise)]
 
             jiggered_values.sort()
-            if  len(set(jiggered_values)) != len(jiggered_values):
+            if len(set(jiggered_values)) != self.num_predictions:
                 print('----- submission error ----- ')
-                num_unique = len(set(values))
-                num_jiggled_unique = len(set(values))
+                num_values_unique = len(set(values))
+                num_values = len(values)
+                num_jiggled_unique = len(set(jiggered_values))
+                num_jiggled = len(jiggered_values)
+
                 if True:
                     print('Values...')
                     pprint(values)
                     print('Jigged values ...')
                     pprint(jiggered_values)
-                some_values = ','.join( [ str(v) for v in values[:5] ] )
-                error_message = "Cannot accept submission as there are "+str(num_unique)+" unique values ("+str(num_jiggled_unique)+" unique after noise added). Some values are "+some_values
+                some_values = ','.join( [ str(v) for v in jiggered_values[:15] ] )
+                error_message = "Cannot accept submission as there are "+str((num_values,num_values_unique))+" values/unique values ("+str((num_jiggled,num_jiggled_unique ))+" jiggled/jiggled unique). Some jiggered values are "+some_values
                 print(error_message,flush=True)
                 raise Exception(error_message)
             predictions = dict(
