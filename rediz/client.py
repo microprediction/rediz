@@ -1549,8 +1549,8 @@ class Rediz(RedizConventions):
 
             # Jigger sorted predictions
             min_abs_value = min([abs(vi) for vi in values])
-            if min_abs_value>10000.:
-                noise_ratio = 1.0*math.sqrt(0.0001*min_abs_value)
+            if min_abs_value>1000.:
+                noise_ratio = 1.0*math.sqrt(0.001*min_abs_value)
             else:
                 noise_ratio = 1.0
             noise = np.random.randn(self.num_predictions).tolist()
