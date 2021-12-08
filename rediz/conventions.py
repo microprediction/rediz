@@ -48,13 +48,13 @@ class RedizConventions(MicroConventions):
 
 
         self.WARNINGS_TTL = int(60 * 60)  # TODO: allow configuation
-        self.WARNINGS_LIMIT = 1000
+        self.WARNINGS_LIMIT = 500
         self.CONFIRMS_TTL = int(error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
         self.ERROR_TTL = int(error_ttl or 24* 60 * 60)     # Number of seconds that set execution error logs are persisted
         self.CONFIRMS_TTL = int(error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
-        self.ERROR_LIMIT = int(error_limit or 1000)    # Number of error messages to keep per write key
-        self.CONFIRMS_LIMIT = int(error_limit or 1000) # Number of error messages to keep per write key
-        self.TRANSACTIONS_LIMIT = 1000
+        self.ERROR_LIMIT = int(error_limit or 500)    # Number of error messages to keep per write key
+        self.CONFIRMS_LIMIT = int(error_limit or 500) # Number of error messages to keep per write key
+        self.TRANSACTIONS_LIMIT = 500
 
         # User transparent temporal and other config
         self.MIN_LEN = int(self.min_len)                     # FIXME: Get rid of MIN_LEN and use min_len instead
@@ -64,7 +64,7 @@ class RedizConventions(MicroConventions):
         self.ZDELAYS = [self.DELAYS[0],self.DELAYS[-1]]
         self.CONFIRMS_MAX = 5  # Maximum number of confirmations when using mset()
         self.NOISE = 0.001 / self.num_predictions  # Tie-breaking / smoothing noise added to predictions
-        self.NUM_WINNERS = 10000  # Maximum number of winning tickets
+        self.NUM_WINNERS = 1000  # Maximum number of winning tickets
 
         # Implementation details: private reserved redis keys and prefixes.
         self._obscurity = (obscurity or "obscure") + self.SEP

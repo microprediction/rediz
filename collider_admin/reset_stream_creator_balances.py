@@ -9,5 +9,5 @@ if __name__ == '__main__':
     for WRITE_KEY in STREAM_CREATORS:
         balance = rdz.client.hget(name=rdz._BALANCES, key=WRITE_KEY)
         if balance:
-            print(rdz.client.hset(name=rdz._BALANCES, key=WRITE_KEY, value=1000*1000))
+            print(rdz.client.hset(name=rdz._BALANCES, key=WRITE_KEY, value=10*1000*1000))
             print('Reset balance for ' + rdz.animal_from_key(WRITE_KEY))

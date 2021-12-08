@@ -1553,8 +1553,9 @@ class Rediz(RedizConventions):
                 noise_ratio = max_abs_value/10000.
             else:
                 noise_ratio = 1.0
-            noise = np.random.randn(self.num_predictions).tolist()
+            noise = [ nz for nz in np.random.randn(2*self.num_predictions).tolist() if abs(nz)>0.01 ]
             jiggered_values = [v + noise_ratio*n * self.NOISE for v, n in zip(values, noise)]
+
 
             jiggered_values.sort()
             if len(set(jiggered_values)) != self.num_predictions:
@@ -1709,17 +1710,17 @@ class Rediz(RedizConventions):
                         payments.update(game_payments)
 
                     if len(payments):
-                        leaderboard_names = [self.leaderboard_name(),
+                        usual_leaderboard_names = [self.leaderboard_name(),
                                              self.leaderboard_name(name=name),
                                              self.leaderboard_name(name=None, delay=delay),
-                                             self.leaderboard_name(name=name, delay=delay),
-                                             self.custom_leaderboard_name(sponsor=None, name=None),  # Overall all time
+                                             self.leaderboard_name(name=name, delay=delay)]
+                        custom_leaderboard_names = [ self.custom_leaderboard_name(sponsor=None, name=None),  # Overall all time
                                              self.custom_leaderboard_name(sponsor=None, name=None,
                                                                           dt=datetime.datetime.now()),  # This month
                                              self.custom_leaderboard_name(sponsor=sponsor, name=None),
                                              # Sponsor category
                                              self.custom_leaderboard_name(sponsor=sponsor, name=name),
-                                             # Sponsor and cateogry
+                                             # Sponsor and category
                                              self.custom_leaderboard_name(sponsor=sponsor, dt=datetime.datetime.now()),
                                              # Sponsor and month
                                              self.custom_leaderboard_name(sponsor=sponsor, name=name,
@@ -1728,6 +1729,9 @@ class Rediz(RedizConventions):
                                              self.custom_leaderboard_name(sponsor=sponsor, name=name,
                                                                           dt=datetime.datetime.now())
                                              ]
+                        leaderboard_names = usual_leaderboard_names
+                        if delay>self.DELAYS[1]:
+                             leaderboard_names = usual_leaderboard_names + custom_leaderboard_names
                         for (recipient, amount) in payments.items():
                             # Record keeping
                             rescaled_amount = budget * float(amount)
