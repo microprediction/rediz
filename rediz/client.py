@@ -1549,8 +1549,8 @@ class Rediz(RedizConventions):
 
             # Jigger sorted predictions
             max_abs_value = max([abs(vi) for vi in values])
-            if max_abs_value>1000.:
-                noise_ratio = max_abs_value/1000.
+            if max_abs_value>100.:
+                noise_ratio = max_abs_value/100.
             else:
                 noise_ratio = 1.0
             noise = [ nz for nz in np.random.randn(2*self.num_predictions).tolist() if abs(nz)>0.1 ]

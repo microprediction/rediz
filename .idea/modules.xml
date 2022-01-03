@@ -2,6 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
+      <module fileurl="file://$PROJECT_DIR$/../recalibrate/.idea/recalibrate.iml" filepath="$PROJECT_DIR$/../recalibrate/.idea/recalibrate.iml" />
       <module fileurl="file://$PROJECT_DIR$/.idea/rediz.iml" filepath="$PROJECT_DIR$/.idea/rediz.iml" />
     </modules>
   </component>
