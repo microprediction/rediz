@@ -98,6 +98,47 @@ class Rediz(RedizConventions):
             self._error(write_key=write_key, data={'operation': 'get_predictions', 'write_key': write_key, 'name': name,
                                                    'message': 'write key not valid'})
 
+
+    def density_from_samples(x: [float], L: int, unit=1.0):
+        low_highs = [self._low_high(xi / unit) for xi in x]
+        density = [0 for _ in range(2 * L + 1)]
+        mass = 0
+        for lh in low_highs:
+            for (lc, wght) in lh:
+                rel_loc = min(2 * L, max(lc + L, 0))
+                mass += wght
+                density[rel_loc] += wght
+        total_mass = sum(density)
+        return [d / total_mass for d in density]
+
+
+    def get_prediction_cdf(self, name, delay=None, values=None):
+        tickets = self._get_predictions_implementation(name=name, delay=delay)
+        tups = [(ticket.split('::')[1], val) for ticket, val in tickets.items()]
+        samples = sorted([v for owner, v in tups])
+        return self._samples_to_cdf(samples=samples,values=values)
+
+    def get_lagged_cdf(self, name, values=None):
+        samples=self.get_lagged_values(name=name)
+        return self._samples_to_cdf(samples=samples,values=values)
+
+
+    def _samples_to_cdf(self,samples,values=None):
+        n = len(samples)
+        samples = sorted(samples)
+        n_x = 50
+        if values is None:
+            import math
+            skip = int(math.ceil(n / n_x))
+            xs =  samples[0:-1:skip]
+        else:
+            xs = sorted(values)
+        ys = [ sum([ int(yi<=x)/n for yi in samples]) for x in xs ]
+        return {'x': xs, 'y': ys}
+
+
+
+
     def get_samples(self, write_key, name, delay=None, delays=None):
         if self._authorize(name=name, write_key=write_key):
             return self._get_samples_implementation(name=name, delay=delay, delays=delays)
@@ -105,7 +146,10 @@ class Rediz(RedizConventions):
             self._error(write_key=write_key, data={'operation': 'get_samples', 'write_key': write_key, 'name': name,
                                                    'message': 'write key not valid'})
 
-    def get_cdf(self, name:str, delay, values:[float]=None, top=10, min_balance=-50000000):
+    def get_cdf(self, name: str, delay, values: [float] = None, top=10, min_balance=-50000000):
+        return self.get_prediction_cdf(name=name, delay=delay, values=values)
+
+    def get_cdf_old(self, name:str, delay, values:[float]=None, top=10, min_balance=-50000000):
         """ Retrieve 'x' and 'y' values representing an approximate CDF
         :param values:   Abscissa for CDF ... if not supplied it will try to figure out something
         :param top:      Number of top participants to use
