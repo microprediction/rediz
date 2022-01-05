@@ -99,19 +99,6 @@ class Rediz(RedizConventions):
                                                    'message': 'write key not valid'})
 
 
-    def density_from_samples(x: [float], L: int, unit=1.0):
-        low_highs = [self._low_high(xi / unit) for xi in x]
-        density = [0 for _ in range(2 * L + 1)]
-        mass = 0
-        for lh in low_highs:
-            for (lc, wght) in lh:
-                rel_loc = min(2 * L, max(lc + L, 0))
-                mass += wght
-                density[rel_loc] += wght
-        total_mass = sum(density)
-        return [d / total_mass for d in density]
-
-
     def get_prediction_cdf(self, name, delay=None, values=None):
         tickets = self._get_predictions_implementation(name=name, delay=delay)
         tups = [(ticket.split('::')[1], val) for ticket, val in tickets.items()]
