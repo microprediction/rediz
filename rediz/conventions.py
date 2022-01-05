@@ -90,7 +90,7 @@ class RedizConventions(MicroConventions):
 
         # Other implementation config
         self._CANCEL_GRACE = 45
-        self._DELAY_GRACE = int(delay_grace or 5)  # Seconds beyond the schedule time when promise data expires
+        self._DELAY_GRACE = int(delay_grace or 10)  # Seconds beyond the schedule time when promise data expires
         self._DEFAULT_MODEL_STD = 1.0  # Noise added for self-prediction
         self._WINDOWS = windows  # Sizes of neighbourhoods around truth used in countback ... don't make too big or it hits performance
         self._INSTANT_RECALL = instant_recall or False
