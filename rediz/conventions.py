@@ -336,7 +336,7 @@ class RedizConventions(MicroConventions):
 
     def _random_promised_name(self, name):
         name_stem = os.path.splitext(name)[0]
-        return self._PROMISED + str(uuid.uuid4())[:8] + self.SEP + name_stem + '.json'
+        return self._PROMISED + str(uuid.uuid4())[:12] + self.SEP + name_stem + '.json'
 
     def _copy_promise(self, source, destination):
         return source + self.COPY_SEP + destination
