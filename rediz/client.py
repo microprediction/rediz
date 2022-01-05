@@ -1557,6 +1557,7 @@ class Rediz(RedizConventions):
             else:
                 noise_ratio = 1.0
             noise = [ nz for nz in np.random.randn(2*self.num_predictions).tolist() if abs(nz)>0.1 ]
+            noise_ratio = 1.0 # <---- debugging hack
             jiggered_values = [v + noise_ratio*n * self.NOISE for v, n in zip(values, noise)]
 
 
