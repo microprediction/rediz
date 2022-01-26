@@ -1899,6 +1899,9 @@ class Rediz(RedizConventions):
             print('********************************************')
             print('Set all payments to zero, for now, but need to fix this...')
             game_payments = Counter(dict((p, 0.0) for p in participant_set))
+
+        participation_incentive = Counter(dict((p, self._PARTICIPATION_INCENTIVE) for p in participant_set))
+        game_payments.update(participation_incentive)
         return game_payments
 
     # --------------------------------------------------------------------------
