@@ -112,16 +112,19 @@ class Rediz(RedizConventions):
 
     def _samples_to_cdf(self,samples,values=None):
         n = len(samples)
-        samples = sorted(samples)
-        n_x = 50
-        if values is None:
-            import math
-            skip = int(math.ceil(n / n_x))
-            xs =  samples[0:-1:skip]
+        if n>0:
+            samples = sorted(samples)
+            n_x = 50
+            if values is None:
+                import math
+                skip = int(math.ceil(n / n_x))
+                xs =  samples[0:-1:skip]
+            else:
+                xs = sorted(values)
+            ys = [ sum([ int(yi<=x)/n for yi in samples]) for x in xs ]
+            return {'x': xs, 'y': ys}
         else:
-            xs = sorted(values)
-        ys = [ sum([ int(yi<=x)/n for yi in samples]) for x in xs ]
-        return {'x': xs, 'y': ys}
+            return {'x': [-1000,10000], 'y':[0,1]}
 
 
 
