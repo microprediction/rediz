@@ -1069,7 +1069,9 @@ class Rediz(RedizConventions):
 
     def _touch_implementation(self, name, write_key, budget, example_value=3.145):
         """ Extend life of stream """
-        exec = self.client.expire(name=name, time=self._cost_based_ttl(value=example_value, budget=budget))
+        cost_based_ttl = self._cost_based_ttl(value=example_value, budget=budget)
+        ttl = max(cost_based_ttl, 60*60)
+        exec = self.client.expire(name=name, time=ttl)
         self._confirm(write_key=write_key, operation='touch', name=name, execution=exec)
         if not exec:
             self._warn(write_key=write_key, operation='touch', error='expiry not set ... names may not exist',
