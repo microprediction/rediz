@@ -1074,7 +1074,7 @@ class Rediz(RedizConventions):
 
     def _mtouch_implementation(self, names, write_key, budgets, example_value=3.145):
         """ Extend life of multiple streams """
-        ttls = [ max(65*60, self._cost_based_ttl(value=example_value, budget=b)) for b in budgets]
+        ttls = [ max(4*24*65*60, self._cost_based_ttl(value=example_value, budget=b)) for b in budgets]
 
         expire_pipe = self.client.pipeline()
         for name, ttl in zip(names, ttls):
