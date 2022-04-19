@@ -1069,18 +1069,12 @@ class Rediz(RedizConventions):
 
     def _touch_implementation(self, name, write_key, budget, example_value=3.145):
         """ Extend life of stream """
-        cost_based_ttl = self._cost_based_ttl(value=example_value, budget=budget)
-        ttl = max(cost_based_ttl, 60*60)
-        exec = self.client.expire(name=name, time=ttl)
-        self._confirm(write_key=write_key, operation='touch', name=name, execution=exec)
-        if not exec:
-            self._warn(write_key=write_key, operation='touch', error='expiry not set ... names may not exist',
-                       name=name, exec=exec)
-        return exec
+        return self._mtouch_implementation(names=[name], write_key=write_key, budgets=[budget], example_value=example_value)
+
 
     def _mtouch_implementation(self, names, write_key, budgets, example_value=3.145):
         """ Extend life of multiple streams """
-        ttls = [self._cost_based_ttl(value=example_value, budget=b) for b in budgets]
+        ttls = [ max(65*60, self._cost_based_ttl(value=example_value, budget=b)) for b in budgets]
 
         expire_pipe = self.client.pipeline()
         for name, ttl in zip(names, ttls):
