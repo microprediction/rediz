@@ -1764,8 +1764,11 @@ class Rediz(RedizConventions):
                                                                           dt=datetime.datetime.now())
                                              ]
                         leaderboard_names = usual_leaderboard_names
-                        if delay>self.DELAYS[1]:
+                        # Decide whether we will include certain delays in the leaderboards used for prizes
+                        if delay>self.DELAYS[2]: # <-- Only include the 1hr ahead predictions
                              leaderboard_names = usual_leaderboard_names + custom_leaderboard_names
+
+
                         for (recipient, amount) in payments.items():
                             # Record keeping
                             rescaled_amount = budget * float(amount)
