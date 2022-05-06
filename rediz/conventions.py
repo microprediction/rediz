@@ -98,7 +98,7 @@ class RedizConventions(MicroConventions):
         self._TRANSACTIONS_TTL = int( transactions_ttl or 24 * (60 * 60) )  # How long to keep transactions stream for inactive write_keys
         self._LEADERBOARD_TTL  = int( 24 * (60 * 60)*60 )  # How long to keep transactions stream for inactive write_keys
         self._CREATE_COST = 500
-        self._PARTICIPATION_INCENTIVE = 0.01
+        self._PARTICIPATION_INCENTIVE = 0.2
 
     @staticmethod
     def assert_not_in_reserved_namespace(names, *args):

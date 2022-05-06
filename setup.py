@@ -7,7 +7,7 @@ README = (HERE / "README.md").read_text()
 
 setup(
     name="rediz",
-    version="1.0.2",
+    version="1.0.4",
     description="Powering community nowcasts at www.microprediction.org",
     long_description=README,
     long_description_content_type="text/markdown",
