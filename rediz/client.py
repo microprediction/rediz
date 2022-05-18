@@ -1192,7 +1192,8 @@ class Rediz(RedizConventions):
         transfer_confirm = {"time": str(datetime.datetime.now()), "operation": "transfer", "epoch_time": time.time(),
                             "source": self.shash(source_write_key), "recipient": self.shash(recipient_write_key)}
         success = 0
-        if self.is_valid_key(source_write_key) and self.key_difficulty(source_write_key) >= self.MIN_LEN - 1:
+        # Previously this was restricted to the source key being quite difficult.
+        if self.is_valid_key(source_write_key) and self.key_difficulty(source_write_key) >= self.MIN_LEN - 5:
             if self.is_valid_key(recipient_write_key):
                 recipient_balance = self.get_balance(write_key=recipient_write_key)
                 if recipient_balance < -1.0:
@@ -1765,7 +1766,7 @@ class Rediz(RedizConventions):
                                              ]
                         leaderboard_names = usual_leaderboard_names
                         # Decide whether we will include certain delays in the leaderboards used for prizes
-                        if delay>self.DELAYS[2]: # <-- Only include the 1hr ahead predictions
+                        if delay>=self.DELAYS[-1]: # <-- Only include the 1hr ahead predictions
                              leaderboard_names = usual_leaderboard_names + custom_leaderboard_names
 
 
@@ -1904,7 +1905,7 @@ class Rediz(RedizConventions):
 
         # Introduce subsidy bonus
         n_participants = pool / self.num_predictions
-        subsidy = self._PARTICIPATION_INCENTIVE/(5+n_participants)
+        subsidy = self._PARTICIPATION_INCENTIVE/(0.5+n_participants)
         participation_incentive = Counter(dict((p, subsidy) for p in participant_set))
         game_payments.update(participation_incentive)
         return game_payments
