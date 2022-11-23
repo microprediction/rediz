@@ -433,8 +433,10 @@ class Rediz(RedizConventions):
             return self.mset(names=names, values=values, budgets=budgets, write_key=write_key, with_copulas=True)
 
     def mset(self, names: NameList, values: ValueList, budgets: List[int], write_key=None, write_keys=None,
-             with_copulas=False):
+             with_copulas=False, with_percentiles=False):
         """ Apply set() for multiple names and values, with copula derived streams optionally """  # Todo: disallow calling with multiple write_keys
+        if not with_percentiles:
+            with_copulas = False
         is_plain = [RedizConventions.is_plain_name(name) for name in names]
         if not len(names) == len(values):
             error_data = {'names': names, 'values': values, 'error': 'Names and values have different lengths'}
@@ -449,7 +451,7 @@ class Rediz(RedizConventions):
         else:
             write_keys = write_keys or [write_key for _ in names]
             return self._mset_implementation(names=names, values=values, write_keys=write_keys, return_args=None,
-                                             budgets=budgets, with_percentiles=True, with_copulas=with_copulas)
+                                             budgets=budgets, with_percentiles=with_percentiles, with_copulas=with_copulas)
 
     def delete(self, name, write_key):
         """ Delete/expire all artifacts associated with name (links, subs, markets etc) """

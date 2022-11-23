@@ -13,7 +13,7 @@ if __name__ == '__main__':
     names_to_delete = list()
 
     def matcher(name):
-        return '_expected' in name
+        return 'c2' in name
 
     for name, _ in ownership.items():
         if matcher(name):
