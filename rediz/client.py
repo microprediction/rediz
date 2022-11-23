@@ -410,7 +410,7 @@ class Rediz(RedizConventions):
         except:
             return 0
 
-    def set(self, name, value, write_key, budget=10):
+    def set(self, name, value, write_key, budget=10, with_percentiles=False):
         """ Set name=value and initiate clearing, derived zscore market etc """
         assert RedizConventions.is_plain_name(name), "Expecting plain name"
         assert RedizConventions.is_valid_key(write_key), "Invalid write_key"
@@ -421,7 +421,7 @@ class Rediz(RedizConventions):
             return False
         else:
             return self._mset_implementation(name=name, value=value, write_key=write_key, return_args=None,
-                                             budget=budget, with_percentiles=True)
+                                             budget=budget, with_percentiles=with_percentiles)
 
     def cset(self, names: NameList, values: ValueList, budgets: List[int], write_key):
         if self.muid_difficulty(write_key) < self.min_len + 1:
