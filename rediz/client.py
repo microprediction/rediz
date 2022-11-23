@@ -430,13 +430,11 @@ class Rediz(RedizConventions):
             self._error(write_key=write_key, operation='set', success=False, reason=reason)
             return False
         else:
-            return self.mset(names=names, values=values, budgets=budgets, write_key=write_key, with_copulas=True)
+            return self.mset(names=names, values=values, budgets=budgets, write_key=write_key, with_copulas=True, with_percentiles=True)
 
     def mset(self, names: NameList, values: ValueList, budgets: List[int], write_key=None, write_keys=None,
              with_copulas=False, with_percentiles=False):
         """ Apply set() for multiple names and values, with copula derived streams optionally """  # Todo: disallow calling with multiple write_keys
-        if not with_percentiles:
-            with_copulas = False
         is_plain = [RedizConventions.is_plain_name(name) for name in names]
         if not len(names) == len(values):
             error_data = {'names': names, 'values': values, 'error': 'Names and values have different lengths'}

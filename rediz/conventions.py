@@ -39,7 +39,7 @@ class RedizConventions(MicroConventions):
 
         # Transparent but parametrized
         self.HISTORY_LEN = int(history_len or 1000)
-        self.LAGGED_LEN = int(lagged_len or 10000)
+        self.LAGGED_LEN = int(lagged_len or 1000)
 
         # Logging
         #self.CONFIRMS = "confirms" + self.SEP  # TODO: Moved to MicroConventions
@@ -47,14 +47,14 @@ class RedizConventions(MicroConventions):
         #self.ERRORS   = "errors" + self.SEP    # TODO: Moved to MicroConventions
 
 
-        self.WARNINGS_TTL = int(60 * 60)  # TODO: allow configuation
-        self.WARNINGS_LIMIT = 500
-        self.CONFIRMS_TTL = int(error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
-        self.ERROR_TTL = int(error_ttl or 24* 60 * 60)     # Number of seconds that set execution error logs are persisted
-        self.CONFIRMS_TTL = int(error_ttl or 60 * 60)  # Number of seconds that set execution error logs are persisted
-        self.ERROR_LIMIT = int(error_limit or 500)    # Number of error messages to keep per write key
-        self.CONFIRMS_LIMIT = int(error_limit or 500) # Number of error messages to keep per write key
-        self.TRANSACTIONS_LIMIT = 500
+        self.WARNINGS_TTL = int(20 * 60)  # TODO: allow configuation
+        self.WARNINGS_LIMIT = 20
+        self.CONFIRMS_TTL = int(error_ttl or 10 * 60)  # Number of seconds that set execution error logs are persisted
+        self.ERROR_TTL = int(error_ttl or 10 * 60)     # Number of seconds that set execution error logs are persisted
+        self.CONFIRMS_TTL = int(error_ttl or 10 * 60)  # Number of seconds that set execution error logs are persisted
+        self.ERROR_LIMIT = int(error_limit or 100)    # Number of error messages to keep per write key
+        self.CONFIRMS_LIMIT = int(error_limit or 20) # Number of error messages to keep per write key
+        self.TRANSACTIONS_LIMIT = 20
 
         # User transparent temporal and other config
         self.MIN_LEN = int(self.min_len)                     # FIXME: Get rid of MIN_LEN and use min_len instead
@@ -64,7 +64,7 @@ class RedizConventions(MicroConventions):
         self.ZDELAYS = [self.DELAYS[0],self.DELAYS[-1]]
         self.CONFIRMS_MAX = 5  # Maximum number of confirmations when using mset()
         self.NOISE = 0.0000001 # Tie-breaking / smoothing noise added to predictions
-        self.NUM_WINNERS = 1000  # Maximum number of winning tickets
+        self.NUM_WINNERS = 100  # Maximum number of winning tickets
 
         # Implementation details: private reserved redis keys and prefixes.
         self._obscurity = (obscurity or "obscure") + self.SEP
@@ -95,10 +95,10 @@ class RedizConventions(MicroConventions):
         self._WINDOWS = windows  # Sizes of neighbourhoods around truth used in countback ... don't make too big or it hits performance
         self._INSTANT_RECALL = instant_recall or False
         self._MAX_TTL = int( max_ttl or 96*60*60 ) # Maximum TTL, useful for testing
-        self._TRANSACTIONS_TTL = int( transactions_ttl or 24 * (60 * 60) )  # How long to keep transactions stream for inactive write_keys
+        self._TRANSACTIONS_TTL = int( transactions_ttl or (20 * 60) )  # How long to keep transactions stream for inactive write_keys
         self._LEADERBOARD_TTL  = int( 24 * (60 * 60)*60 )  # How long to keep transactions stream for inactive write_keys
         self._CREATE_COST = 500
-        self._PARTICIPATION_INCENTIVE = 0.2
+        self._PARTICIPATION_INCENTIVE = 0.1
 
     @staticmethod
     def assert_not_in_reserved_namespace(names, *args):
