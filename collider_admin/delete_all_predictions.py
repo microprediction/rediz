@@ -8,4 +8,7 @@ if __name__ == '__main__':
     rdz     = Rediz(**REDIZ_COLLIDER_CONFIG)
     promises = rdz.client.keys(pattern='*'+rdz._PREDICTIONS+'*')
     rdz.client.delete(*promises)
+    promises = rdz.client.keys(pattern='*' + rdz._PROMISED + '*')
+    rdz.client.delete(*promises)
+
     print('Deleted promises')

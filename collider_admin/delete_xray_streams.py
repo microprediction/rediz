@@ -11,7 +11,10 @@ if __name__ == '__main__':
 
 
     def matcher(name):
-        return 'yarx' in name
+        if 'xray' in name:
+            return True
+        else:
+            return False
 
 
     for name, _ in ownership.items():
