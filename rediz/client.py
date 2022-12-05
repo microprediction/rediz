@@ -1831,9 +1831,12 @@ class Rediz(RedizConventions):
                 if legit:
                     num_names = len(names)
                     selections = list(itertools.combinations(list(range(num_names)), 1))
-                    if with_copulas and num_names <= 10:
+                    if with_copulas and num_names <= 12:
                         selections2 = list(itertools.combinations(list(range(num_names)), 2))
-                        selections3 = list(itertools.combinations(list(range(num_names)), 3))
+                        if num_names<=5:
+                            selections3 = list(itertools.combinations(list(range(num_names)), 3))
+                        else:
+                            selections3 = []
                         selections = selections + selections2 + selections3
 
                     for selection in selections:
