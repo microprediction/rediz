@@ -61,7 +61,7 @@ class RedizConventions(MicroConventions):
         self.MIN_BALANCE = int(self.min_balance)             # FIXME: Get rid of MIN_BALANCE and use min_balance instead
         self.NUM_PREDICTIONS = int(self.num_predictions)     # Number of scenerios in a prediction batch
         self.DELAYS = delays or [1, 5]
-        self.ZDELAYS = [self.DELAYS[0],self.DELAYS[-1]]
+        self.ZDELAYS = [self.DELAYS[-1]]
         self.CONFIRMS_MAX = 5  # Maximum number of confirmations when using mset()
         self.NOISE = 0.0000001 # Tie-breaking / smoothing noise added to predictions
         self.NUM_WINNERS = 100  # Maximum number of winning tickets
