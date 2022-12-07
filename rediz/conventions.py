@@ -430,7 +430,8 @@ class RedizConventions(MicroConventions):
     def _cost_based_lagged_len(self, value ):
         t = time.time()
         sz = (sys.getsizeof(value) + sys.getsizeof(t)) + 10
-        return int( math.ceil( 10 * self.LAGGED_LEN / sz) )
+        min_sz = sys.getsizeof(51234134.12434) + sys.getsizeof(t) + 10
+        return int( math.ceil( self.LAGGED_LEN*(min_sz/sz) ) )
 
     def _cost_based_ttl(self, value, budget):
         """ Time to live for name implies a minimal update frequency """
