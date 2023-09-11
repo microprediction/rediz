@@ -2009,8 +2009,6 @@ class Rediz(RedizConventions):
                 data = self.get_subscribers(name=parts[-1])
             elif ps == self.LAGGED_VALUES:
                 data = self.get_lagged_values(name=parts[-1])
-            elif ps == self.CDF:
-                data = self.get_cdf(name=parts[-1])
             elif ps == self.LAGGED:
                 data = self.get_lagged(name=parts[-1])
             elif ps == self.LAGGED_TIMES:
@@ -2035,6 +2033,8 @@ class Rediz(RedizConventions):
             ps = parts[0] + self.SEP
             if ps == self.DELAYED:
                 data = self.get_delayed(name=parts[-1], delay=int(parts[1]), to_float=True)
+            elif ps == self.CDF:
+                data = self.get_cdf(name=parts[-1], delay=int(parts[1]))
             elif ps in [self._PREDICTIONS, self.PREDICTIONS]:
                 data = self.get_predictions(name=parts[-1], delay=int(parts[1]))
             elif ps in [self._SAMPLES, self.SAMPLES]:
